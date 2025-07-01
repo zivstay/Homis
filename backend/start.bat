@@ -1,0 +1,9 @@
+@echo off
+echo Starting Expense Manager Backend...
+echo.
+echo Installing dependencies...
+pip install -r requirements.txt
+echo.
+echo Starting Flask server...
+python app.py
+pause 

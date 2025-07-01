@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "Homis",
-    "slug": "Homis",
+    "name": "מנהל הוצאות הבית",
+    "slug": "home-expense-manager",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "homis",
+    "scheme": "home-expense-manager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "description": "אפליקציה לניהול הוצאות בית חודשיות",
     "ios": {
       "supportsTablet": true
     },
