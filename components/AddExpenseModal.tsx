@@ -3,16 +3,17 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
 import { apiService } from '../services/api';
@@ -278,6 +279,9 @@ export function AddExpenseModal({
               placeholder="הכנס סכום"
               placeholderTextColor="#999"
               textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 
@@ -350,6 +354,9 @@ export function AddExpenseModal({
                 placeholder="הכנס קטגוריה מותאמת אישית"
                 placeholderTextColor="#999"
                 textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
               />
             )}
           </View>
@@ -366,6 +373,9 @@ export function AddExpenseModal({
               textAlign="right"
               multiline
               numberOfLines={3}
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 
@@ -379,6 +389,9 @@ export function AddExpenseModal({
               placeholder="שם המשלם"
               placeholderTextColor="#999"
               textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 

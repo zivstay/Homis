@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -169,10 +170,14 @@ export function QuickAddExpenseWizard({
           value={amount}
           onChangeText={setAmount}
           keyboardType="numeric"
-          placeholder="הכנס סכום"
+          placeholder="0.00"
           placeholderTextColor="#999"
-          textAlign="center"
-          autoFocus
+          textAlign="right"
+          autoFocus={true}
+          selectTextOnFocus={true}
+          returnKeyType="done"
+          onSubmitEditing={() => Keyboard.dismiss()}
+          blurOnSubmit={true}
         />
         <ThemedText style={styles.currencyLabel}>₪</ThemedText>
       </View>
@@ -199,12 +204,15 @@ export function QuickAddExpenseWizard({
         style={[styles.textInput, styles.notesInput]}
         value={notes}
         onChangeText={setNotes}
-        placeholder="הערות (אופציונלי)"
+        placeholder="הוסף הערות..."
         placeholderTextColor="#999"
-        textAlign="center"
+        textAlign="right"
         multiline
         numberOfLines={3}
         autoFocus
+        returnKeyType="done"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
     </View>
   );
@@ -409,7 +417,7 @@ const styles = StyleSheet.create({
   amountInput: {
     fontSize: 48,
     fontWeight: 'bold',
-    textAlign: 'center',
+    textAlign: 'right',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,

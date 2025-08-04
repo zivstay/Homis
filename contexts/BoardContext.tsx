@@ -1,4 +1,5 @@
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { QuickCategory } from '../constants/boardTypes';
 import { apiService, Board, BoardMember, Expense } from '../services/api';
 import { useAuth } from './AuthContext';
 
@@ -15,6 +16,7 @@ interface BoardContextType {
     currency?: string;
     timezone?: string;
     board_type?: string;
+    custom_categories?: QuickCategory[];
   }) => Promise<{ success: boolean; error?: string }>;
   saveBoardCategories: (boardId: string, categories: { name: string; icon: string; color: string }[]) => Promise<{ success: boolean; error?: string; message?: string }>;
   refreshBoards: () => Promise<void>;
@@ -237,6 +239,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
       currency?: string;
       timezone?: string;
       board_type?: string;
+      custom_categories?: QuickCategory[];
     }
   ) => {
     try {
@@ -251,6 +254,15 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
       if (result.success && result.data) {
         const newBoard = result.data;
         console.log('✅ Board created successfully:', newBoard.id);
+        
+        // If custom categories were provided, save them to the board
+        if (boardData.custom_categories && boardData.custom_categories.length > 0) {
+          console.log('📋 Saving custom categories for board:', newBoard.id);
+          const categoriesResult = await saveBoardCategories(newBoard.id, boardData.custom_categories);
+          if (!categoriesResult.success) {
+            console.error('⚠️ Failed to save custom categories:', categoriesResult.error);
+          }
+        }
         
         // Refresh boards to get the updated list
         await refreshBoards();

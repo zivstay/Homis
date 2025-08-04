@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
+    Keyboard,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -8,7 +9,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -278,6 +279,9 @@ const LoginScreen: React.FC = () => {
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
+        returnKeyType="next"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       <TextInput
@@ -289,6 +293,9 @@ const LoginScreen: React.FC = () => {
           if (error) setError('');
         }}
         secureTextEntry
+        returnKeyType="done"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       {error ? (
@@ -329,6 +336,9 @@ const LoginScreen: React.FC = () => {
           setRegisterFirstName(text);
           if (registerError) setRegisterError('');
         }}
+        returnKeyType="next"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       <TextInput
@@ -339,6 +349,9 @@ const LoginScreen: React.FC = () => {
           setRegisterLastName(text);
           if (registerError) setRegisterError('');
         }}
+        returnKeyType="next"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       <TextInput
@@ -351,6 +364,9 @@ const LoginScreen: React.FC = () => {
         }}
         autoCapitalize="none"
         autoCorrect={false}
+        returnKeyType="next"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       <TextInput
@@ -364,6 +380,9 @@ const LoginScreen: React.FC = () => {
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
+        returnKeyType="next"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       <TextInput
@@ -375,6 +394,9 @@ const LoginScreen: React.FC = () => {
           if (registerError) setRegisterError('');
         }}
         secureTextEntry
+        returnKeyType="next"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       <TextInput
@@ -386,6 +408,9 @@ const LoginScreen: React.FC = () => {
           if (registerError) setRegisterError('');
         }}
         secureTextEntry
+        returnKeyType="done"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       {registerError ? (
@@ -439,6 +464,9 @@ const LoginScreen: React.FC = () => {
         keyboardType="numeric"
         maxLength={5}
         textAlign="center"
+        returnKeyType="done"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        blurOnSubmit={true}
       />
       
       {verificationCode.length < 5 && (

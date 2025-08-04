@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -9,7 +10,7 @@ import {
     StyleSheet,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { Debt } from './DebtCard';
 import { ThemedText } from './ThemedText';
@@ -219,7 +220,10 @@ export function AddDebtModal({
               keyboardType="numeric"
               placeholder="הכנס סכום"
               placeholderTextColor="#999"
-              textAlign="center"
+              textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 
@@ -235,6 +239,9 @@ export function AddDebtModal({
               textAlign="right"
               multiline
               numberOfLines={3}
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
         </ScrollView>

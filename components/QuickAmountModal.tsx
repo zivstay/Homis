@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import {
     Alert,
     Image,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -12,7 +13,7 @@ import {
     StyleSheet,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
 import { apiService } from '../services/api';
@@ -271,10 +272,13 @@ export function QuickAmountModal({
                 value={amount}
                 onChangeText={setAmount}
                 keyboardType="numeric"
-                placeholder="הכנס סכום"
-                placeholderTextColor="#999"
-                textAlign="center"
-                autoFocus
+                placeholder="0.00"
+                textAlign="right"
+                autoFocus={true}
+                selectTextOnFocus={true}
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
               />
             </View>
           </View>
@@ -392,11 +396,13 @@ export function QuickAmountModal({
               style={[styles.textInput, styles.notesInput]}
               value={notes}
               onChangeText={setNotes}
-              placeholder="הוסף הערות"
-              placeholderTextColor="#999"
-              textAlign="center"
+              placeholder="הוסף הערות..."
               multiline
               numberOfLines={3}
+              textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
         </ScrollView>

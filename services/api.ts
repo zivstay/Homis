@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { QuickCategory } from '../constants/boardTypes';
 
 // If you're on Android emulator
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
@@ -673,6 +674,7 @@ class ApiService {
     currency?: string;
     timezone?: string;
     board_type?: string;
+    custom_categories?: QuickCategory[];
   }): Promise<ApiResponse<Board>> {
     return this.makeAuthenticatedRequest<Board>(
       `${API_BASE_URL}/boards`,

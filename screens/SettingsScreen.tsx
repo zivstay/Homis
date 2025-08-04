@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import {
     Alert,
     FlatList,
+    Keyboard,
     Modal,
     ScrollView,
     StyleSheet,
@@ -304,6 +305,9 @@ const SettingsScreen: React.FC = () => {
             keyboardType="email-address"
             autoCapitalize="none"
             textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
           />
           
           <View style={styles.modalButtons}>

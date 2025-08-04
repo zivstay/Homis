@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import {
     Alert,
     Image,
+    Keyboard,
     KeyboardAvoidingView,
     Linking,
     Platform,
@@ -13,7 +14,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
 import { getBoardTypeById } from '../constants/boardTypes';
@@ -299,24 +300,46 @@ const AddExpenseScreen: React.FC = () => {
   };
 
   const renderCategoryButtons = () => {
-    if (quickCategories.length === 0) return null;
+    // Combine quickCategories from board type with categories from server
+    const allCategories: Array<{ name: string; icon: string; color: string }> = [];
+    
+    // Add categories from server (these include custom categories)
+    categories.forEach(category => {
+      allCategories.push({
+        name: category.name,
+        icon: category.icon,
+        color: category.color
+      });
+    });
+    
+    // Add quickCategories from board type that aren't already in server categories
+    quickCategories.forEach(quickCategory => {
+      if (!allCategories.find(cat => cat.name === quickCategory.name)) {
+        allCategories.push(quickCategory);
+      }
+    });
+    
+    // If no categories at all, use quickCategories as fallback
+    const displayCategories = allCategories.length > 0 ? allCategories : quickCategories;
+    
+    if (displayCategories.length === 0) return null;
 
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>קטגוריה</Text>
         <View style={styles.quickButtonsContainer}>
-          {quickCategories.map((quickCategory, index) => (
+          {displayCategories.map((category, index) => (
             <TouchableOpacity
               key={index}
               style={[
                 styles.quickButton,
-                { backgroundColor: quickCategory.color },
-                selectedCategory === quickCategory.name && styles.selectedQuickButton,
+                { backgroundColor: category.color },
+                selectedCategory === category.name && styles.selectedQuickButton,
               ]}
-              onPress={() => handleCategorySelect(quickCategory.name)}
+              onPress={() => handleCategorySelect(category.name)}
             >
-              <Text style={styles.quickButtonIcon}>{quickCategory.icon}</Text>
-              <Text style={styles.quickButtonText}>{quickCategory.name}</Text>
+              <Text style={styles.quickButtonIcon}>{category.icon}</Text>
+              <Text style={styles.quickButtonText}>{category.name}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -369,6 +392,9 @@ const AddExpenseScreen: React.FC = () => {
               placeholder="0.00"
               keyboardType="numeric"
               textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 
@@ -385,6 +411,9 @@ const AddExpenseScreen: React.FC = () => {
               multiline
               numberOfLines={3}
               textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 
@@ -396,6 +425,9 @@ const AddExpenseScreen: React.FC = () => {
               onChangeText={setTags}
               placeholder="תגיות מופרדות בפסיקים..."
               textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
             />
           </View>
 

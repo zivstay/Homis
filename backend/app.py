@@ -284,6 +284,25 @@ def create_app(config_name='default'):
         
         board = db_manager.create_board(board_data)
         
+        # Handle custom categories if provided
+        custom_categories = data.get('custom_categories', [])
+        if custom_categories and len(custom_categories) > 0:
+            print(f"📋 Creating {len(custom_categories)} custom categories for board {board.id}")
+            for category_data in custom_categories:
+                category_info = {
+                    'board_id': board.id,
+                    'name': category_data.get('name'),
+                    'icon': category_data.get('icon', 'ellipsis-horizontal'),
+                    'color': category_data.get('color', '#9370DB'),
+                    'created_by': current_user_id,
+                    'is_default': False
+                }
+                try:
+                    db_manager.create_category(category_info)
+                    print(f"✅ Created custom category: {category_info['name']}")
+                except Exception as e:
+                    print(f"❌ Failed to create custom category {category_info['name']}: {str(e)}")
+        
         return jsonify({
             'id': board.id,
             'name': board.name,

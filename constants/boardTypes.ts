@@ -115,6 +115,21 @@ export const getBoardTypeById = (id: string): BoardType | undefined => {
   return BOARD_TYPES.find(type => type.id === id);
 };
 
+// Get all unique categories from all board types
+export const getAllAvailableCategories = (): QuickCategory[] => {
+  const categoriesMap = new Map<string, QuickCategory>();
+  
+  BOARD_TYPES.forEach(boardType => {
+    boardType.quickCategories.forEach(category => {
+      if (!categoriesMap.has(category.name)) {
+        categoriesMap.set(category.name, category);
+      }
+    });
+  });
+  
+  return Array.from(categoriesMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+};
+
 export const getBoardTypeDisplayName = (id: string): string => {
   const boardType = getBoardTypeById(id);
   return boardType ? boardType.name : 'כללי';

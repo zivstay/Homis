@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Keyboard,
   Modal,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import { BOARD_TYPES, BoardType } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
@@ -155,6 +156,9 @@ const BoardSelectionScreen: React.FC = () => {
             value={newBoardName}
             onChangeText={setNewBoardName}
             textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
           />
           
           <TextInput
@@ -165,6 +169,9 @@ const BoardSelectionScreen: React.FC = () => {
             multiline
             numberOfLines={3}
             textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
           />
           
           <Text style={styles.sectionTitle}>סוג הלוח</Text>

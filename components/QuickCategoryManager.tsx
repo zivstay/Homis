@@ -1,7 +1,7 @@
 import { useExpenses } from '@/contexts/ExpenseContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from './ThemedText';
 
 // Available icons for quick categories
@@ -261,8 +261,11 @@ export function QuickCategoryManager({ visible, onClose }: QuickCategoryManagerP
                   onChangeText={setNewCategoryName}
                   placeholder="הכנס שם קטגוריה"
                   placeholderTextColor="#999"
-                  textAlign="center"
+                  textAlign="right"
                   autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => Keyboard.dismiss()}
+                  blurOnSubmit={true}
                 />
               </View>
 

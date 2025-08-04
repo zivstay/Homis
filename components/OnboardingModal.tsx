@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
     Alert,
+    Keyboard,
     Modal,
     ScrollView,
     StyleSheet,
@@ -191,6 +192,9 @@ export function OnboardingModal({ visible, onComplete }: OnboardingModalProps) {
             placeholder="הוסף קטגוריה חדשה"
             placeholderTextColor="#999"
             textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
           />
           <TouchableOpacity onPress={handleAddCategory} style={styles.addButton}>
             <Ionicons name="add" size={20} color="#FFFFFF" />
@@ -223,6 +227,9 @@ export function OnboardingModal({ visible, onComplete }: OnboardingModalProps) {
             placeholder="הוסף משתמש חדש"
             placeholderTextColor="#999"
             textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
           />
           <TouchableOpacity onPress={handleAddUser} style={styles.addButton}>
             <Ionicons name="add" size={20} color="#FFFFFF" />

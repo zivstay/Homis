@@ -105,7 +105,16 @@ const HomeScreen: React.FC = () => {
   // Calculate top 7 most frequent categories
   const getTopCategories = () => {
     if (boardExpenses.length === 0) {
-      // If no expenses, use board type quick categories or default ones
+      // If no expenses, prioritize categories from server (custom categories) first
+      if (categories.length > 0) {
+        return categories.slice(0, 7).map(cat => ({
+          name: cat.name,
+          icon: cat.icon,
+          color: cat.color
+        }));
+      }
+      
+      // Fallback to board type quick categories
       const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
       const quickCategories = boardType?.quickCategories || [];
       return quickCategories.slice(0, 7);
@@ -118,16 +127,25 @@ const HomeScreen: React.FC = () => {
       if (categoryCount[expense.category]) {
         categoryCount[expense.category].count++;
       } else {
-        // Get icon and color from categories or board type
+        // Get icon and color from server categories first (custom categories)
         const category = categories.find(c => c.name === expense.category);
-        const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
-        const quickCategory = boardType?.quickCategories.find(q => q.name === expense.category);
-        
-        categoryCount[expense.category] = {
-          count: 1,
-          icon: quickCategory?.icon || category?.icon || '📋',
-          color: quickCategory?.color || category?.color || '#3498db'
-        };
+        if (category) {
+          categoryCount[expense.category] = {
+            count: 1,
+            icon: category.icon,
+            color: category.color
+          };
+        } else {
+          // Fallback to board type quick categories
+          const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
+          const quickCategory = boardType?.quickCategories.find(q => q.name === expense.category);
+          
+          categoryCount[expense.category] = {
+            count: 1,
+            icon: quickCategory?.icon || '📋',
+            color: quickCategory?.color || '#3498db'
+          };
+        }
       }
     });
 
@@ -141,7 +159,20 @@ const HomeScreen: React.FC = () => {
         color: data.color || '#3498db'
       }));
 
-    // If we have less than 7, fill with board type quick categories
+    // If we have less than 7, fill with remaining server categories first
+    if (sortedCategories.length < 7) {
+      categories.forEach(category => {
+        if (sortedCategories.length < 7 && !sortedCategories.find(c => c.name === category.name)) {
+          sortedCategories.push({
+            name: category.name,
+            icon: category.icon,
+            color: category.color
+          });
+        }
+      });
+    }
+
+    // If still less than 7, fill with board type quick categories
     if (sortedCategories.length < 7) {
       const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
       const quickCategories = boardType?.quickCategories || [];
