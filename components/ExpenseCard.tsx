@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { getImageUrl } from '../config/api';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
@@ -101,7 +102,7 @@ export function ExpenseCard({ expense, onPress, onEdit, onDelete }: ExpenseCardP
 
         {expense.imageUri && (
           <View style={styles.imageContainer}>
-            <Image source={{ uri: expense.imageUri }} style={styles.image} />
+            <Image source={{ uri: getImageUrl(expense.imageUri) || expense.imageUri }} style={styles.image} />
           </View>
         )}
 

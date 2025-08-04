@@ -1,16 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
+import BarChart from '../components/BarChart';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Debt } from '../services/api';
 
 const screenWidth = Dimensions.get('window').width;
@@ -25,6 +31,8 @@ interface ExpenseSummary {
 
 interface DebtWithBoard extends Debt {
   board_name: string;
+  from_user_name?: string;
+  to_user_name?: string;
 }
 
 interface DebtSummary {
@@ -40,18 +48,17 @@ interface PeriodFilter {
   endDate: string;
 }
 
-interface PieChartData {
+interface BarChartData {
   key: string;
   value: number;
-  svg: { fill: string };
-  arc: { cornerRadius: number };
+  color: string;
   label: string;
-  amount: number;
 }
 
 const SummaryScreen: React.FC = () => {
   const { user } = useAuth();
-  const { boards } = useBoard();
+  const { boards, selectedBoard } = useBoard();
+  const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
   const [summary, setSummary] = useState<ExpenseSummary | null>(null);
   const [debts, setDebts] = useState<DebtWithBoard[]>([]);
   const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null);
@@ -61,8 +68,20 @@ const SummaryScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('expenses');
   const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [showCharts, setShowCharts] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [boardScrollRef, setBoardScrollRef] = useState<any>(null);
+  const [customPeriod, setCustomPeriod] = useState<{ startDate: string; endDate: string } | null>(null);
+  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [startDateValue, setStartDateValue] = useState(new Date());
+  const [endDateValue, setEndDateValue] = useState(new Date());
 
-  const periodFilters: PeriodFilter[] = [
+  const periodFilters: PeriodFilter[] = useMemo(() => [
     {
       label: 'החודש',
       startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
@@ -78,40 +97,74 @@ const SummaryScreen: React.FC = () => {
       startDate: new Date(new Date().getFullYear(), 0, 1).toISOString(),
       endDate: new Date().toISOString(),
     },
-  ];
+    {
+      label: 'טווח מותאם',
+      startDate: '',
+      endDate: '',
+    },
+  ], []); // Empty dependency array - create once and never recreate
 
+  // Set default filters when component mounts or when selectedBoard changes
   useEffect(() => {
-    if (activeTab === 'expenses') {
-      loadSummary();
-    } else {
-      loadDebts();
+    if (!isInitialized && selectedBoard) {
+      setSelectedPeriod(periodFilters[0]); // Set default to "החודש" (current month)
+      setSelectedBoards([selectedBoard.id]); // Set default to current selected board
+      setIsInitialized(true);
     }
-  }, [selectedPeriod, selectedBoards, activeTab, paidFilter]);
+  }, [selectedBoard, isInitialized]); // Removed periodFilters from dependencies since it's memoized and won't change
 
-  // Debug effect to check boards loading
+  // Only update board filter when switching to a completely different board (not just deselecting)
   useEffect(() => {
-    console.log('🔍 Debug - Boards changed:', boards);
-    console.log('🔍 Debug - Summary changed:', summary);
-  }, [boards, summary]);
+    if (isInitialized && selectedBoard) {
+      // Only auto-select if no boards are currently selected AND we just switched boards
+      if (selectedBoards.length === 0) {
+        setSelectedBoards([selectedBoard.id]);
+      }
+    }
+  }, [selectedBoard, isInitialized]); // Removed selectedBoards from dependencies to prevent interference
+
+  // Check scrollability when boards data changes
+  useEffect(() => {
+    if (boards && boards.length > 0) {
+      // If we have more than 3 boards, likely needs scrolling
+      if (boards.length > 3) {
+        setCanScrollLeft(false);
+        setCanScrollRight(true);
+      } else {
+        setCanScrollLeft(false);
+        setCanScrollRight(false);
+      }
+    }
+  }, [boards]);
+
+  // Only load expenses when on expenses tab and filters change
+  useEffect(() => {
+    if (activeTab === 'expenses' && selectedPeriod) {
+      loadSummary();
+    }
+  }, [selectedPeriod, selectedBoards, customPeriod]);
 
   const loadSummary = async () => {
     setIsLoading(true);
     try {
       const filters: any = {};
-      if (selectedPeriod) {
+      
+      // Use custom period if available, otherwise use selected period
+      if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
+        filters.start_date = customPeriod.startDate;
+        filters.end_date = customPeriod.endDate;
+      } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
         filters.start_date = selectedPeriod.startDate;
         filters.end_date = selectedPeriod.endDate;
       }
+      
       if (selectedBoards.length > 0) {
         filters.board_ids = selectedBoards;
       }
 
-      console.log('🔍 Debug - Loading summary with filters:', filters);
       const result = await apiService.getExpensesSummary(filters);
-      console.log('🔍 Debug - Summary result:', result);
       
       if (result.success && result.data) {
-        console.log('🔍 Debug - Setting summary data:', result.data);
         setSummary(result.data);
       } else {
         console.error('Failed to load summary:', result.error);
@@ -127,10 +180,16 @@ const SummaryScreen: React.FC = () => {
     setIsLoading(true);
     try {
       const filters: any = {};
-      if (selectedPeriod) {
+      
+      // Use custom period if available, otherwise use selected period
+      if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
+        filters.start_date = customPeriod.startDate;
+        filters.end_date = customPeriod.endDate;
+      } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
         filters.start_date = selectedPeriod.startDate;
         filters.end_date = selectedPeriod.endDate;
       }
+      
       if (selectedBoards.length > 0) {
         filters.board_ids = selectedBoards;
       }
@@ -152,16 +211,185 @@ const SummaryScreen: React.FC = () => {
     }
   };
 
+  // Handle tab switching - only load debts when clicking on debts tab
+  const handleTabSwitch = (tab: 'expenses' | 'debts') => {
+    setActiveTab(tab);
+    if (tab === 'debts') {
+      loadDebts(); // Only call API when switching TO debts tab
+    }
+  };
+
+  // Only reload debts when filters change AND we're on debts tab
+  useEffect(() => {
+    if (activeTab === 'debts') {
+      loadDebts();
+    }
+  }, [paidFilter, selectedPeriod, selectedBoards, customPeriod]);
+
+  // Refresh data when screen comes into focus (returning from other screens)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isInitialized) {
+        if (activeTab === 'expenses' && selectedPeriod) {
+          loadSummary();
+        } else if (activeTab === 'debts') {
+          loadDebts();
+        }
+      }
+    }, [activeTab, selectedPeriod, isInitialized])
+  );
+
   const handlePeriodSelect = (period: PeriodFilter) => {
-    setSelectedPeriod(selectedPeriod?.label === period.label ? null : period);
+    if (period.label === 'טווח מותאם') {
+      // Initialize date values to current date when opening modal
+      const today = new Date();
+      setStartDateValue(today);
+      setEndDateValue(today);
+      setCustomStartDate(today.toISOString().split('T')[0]);
+      setCustomEndDate(today.toISOString().split('T')[0]);
+      setShowCustomDateModal(true);
+    } else {
+      setSelectedPeriod(selectedPeriod?.label === period.label ? null : period);
+      setCustomPeriod(null); // Clear custom period when selecting predefined period
+    }
+  };
+
+  const handleCustomDateSave = () => {
+    if (!customStartDate || !customEndDate) {
+      Alert.alert('שגיאה', 'יש לבחור תאריך התחלה וסיום');
+      return;
+    }
+
+    // Validate dates
+    const start = new Date(customStartDate);
+    const end = new Date(customEndDate);
+    
+    if (start > end) {
+      Alert.alert('שגיאה', 'תאריך ההתחלה חייב להיות לפני תאריך הסיום');
+      return;
+    }
+
+    // Set custom period
+    const customPeriodData = {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+    };
+    
+    setCustomPeriod(customPeriodData);
+    setSelectedPeriod({
+      label: 'טווח מותאם',
+      startDate: customPeriodData.startDate,
+      endDate: customPeriodData.endDate,
+    });
+    setShowCustomDateModal(false);
+    
+    // Reset date picker states
+    setShowStartDatePicker(false);
+    setShowEndDatePicker(false);
+  };
+
+  const formatDateForInput = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+  };
+
+  const handleStartDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowStartDatePicker(false);
+    }
+    if (selectedDate) {
+      setStartDateValue(selectedDate);
+      setCustomStartDate(selectedDate.toISOString().split('T')[0]);
+    }
+  };
+
+  const handleEndDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowEndDatePicker(false);
+    }
+    if (selectedDate) {
+      setEndDateValue(selectedDate);
+      setCustomEndDate(selectedDate.toISOString().split('T')[0]);
+    }
+  };
+
+  const openStartDatePicker = () => {
+    setShowStartDatePicker(true);
+  };
+
+  const openEndDatePicker = () => {
+    setShowEndDatePicker(true);
+  };
+
+  const getMemberName = (userId: string) => {
+    return userId === user?.id ? 'אני' : 'חבר';
+  };
+
+  // Sort boards with current selected board first
+  const getSortedBoards = () => {
+    if (!boards || !selectedBoard) return boards || [];
+    
+    const currentBoard = boards.find(board => board.id === selectedBoard.id);
+    const otherBoards = boards.filter(board => board.id !== selectedBoard.id);
+    
+    return currentBoard ? [currentBoard, ...otherBoards] : boards;
   };
 
   const handleBoardToggle = (boardId: string) => {
-    setSelectedBoards(prev => 
-      prev.includes(boardId) 
-        ? prev.filter(id => id !== boardId)
-        : [...prev, boardId]
-    );
+    setSelectedBoards(prev => {
+      if (prev.includes(boardId)) {
+        // If board is already selected, remove it (deselect)
+        return prev.filter(id => id !== boardId);
+      } else {
+        // If board is not selected, add it
+        return [...prev, boardId];
+      }
+    });
+  };
+
+  const handleScroll = (event: any) => {
+    if (!event || !event.nativeEvent) return;
+    
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    if (!contentOffset || !contentSize || !layoutMeasurement) return;
+    
+    const isAtLeft = contentOffset.x <= 0;
+    const isAtRight = contentOffset.x >= contentSize.width - layoutMeasurement.width - 1;
+    
+    setCanScrollLeft(!isAtLeft);
+    setCanScrollRight(!isAtRight);
+  };
+
+  const checkScrollability = (event: any) => {
+    if (!event || !event.nativeEvent) return;
+    
+    const { contentSize, layoutMeasurement } = event.nativeEvent;
+    if (!contentSize || !layoutMeasurement) return;
+    
+    const canScroll = contentSize.width > layoutMeasurement.width;
+    
+    if (canScroll) {
+      // When content is scrollable, initially show right arrow and hide left arrow
+      setCanScrollLeft(false);
+      setCanScrollRight(true);
+    } else {
+      // When content fits, hide both arrows
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+    }
+  };
+
+  const scrollLeft = () => {
+    if (boardScrollRef && boardScrollRef.scrollToOffset) {
+      boardScrollRef.scrollToOffset({ offset: 0, animated: true });
+    }
+  };
+
+  const scrollRight = () => {
+    if (boardScrollRef && boardScrollRef.scrollToEnd) {
+      boardScrollRef.scrollToEnd({ animated: true });
+    }
   };
 
   const handleMarkAsPaid = async (debtId: string, boardId: string) => {
@@ -169,13 +397,13 @@ const SummaryScreen: React.FC = () => {
       const result = await apiService.markDebtAsPaid(boardId, debtId);
       if (result.success) {
         await loadDebts();
-        Alert.alert('הצלחה', 'החוב סומן כשולם');
+        Alert.alert('הצלחה', 'ההתחשבנות סומנה כשולמה');
       } else {
-        Alert.alert('שגיאה', result.error || 'שגיאה בסימון החוב');
+        Alert.alert('שגיאה', result.error || 'שגיאה בסימון ההתחשבנות');
       }
     } catch (error) {
       console.error('Error marking debt as paid:', error);
-      Alert.alert('שגיאה', 'שגיאה בסימון החוב');
+      Alert.alert('שגיאה', 'שגיאה בסימון ההתחשבנות');
     }
   };
 
@@ -187,17 +415,33 @@ const SummaryScreen: React.FC = () => {
     return new Date(dateString).toLocaleDateString('he-IL');
   };
 
-  const getMemberName = (userId: string) => {
-    return userId === user?.id ? 'אני' : 'חבר';
+  // Calculate per-person debt summaries for people who owe the current user money
+  const calculatePersonalDebtSummary = () => {
+    if (!debts || !user) return [];
+    
+    const personalDebts: { [personName: string]: number } = {};
+    
+    debts.forEach(debt => {
+      // Only include unpaid debts where someone owes the current user money
+      if (!debt.is_paid && debt.to_user_id === user.id && debt.from_user_id !== user.id) {
+        const debtorName = debt.from_user_name || 'משתמש לא ידוע';
+        if (personalDebts[debtorName]) {
+          personalDebts[debtorName] += debt.amount;
+        } else {
+          personalDebts[debtorName] = debt.amount;
+        }
+      }
+    });
+    
+    // Convert to array and sort by amount (highest first)
+    return Object.entries(personalDebts)
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount);
   };
 
-  // Generate pie chart data for expenses by board
-  const generatePieChartData = (): PieChartData[] => {
-    if (!summary || !summary.expenses_by_board) return [];
-    
-    console.log('🔍 Debug - Summary data:', summary);
-    console.log('🔍 Debug - Boards:', boards);
-    console.log('🔍 Debug - Expenses by board:', summary.expenses_by_board);
+  // Generate bar chart data for expenses by board
+  const generateBarChartData = (): BarChartData[] => {
+    if (!summary || !summary.expenses_by_board || !boards || boards.length === 0) return [];
     
     const colors = [
       '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
@@ -205,26 +449,20 @@ const SummaryScreen: React.FC = () => {
     ];
     
     return Object.entries(summary.expenses_by_board).map(([boardId, amount], index) => {
-      console.log('🔍 Debug - Looking for board with ID:', boardId);
-      const board = boards.find(b => b.id === boardId);
-      console.log('🔍 Debug - Found board:', board);
+      const board = boards.find(b => b && b.id === boardId);
       
       return {
         key: boardId,
         value: amount,
-        svg: { fill: colors[index % colors.length] },
-        arc: { cornerRadius: 5 },
+        color: colors[index % colors.length],
         label: board?.name || `לוח ${boardId}`,
-        amount: amount,
       };
     });
   };
 
-  // Generate pie chart data for expenses by category
-  const generateCategoryPieChartData = (): PieChartData[] => {
+  // Generate bar chart data for expenses by category
+  const generateCategoryBarChartData = (): BarChartData[] => {
     if (!summary || !summary.expenses_by_category) return [];
-    
-    console.log('🔍 Debug - Category data:', summary.expenses_by_category);
     
     const colors = [
       '#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6',
@@ -232,71 +470,31 @@ const SummaryScreen: React.FC = () => {
     ];
     
     return Object.entries(summary.expenses_by_category).map(([category, amount], index) => {
-      console.log('🔍 Debug - Category:', category, 'Amount:', amount);
       return {
         key: category,
         value: amount,
-        svg: { fill: colors[index % colors.length] },
-        arc: { cornerRadius: 5 },
+        color: colors[index % colors.length],
         label: category,
-        amount: amount,
       };
     });
   };
 
-  const renderPieChart = (data: PieChartData[], title: string, colors: string[]) => {
+  const renderBarChart = (data: BarChartData[], title: string, colors: string[]) => {
     if (data.length === 0) return null;
     
     const total = data.reduce((sum, item) => sum + item.value, 0);
     
     return (
-      <View style={styles.chartContainer}>
+      <View style={styles.chartSection}>
         <Text style={styles.chartTitle}>{title}</Text>
         <View style={styles.chartWrapper}>
-          {/* Simple visual representation with circles */}
-          <View style={styles.circlesContainer}>
-            {data.map((item, index) => {
-              const percentage = (item.value / total) * 100;
-              const circleSize = Math.max(30, Math.min(80, percentage * 1.5));
-              
-              return (
-                <View key={item.key} style={styles.circleItem}>
-                  <View 
-                    style={[
-                      styles.dataCircle,
-                      {
-                        backgroundColor: item.svg.fill,
-                        width: circleSize,
-                        height: circleSize,
-                      }
-                    ]}
-                  />
-                  <Text style={styles.circlePercentage}>{percentage.toFixed(1)}%</Text>
-                </View>
-              );
-            })}
-          </View>
-          
-          <View style={styles.chartCenter}>
-            <Text style={styles.chartCenterTotal}>{formatCurrency(total)}</Text>
-            <Text style={styles.chartCenterLabel}>סה"כ</Text>
-          </View>
-        </View>
-        
-        {/* Legend */}
-        <View style={styles.legendContainer}>
-          {data.map((item, index) => (
-            <View key={item.key} style={styles.legendItem}>
-              <View style={[styles.legendColor, { backgroundColor: item.svg.fill }]} />
-              <View style={styles.legendTextContainer}>
-                <Text style={styles.legendLabel}>{item.label}</Text>
-                <Text style={styles.legendAmount}>{formatCurrency(item.amount)}</Text>
-                <Text style={styles.legendPercentage}>
-                  ({((item.amount / total) * 100).toFixed(1)}%)
-                </Text>
-              </View>
-            </View>
-          ))}
+          <BarChart
+            data={data}
+            width={screenWidth - 40}
+            height={200}
+            showLabels={showCharts}
+            showValues={true}
+          />
         </View>
       </View>
     );
@@ -335,7 +533,7 @@ const SummaryScreen: React.FC = () => {
           selectedBoards.includes(item.id) && styles.selectedBoardFilterText,
         ]}
       >
-        {item.name}
+        {selectedBoards.includes(item.id) ? '✓ ' : ''}{item.name}
       </Text>
     </TouchableOpacity>
   );
@@ -359,62 +557,105 @@ const SummaryScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  const renderDebtItem = ({ item }: { item: DebtWithBoard }) => (
-    <View style={[styles.debtItem, item.is_paid && styles.paidDebtItem]}>
-      <View style={styles.debtHeader}>
-        <Text style={styles.debtBoard}>{item.board_name}</Text>
-        <Text style={[styles.debtStatus, item.is_paid && styles.paidStatus]}>
-          {item.is_paid ? 'שולם' : 'לא שולם'}
-        </Text>
-      </View>
-      
-      <Text style={styles.debtDescription}>{item.description}</Text>
-      
-      <View style={styles.debtDetails}>
-        <Text style={styles.debtAmount}>{formatCurrency(item.amount)}</Text>
-        <Text style={styles.debtDate}>{formatDate(item.created_at)}</Text>
-      </View>
-      
-      <View style={styles.debtDirection}>
-        <Text style={styles.debtDirectionText}>
-          {item.from_user_id === user?.id ? 'אני חייב ל' : 'אני חייב ל'}
-          {getMemberName(item.to_user_id)}
-        </Text>
-      </View>
-      
-      {!item.is_paid && item.from_user_id === user?.id && (
-        <TouchableOpacity
-          style={styles.markPaidButton}
-          onPress={() => handleMarkAsPaid(item.id, item.board_id)}
-        >
-          <Text style={styles.markPaidButtonText}>סמן כשולם</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
+  const renderDebtItem = ({ item }: { item: DebtWithBoard }) => {
+    // Don't show debts with yourself
+    if (item.from_user_id === item.to_user_id) {
+      return null;
+    }
 
-  if (isLoading) {
+    const isIOwe = item.from_user_id === user?.id;
+    const otherUserName = isIOwe ? item.to_user_name : item.from_user_name;
+
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>טוען...</Text>
+      <View style={[styles.debtItem, item.is_paid && styles.paidDebtItem]}>
+        <View style={styles.debtHeader}>
+          <Text style={styles.debtBoard}>{item.board_name}</Text>
+          <Text style={[styles.debtStatus, item.is_paid && styles.paidStatus]}>
+            {item.is_paid ? 'שולם' : 'טרם שולם'}
+          </Text>
+        </View>
+        
+        <Text style={styles.debtDescription}>{item.description}</Text>
+        
+        <View style={styles.debtDetails}>
+          <Text style={styles.debtAmount}>{formatCurrency(item.amount)}</Text>
+          <Text style={styles.debtDate}>{formatDate(item.created_at)}</Text>
+        </View>
+        
+        <View style={styles.debtDirection}>
+          <Text style={styles.debtDirectionText}>
+            {isIOwe ? `אני צריך להחזיר ל${otherUserName}` : `${otherUserName} צריך להחזיר לי`}
+          </Text>
+        </View>
+        
+        {!item.is_paid && !isIOwe && (
+          <TouchableOpacity
+            style={styles.markPaidButton}
+            onPress={() => handleMarkAsPaid(item.id, item.board_id)}
+          >
+            <Text style={styles.markPaidButtonText}>
+              אשר קבלת תשלום
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
-  }
+  };
+
+  // Update tutorial context when this screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🎓 SummaryScreen: Setting tutorial screen to Summary');
+      setCurrentScreen('Summary');
+      
+      // Check if we should show tutorial for this screen
+      const checkAndStartTutorial = async () => {
+        try {
+          console.log('🎓 SummaryScreen: About to check tutorial for Summary screen');
+          const shouldShow = await checkScreenTutorial('Summary');
+          console.log('🎓 SummaryScreen: checkScreenTutorial returned:', shouldShow);
+          
+          if (shouldShow) {
+            console.log('🎓 SummaryScreen: Starting tutorial now');
+            startTutorial();
+          } else {
+            console.log('🎓 SummaryScreen: Not starting tutorial - already completed or error');
+          }
+        } catch (error) {
+          console.error('🎓 SummaryScreen: Error in checkAndStartTutorial:', error);
+        }
+      };
+      
+      // Add a small delay to let the screen settle
+      setTimeout(() => {
+        checkAndStartTutorial();
+      }, 500);
+    }, [setCurrentScreen, checkScreenTutorial, startTutorial])
+  );
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>סיכום</Text>
         <Text style={styles.subtitle}>
-          {selectedPeriod ? selectedPeriod.label : 'כל התקופות'}
+          {selectedPeriod ? 
+            (selectedPeriod.label === 'טווח מותאם' && customPeriod ? 
+              `${formatDateForInput(customPeriod.startDate)} - ${formatDateForInput(customPeriod.endDate)}` : 
+              selectedPeriod.label) : 
+            'כל התקופות'}
         </Text>
+        {isLoading && (
+          <View style={styles.inlineLoadingContainer}>
+            <Text style={styles.inlineLoadingText}>מעדכן נתונים...</Text>
+          </View>
+        )}
       </View>
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'expenses' && styles.activeTabButton]}
-          onPress={() => setActiveTab('expenses')}
+          onPress={() => handleTabSwitch('expenses')}
         >
           <Text style={[styles.tabButtonText, activeTab === 'expenses' && styles.activeTabButtonText]}>
             הוצאות
@@ -422,10 +663,10 @@ const SummaryScreen: React.FC = () => {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'debts' && styles.activeTabButton]}
-          onPress={() => setActiveTab('debts')}
+          onPress={() => handleTabSwitch('debts')}
         >
           <Text style={[styles.tabButtonText, activeTab === 'debts' && styles.activeTabButtonText]}>
-            חובות
+            התחשבנויות
           </Text>
         </TouchableOpacity>
       </View>
@@ -468,17 +709,49 @@ const SummaryScreen: React.FC = () => {
       {/* Board Filters */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>סינון לפי לוח</Text>
-        <FlatList
-          data={boards}
-          renderItem={renderBoardFilter}
-          keyExtractor={(item) => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterList}
-        />
+        <Text style={styles.filterHelpText}>לחץ על לוח לבחירה, לחץ שוב לביטול</Text>
+        {boards && boards.length > 0 ? (
+          <View style={styles.scrollContainer}>
+            {canScrollLeft && (
+              <TouchableOpacity style={styles.scrollArrowLeft} onPress={scrollLeft}>
+                <Text style={styles.scrollArrowText}>‹</Text>
+              </TouchableOpacity>
+            )}
+            
+            <FlatList
+              ref={(ref) => setBoardScrollRef(ref)}
+              data={getSortedBoards()}
+              renderItem={renderBoardFilter}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.filterList}
+              onScroll={handleScroll}
+              onContentSizeChange={checkScrollability}
+              scrollEventThrottle={16}
+            />
+            
+            {canScrollRight && (
+              <TouchableOpacity style={styles.scrollArrowRight} onPress={scrollRight}>
+                <Text style={styles.scrollArrowText}>›</Text>
+              </TouchableOpacity>
+            )}
+            
+            {canScrollRight && (
+              <View
+                style={styles.fadeRight}
+              />
+            )}
+          </View>
+        ) : (
+          <Text style={styles.noDataText}>טוען לוחות...</Text>
+        )}
+        {selectedBoards.length === 0 && (
+          <Text style={styles.allBoardsSelectedText}>מציג נתונים מכל הלוחות</Text>
+        )}
       </View>
 
-      {/* Paid Status Filters - Only for debts tab */}
+      {/* Paid Status Filters - Only for settlements tab */}
       {activeTab === 'debts' && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>סטטוס תשלום</Text>
@@ -486,7 +759,7 @@ const SummaryScreen: React.FC = () => {
             data={[
               { label: 'הכל', value: 'all' as const },
               { label: 'שולם', value: 'paid' as const },
-              { label: 'לא שולם', value: 'unpaid' as const },
+              { label: 'טרם שולם', value: 'unpaid' as const },
             ]}
             renderItem={renderPaidFilter}
             keyExtractor={(item) => item.value}
@@ -500,20 +773,6 @@ const SummaryScreen: React.FC = () => {
       {/* Expenses Tab Content */}
       {activeTab === 'expenses' && (
         <>
-          {/* Debug Info */}
-          <View style={styles.debugContainer}>
-            <Text style={styles.debugText}>Debug Info:</Text>
-            <Text style={styles.debugText}>Boards loaded: {boards.length}</Text>
-            <Text style={styles.debugText}>Summary loaded: {summary ? 'Yes' : 'No'}</Text>
-            {summary && (
-              <>
-                <Text style={styles.debugText}>Total amount: {summary.total_amount}</Text>
-                <Text style={styles.debugText}>Categories: {Object.keys(summary.expenses_by_category).length}</Text>
-                <Text style={styles.debugText}>Boards: {Object.keys(summary.expenses_by_board).length}</Text>
-              </>
-            )}
-          </View>
-
           {summary && (
             <>
               {/* Summary Cards */}
@@ -545,7 +804,7 @@ const SummaryScreen: React.FC = () => {
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>הוצאות לפי קטגוריה</Text>
                   {showCharts ? (
-                    renderPieChart(generateCategoryPieChartData(), 'הוצאות לפי קטגוריה', ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22', '#34495E', '#16A085', '#8E44AD'])
+                    renderBarChart(generateCategoryBarChartData(), 'הוצאות לפי קטגוריה', ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22', '#34495E', '#16A085', '#8E44AD'])
                   ) : (
                     <View style={styles.listContainer}>
                       {Object.entries(summary.expenses_by_category)
@@ -566,13 +825,13 @@ const SummaryScreen: React.FC = () => {
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>הוצאות לפי לוח</Text>
                   {showCharts ? (
-                    renderPieChart(generatePieChartData(), 'הוצאות לפי לוח', ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'])
+                    renderBarChart(generateBarChartData(), 'הוצאות לפי לוח', ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'])
                   ) : (
                     <View style={styles.listContainer}>
                       {Object.entries(summary.expenses_by_board)
                         .sort(([,a], [,b]) => b - a)
                         .map(([boardId, amount], index) => {
-                          const board = boards.find(b => b.id === boardId);
+                          const board = boards.find(b => b && b.id === boardId);
                           return (
                             <View key={index} style={styles.boardItem}>
                               <Text style={styles.boardName}>{board?.name || `לוח ${boardId}`}</Text>
@@ -606,28 +865,28 @@ const SummaryScreen: React.FC = () => {
         </>
       )}
 
-      {/* Debts Tab Content */}
+      {/* Settlements Tab Content */}
       {activeTab === 'debts' && (
         <>
-          {/* Debt Summary Cards */}
+          {/* Settlement Summary Cards */}
           {debtSummary && (
             <View style={styles.summaryCards}>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryCardTitle}>אני חייב</Text>
+                <Text style={styles.summaryCardTitle}>אני צריך להחזיר</Text>
                 <Text style={styles.summaryCardAmount}>
                   {formatCurrency(debtSummary.total_owed)}
                 </Text>
               </View>
               
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryCardTitle}>חייבים לי</Text>
+                <Text style={styles.summaryCardTitle}>צריכים להחזיר לי</Text>
                 <Text style={styles.summaryCardAmount}>
                   {formatCurrency(debtSummary.total_owed_to_me)}
                 </Text>
               </View>
               
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryCardTitle}>לא שולם</Text>
+                <Text style={styles.summaryCardTitle}>טרם שולם</Text>
                 <Text style={styles.summaryCardAmount}>
                   {formatCurrency(debtSummary.total_unpaid)}
                 </Text>
@@ -635,9 +894,30 @@ const SummaryScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Debts List */}
+          {/* Personal Debt Summary - Who owes me money */}
+          {(() => {
+            const personalDebtSummary = calculatePersonalDebtSummary();
+            return personalDebtSummary.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>סיכום יתרות אישי</Text>
+                <View style={styles.personalDebtSummary}>
+                  {personalDebtSummary.map((debt, index) => (
+                    <View key={index} style={styles.personalDebtItem}>
+                      <Text style={styles.personalDebtText}>
+                        <Text style={styles.personalDebtName}>{debt.name}</Text>
+                        <Text style={styles.personalDebtDescription}> צריך להחזיר לך סה"כ </Text>
+                        <Text style={styles.personalDebtAmount}>{formatCurrency(debt.amount)}</Text>
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null;
+          })()}
+
+          {/* Settlements List */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>רשימת חובות</Text>
+            <Text style={styles.sectionTitle}>רשימת התחשבנויות</Text>
             {debts.length > 0 ? (
               <View style={styles.debtsList}>
                 {debts.map((debt, index) => (
@@ -648,7 +928,7 @@ const SummaryScreen: React.FC = () => {
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>אין חובות להצגה</Text>
+                <Text style={styles.emptyStateText}>אין התחשבנויות להצגה</Text>
               </View>
             )}
           </View>
@@ -660,6 +940,108 @@ const SummaryScreen: React.FC = () => {
           <Text style={styles.emptyStateText}>אין נתונים להצגה</Text>
         </View>
       )}
+
+      {/* Loading indicator at bottom */}
+      {isLoading && (
+        <View style={styles.bottomLoadingContainer}>
+          <Text style={styles.bottomLoadingText}>טוען...</Text>
+        </View>
+      )}
+
+      {/* Custom Date Range Modal */}
+      <Modal
+        visible={showCustomDateModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowCustomDateModal(false);
+          setShowStartDatePicker(false);
+          setShowEndDatePicker(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>בחירת טווח תאריכים</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => {
+                  setShowCustomDateModal(false);
+                  setShowStartDatePicker(false);
+                  setShowEndDatePicker(false);
+                }}
+              >
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dateInputContainer}>
+              <Text style={styles.dateLabel}>תאריך התחלה:</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={openStartDatePicker}
+              >
+                <Text style={styles.datePickerText}>
+                  {customStartDate || 'בחר תאריך התחלה'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dateInputContainer}>
+              <Text style={styles.dateLabel}>תאריך סיום:</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={openEndDatePicker}
+              >
+                <Text style={styles.datePickerText}>
+                  {customEndDate || 'בחר תאריך סיום'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => {
+                  setShowCustomDateModal(false);
+                  setShowStartDatePicker(false);
+                  setShowEndDatePicker(false);
+                }}
+              >
+                <Text style={styles.modalCancelText}>ביטול</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalSaveButton}
+                onPress={handleCustomDateSave}
+              >
+                <Text style={styles.modalSaveText}>אישור</Text>
+              </TouchableOpacity>
+            </View>
+
+            {showStartDatePicker && (
+              <DateTimePicker
+                value={startDateValue}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleStartDateChange}
+                maximumDate={new Date()}
+                minimumDate={new Date(2020, 0, 1)}
+              />
+            )}
+
+            {showEndDatePicker && (
+              <DateTimePicker
+                value={endDateValue}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleEndDateChange}
+                maximumDate={new Date()}
+                minimumDate={new Date(2020, 0, 1)}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -996,7 +1378,7 @@ const styles = StyleSheet.create({
   selectedPaidFilterText: {
     color: 'white',
   },
-  chartContainer: {
+  chartSection: {
     backgroundColor: 'white',
     padding: 16,
     borderRadius: 12,
@@ -1092,19 +1474,6 @@ const styles = StyleSheet.create({
   activeViewToggleText: {
     color: 'white',
   },
-  debugContainer: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    margin: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  debugText: {
-    fontSize: 12,
-    color: '#7f8c8d',
-    marginBottom: 4,
-  },
   circlesContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -1124,6 +1493,205 @@ const styles = StyleSheet.create({
     color: '#7f8c8d',
     textAlign: 'center',
     marginTop: 4,
+  },
+  scrollContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  scrollArrowLeft: {
+    position: 'absolute',
+    left: 0,
+    zIndex: 1,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+  },
+  scrollArrowRight: {
+    position: 'absolute',
+    right: 0,
+    zIndex: 1,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+  },
+  scrollArrowText: {
+    fontSize: 24,
+    color: '#333',
+  },
+  fadeRight: {
+    position: 'absolute',
+    right: 40, // Position it to not overlap with the arrow
+    top: 0,
+    bottom: 0,
+    width: 30,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    pointerEvents: 'none',
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  inlineLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  inlineLoadingText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  bottomLoadingContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  bottomLoadingText: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  modalCloseButton: {
+    padding: 8,
+  },
+  modalCloseText: {
+    fontSize: 18,
+    color: '#7f8c8d',
+  },
+  dateInputContainer: {
+    marginBottom: 16,
+  },
+  dateLabel: {
+    fontSize: 16,
+    color: '#2c3e50',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#f8f9fa',
+    textAlign: 'right',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  modalCancelButton: {
+    flex: 1,
+    marginRight: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    color: '#7f8c8d',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  modalSaveButton: {
+    flex: 1,
+    marginLeft: 8,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#3498db',
+    alignItems: 'center',
+  },
+  modalSaveText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  filterHelpText: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  allBoardsSelectedText: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  personalDebtSummary: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+  },
+  personalDebtItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  personalDebtText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    fontWeight: '500',
+  },
+  personalDebtName: {
+    color: '#e74c3c',
+    fontWeight: 'bold',
+  },
+  personalDebtDescription: {
+    color: '#7f8c8d',
+  },
+  personalDebtAmount: {
+    fontSize: 16,
+    color: '#27ae60',
+    fontWeight: 'bold',
+  },
+  datePickerButton: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+  },
+  datePickerText: {
+    color: '#2c3e50',
+    fontSize: 16,
+    textAlign: 'center',
   },
 });
 

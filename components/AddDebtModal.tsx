@@ -71,13 +71,13 @@ export function AddDebtModal({
     if (debtType === 'i-owe') {
       finalFromUser = currentUser;
       if (!finalToUser.trim()) {
-        Alert.alert('שגיאה', 'אנא בחר למי אתה חייב');
+        Alert.alert('שגיאה', 'אנא בחר למי אתה צריך להחזיר');
         return;
       }
     } else {
       finalToUser = currentUser;
       if (!finalFromUser.trim()) {
-        Alert.alert('שגיאה', 'אנא בחר מי חייב לך');
+        Alert.alert('שגיאה', 'אנא בחר מי צריך להחזיר לך');
         return;
       }
     }
@@ -148,7 +148,7 @@ export function AddDebtModal({
                     debtType === 'i-owe' && styles.debtTypeTextActive,
                   ]}
                 >
-                  אני חייב
+                  אני צריך להחזיר
                 </ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
@@ -169,7 +169,7 @@ export function AddDebtModal({
                     debtType === 'owe-me' && styles.debtTypeTextActive,
                   ]}
                 >
-                  מגיע לי
+                  צריך להחזיר לי
                 </ThemedText>
               </TouchableOpacity>
             </View>
@@ -178,7 +178,7 @@ export function AddDebtModal({
           {/* User Selection */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>
-              {debtType === 'i-owe' ? 'אני חייב ל:' : 'חייב לי:'}
+              {debtType === 'i-owe' ? 'אני צריך להחזיר ל:' : 'צריך להחזיר לי:'}
             </ThemedText>
             <View style={styles.userGrid}>
               {otherUsers.map((user) => (

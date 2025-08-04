@@ -1,7 +1,9 @@
 import { Debt } from '@/components/DebtCard';
 import { Expense } from '@/components/ExpenseCard';
 import { OnboardingConfig } from '@/components/OnboardingModal';
-import React, { createContext, ReactNode, useCallback, useContext, useState } from 'react';
+import { apiService, Category } from '@/services/api';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { useBoard } from './BoardContext';
 
 interface QuickCategory {
   id: string;
@@ -50,17 +52,18 @@ interface ExpenseContextType {
   getDebtsByExpenseId: (expenseId: string) => Debt[];
   getAllUsersFromDebts: () => string[];
   
-  // Quick Categories
+  // Quick Categories (now board-specific)
   quickCategories: QuickCategory[];
   addQuickCategory: (category: Omit<QuickCategory, 'id'>) => void;
   updateQuickCategory: (categoryId: string, updatedData: Partial<QuickCategory>) => void;
   deleteQuickCategory: (categoryId: string) => void;
   reorderQuickCategories: (fromIndex: number, toIndex: number) => void;
+  refreshBoardCategories: () => Promise<void>;
 }
 
 const ExpenseContext = createContext<ExpenseContextType | undefined>(undefined);
 
-// Default quick categories
+// Default quick categories (fallback when no board is selected)
 const DEFAULT_QUICK_CATEGORIES: QuickCategory[] = [
   { id: '1', name: 'חשמל', icon: 'flash', color: '#FFD700' },
   { id: '2', name: 'מים', icon: 'water', color: '#00BFFF' },
@@ -70,6 +73,7 @@ const DEFAULT_QUICK_CATEGORIES: QuickCategory[] = [
 ];
 
 export function ExpenseProvider({ children }: { children: ReactNode }) {
+  const { selectedBoard } = useBoard();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<Expense[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
@@ -83,6 +87,47 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   // Add onboarding state
   const [isOnboardingComplete, setIsOnboardingComplete] = useState(false);
   const [onboardingConfig, setOnboardingConfig] = useState<OnboardingConfig | null>(null);
+
+  // Load board categories whenever selected board changes
+  useEffect(() => {
+    if (selectedBoard) {
+      refreshBoardCategories();
+    } else {
+      // If no board selected, use default categories
+      setQuickCategories(DEFAULT_QUICK_CATEGORIES);
+    }
+  }, [selectedBoard]);
+
+  const refreshBoardCategories = useCallback(async () => {
+    if (!selectedBoard) {
+      setQuickCategories(DEFAULT_QUICK_CATEGORIES);
+      return;
+    }
+
+    try {
+      console.log('🔄 Loading categories for board:', selectedBoard.id);
+      const result = await apiService.getBoardCategories(selectedBoard.id);
+      
+      if (result.success && result.data) {
+        // Convert API categories to QuickCategory format
+        const boardCategories: QuickCategory[] = result.data.categories.map((category: Category) => ({
+          id: category.id,
+          name: category.name,
+          icon: category.icon,
+          color: category.color,
+        }));
+
+        console.log('✅ Loaded', boardCategories.length, 'categories for board');
+        setQuickCategories(boardCategories);
+      } else {
+        console.warn('Failed to load board categories, using defaults');
+        setQuickCategories(DEFAULT_QUICK_CATEGORIES);
+      }
+    } catch (error) {
+      console.error('Error loading board categories:', error);
+      setQuickCategories(DEFAULT_QUICK_CATEGORIES);
+    }
+  }, [selectedBoard]);
 
   // Add some mock data for previous months
   const [mockExpenses] = useState<Expense[]>([
@@ -481,15 +526,52 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     return Array.from(allUsers);
   }, [debts]);
 
-  // Quick Categories functions
-  const addQuickCategory = useCallback((category: Omit<QuickCategory, 'id'>) => {
-    const newCategory: QuickCategory = {
-      id: Date.now().toString(),
-      ...category,
-    };
-    setQuickCategories(prev => [...prev, newCategory]);
-  }, []);
+  // Quick Categories functions - Updated to work with board-specific categories
+  const addQuickCategory = useCallback(async (category: Omit<QuickCategory, 'id'>) => {
+    if (!selectedBoard) {
+      // If no board selected, just add locally
+      const newCategory: QuickCategory = {
+        id: Date.now().toString(),
+        ...category,
+      };
+      setQuickCategories(prev => [...prev, newCategory]);
+      return;
+    }
 
+    try {
+      // Add category to the board via API
+      const result = await apiService.createCategory(selectedBoard.id, {
+        name: category.name,
+        icon: category.icon,
+        color: category.color,
+        is_default: false
+      });
+
+      if (result.success) {
+        // Refresh categories from API
+        await refreshBoardCategories();
+      } else {
+        console.error('Failed to add category:', result.error);
+        // Fall back to local addition
+        const newCategory: QuickCategory = {
+          id: Date.now().toString(),
+          ...category,
+        };
+        setQuickCategories(prev => [...prev, newCategory]);
+      }
+    } catch (error) {
+      console.error('Error adding category:', error);
+      // Fall back to local addition
+      const newCategory: QuickCategory = {
+        id: Date.now().toString(),
+        ...category,
+      };
+      setQuickCategories(prev => [...prev, newCategory]);
+    }
+  }, [selectedBoard, refreshBoardCategories]);
+
+  // Note: Update and delete functions work locally only for now
+  // TODO: Add API endpoints for updating and deleting categories
   const updateQuickCategory = useCallback((categoryId: string, updatedData: Partial<QuickCategory>) => {
     setQuickCategories(prev => 
       prev.map(category => 
@@ -574,12 +656,13 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
     getDebtsByExpenseId,
     getAllUsersFromDebts,
     
-    // Quick Categories
+    // Quick Categories (now board-specific)
     quickCategories,
     addQuickCategory,
     updateQuickCategory,
     deleteQuickCategory,
     reorderQuickCategories,
+    refreshBoardCategories,
   };
 
   return (

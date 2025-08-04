@@ -1,54 +1,83 @@
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Image,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
+import { getImageUrl } from '../config/api';
+import { getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Category, Expense } from '../services/api';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { selectedBoard, boardMembers } = useBoard();
+  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses } = useBoard();
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const { setCurrentScreen, checkScreenTutorial, startTutorial, forceStartTutorial } = useTutorial();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+
+  // Update tutorial context when this screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🎓 HomeScreen: Setting tutorial screen to Home');
+      setCurrentScreen('Home');
+      
+      // Check if we should show tutorial for this screen
+      const checkAndStartTutorial = async () => {
+        try {
+          console.log('🎓 HomeScreen: About to check tutorial for Home screen');
+          const shouldShow = await checkScreenTutorial('Home');
+          console.log('🎓 HomeScreen: checkScreenTutorial returned:', shouldShow);
+          
+          if (shouldShow) {
+            console.log('🎓 HomeScreen: Starting tutorial now');
+            startTutorial();
+          } else {
+            console.log('🎓 HomeScreen: Not starting tutorial - already completed or error');
+          }
+        } catch (error) {
+          console.error('🎓 HomeScreen: Error in checkAndStartTutorial:', error);
+        }
+      };
+      
+      // Add a small delay to let the screen settle
+      setTimeout(() => {
+        checkAndStartTutorial();
+      }, 500);
+    }, [setCurrentScreen, checkScreenTutorial, startTutorial])
+  );
 
   useEffect(() => {
     if (selectedBoard) {
-      loadData();
+      loadCategories();
     }
   }, [selectedBoard]);
 
-  const loadData = async () => {
+  const loadCategories = async () => {
     if (!selectedBoard) return;
 
     setIsLoading(true);
     try {
-      // Load expenses and categories in parallel
-      const [expensesResult, categoriesResult] = await Promise.all([
-        apiService.getBoardExpenses(selectedBoard.id),
-        apiService.getBoardCategories(selectedBoard.id),
-      ]);
-
-      if (expensesResult.success && expensesResult.data) {
-        setExpenses(expensesResult.data.expenses);
-      }
+      const categoriesResult = await apiService.getBoardCategories(selectedBoard.id);
 
       if (categoriesResult.success && categoriesResult.data) {
         setCategories(categoriesResult.data.categories);
       }
     } catch (error) {
-      console.error('Error loading data:', error);
-      Alert.alert('שגיאה', 'שגיאה בטעינת הנתונים');
+      console.error('Error loading categories:', error);
+      Alert.alert('שגיאה', 'שגיאה בטעינת הקטגוריות');
     } finally {
       setIsLoading(false);
     }
@@ -56,13 +85,16 @@ const HomeScreen: React.FC = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([
+      refreshBoardExpenses(),
+      loadCategories()
+    ]);
     setRefreshing(false);
   };
 
   const getCategoryColor = (categoryName: string) => {
-    const category = categories.find(cat => cat.name === categoryName);
-    return category?.color || '#9370DB';
+    const category = categories.find(c => c.name === categoryName);
+    return category?.color || '#3498db';
   };
 
   const getMemberName = (userId: string) => {
@@ -70,13 +102,113 @@ const HomeScreen: React.FC = () => {
     return member ? `${member.user.first_name} ${member.user.last_name}` : 'לא ידוע';
   };
 
+  // Calculate top 7 most frequent categories
+  const getTopCategories = () => {
+    if (boardExpenses.length === 0) {
+      // If no expenses, use board type quick categories or default ones
+      const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
+      const quickCategories = boardType?.quickCategories || [];
+      return quickCategories.slice(0, 7);
+    }
+
+    // Count frequency of each category
+    const categoryCount: Record<string, { count: number; icon?: string; color?: string }> = {};
+    
+    boardExpenses.forEach(expense => {
+      if (categoryCount[expense.category]) {
+        categoryCount[expense.category].count++;
+      } else {
+        // Get icon and color from categories or board type
+        const category = categories.find(c => c.name === expense.category);
+        const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
+        const quickCategory = boardType?.quickCategories.find(q => q.name === expense.category);
+        
+        categoryCount[expense.category] = {
+          count: 1,
+          icon: quickCategory?.icon || category?.icon || '📋',
+          color: quickCategory?.color || category?.color || '#3498db'
+        };
+      }
+    });
+
+    // Sort by frequency and take top 7
+    const sortedCategories = Object.entries(categoryCount)
+      .sort(([,a], [,b]) => b.count - a.count)
+      .slice(0, 7)
+      .map(([name, data]) => ({
+        name,
+        icon: data.icon || '📋',
+        color: data.color || '#3498db'
+      }));
+
+    // If we have less than 7, fill with board type quick categories
+    if (sortedCategories.length < 7) {
+      const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
+      const quickCategories = boardType?.quickCategories || [];
+      
+      quickCategories.forEach(category => {
+        if (sortedCategories.length < 7 && !sortedCategories.find(c => c.name === category.name)) {
+          sortedCategories.push(category);
+        }
+      });
+    }
+
+    return sortedCategories;
+  };
+
+  const handleQuickAddExpense = (categoryName: string) => {
+    (navigation as any).navigate('AddExpense', { preselectedCategory: categoryName });
+  };
+
+  const handleDeleteExpense = async (expense: Expense) => {
+    if (!selectedBoard || !user) return;
+    
+    // Check if user can delete this expense (only the creator can delete)
+    if (expense.created_by !== user.id) {
+      Alert.alert('שגיאה', 'ניתן למחוק רק הוצאות שיצרת בעצמך');
+      return;
+    }
+
+    Alert.alert(
+      'מחיקת הוצאה',
+      `האם אתה בטוח שברצונך למחוק את ההוצאה "${expense.description || expense.category}"?`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'מחק',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await apiService.deleteExpense(selectedBoard.id, expense.id);
+              if (result.success) {
+                await refreshBoardExpenses();
+                Alert.alert('הצלחה', 'ההוצאה נמחקה בהצלחה');
+              } else {
+                // Handle different error types
+                let errorMessage = result.error || 'שגיאה במחיקת ההוצאה';
+                if (result.error?.includes('payments have already been made')) {
+                  errorMessage = 'לא ניתן למחוק הוצאה שכבר בוצעו עליה תשלומים. פנה לתמיכה אם יש צורך בשינוי';
+                }
+                Alert.alert('שגיאה', errorMessage);
+              }
+            } catch (error) {
+              console.error('Error deleting expense:', error);
+              Alert.alert('שגיאה', 'שגיאה במחיקת ההוצאה');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const calculateTotalExpenses = () => {
-    return expenses.reduce((total, expense) => total + expense.amount, 0);
+    return boardExpenses.reduce((total, expense) => total + expense.amount, 0);
   };
 
   const calculateMyExpenses = () => {
-    return expenses.reduce((total, expense) => {
-      if (expense.paid_by === user?.id) {
+    if (!user) return 0;
+    return boardExpenses.reduce((total, expense) => {
+      if (expense.paid_by === user.id) {
         return total + expense.amount;
       }
       return total;
@@ -84,79 +216,113 @@ const HomeScreen: React.FC = () => {
   };
 
   const renderExpenseItem = ({ item }: { item: Expense }) => (
-    <View style={styles.expenseItem}>
-      <View style={styles.expenseHeader}>
-        <View style={styles.categoryContainer}>
-          <View
-            style={[
-              styles.categoryIndicator,
-              { backgroundColor: getCategoryColor(item.category) },
-            ]}
-          />
-          <Text style={styles.categoryName}>{item.category}</Text>
+    <TouchableOpacity
+      style={styles.expenseItem}
+      onPress={() => setSelectedExpense(item)}
+      onLongPress={() => handleDeleteExpense(item)}
+    >
+      <View style={styles.expenseMain}>
+        <View style={styles.expenseHeader}>
+          <View style={styles.categoryContainer}>
+            <View
+              style={[
+                styles.categoryIndicator,
+                { backgroundColor: getCategoryColor(item.category) },
+              ]}
+            />
+            <Text style={styles.categoryName}>{item.category}</Text>
+          </View>
+          <Text style={styles.expenseAmount}>₪{item.amount.toFixed(2)}</Text>
         </View>
-        <Text style={styles.expenseAmount}>₪{item.amount.toFixed(2)}</Text>
+        
+        {item.description && (
+          <Text style={styles.expenseDescription}>{item.description}</Text>
+        )}
+        
+        <View style={styles.expenseFooter}>
+          <Text style={styles.paidByText}>
+            שולם על ידי: {getMemberName(item.paid_by)}
+          </Text>
+          <Text style={styles.expenseDate}>
+            {new Date(item.date).toLocaleDateString('he-IL')}
+          </Text>
+        </View>
+        
+        {item.tags && item.tags.length > 0 && (
+          <View style={styles.tagsContainer}>
+            {item.tags.map((tag, index) => (
+              <View key={index} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
       
-      {item.description && (
-        <Text style={styles.expenseDescription}>{item.description}</Text>
-      )}
-      
-      <View style={styles.expenseFooter}>
-        <Text style={styles.paidByText}>
-          שולם על ידי: {getMemberName(item.paid_by)}
-        </Text>
-        <Text style={styles.expenseDate}>
-          {new Date(item.date).toLocaleDateString('he-IL')}
-        </Text>
-      </View>
-      
-      {item.tags && item.tags.length > 0 && (
-        <View style={styles.tagsContainer}>
-          {item.tags.map((tag, index) => (
-            <View key={index} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
-            </View>
-          ))}
+      {item.image_url && (
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: getImageUrl(item.image_url) || item.image_url }} style={styles.expenseImage} />
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 
   const renderSummary = () => (
     <View style={styles.summaryContainer}>
-      <View style={styles.summaryItem}>
-        <Text style={styles.summaryLabel}>סה"כ הוצאות</Text>
-        <Text style={styles.summaryValue}>₪{calculateTotalExpenses().toFixed(2)}</Text>
-      </View>
-      
-      <View style={styles.summaryItem}>
-        <Text style={styles.summaryLabel}>ההוצאות שלי</Text>
-        <Text style={styles.summaryValue}>₪{calculateMyExpenses().toFixed(2)}</Text>
-      </View>
-      
-      <View style={styles.summaryItem}>
-        <Text style={styles.summaryLabel}>מספר חברים</Text>
-        <Text style={styles.summaryValue}>{boardMembers.length}</Text>
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>סה"כ הוצאות</Text>
+          <Text style={styles.summaryValue}>₪{calculateTotalExpenses().toFixed(2)}</Text>
+        </View>
+        
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>ההוצאות שלי</Text>
+          <Text style={styles.summaryValue}>₪{calculateMyExpenses().toFixed(2)}</Text>
+        </View>
       </View>
     </View>
   );
+
+  const renderQuickCategories = () => {
+    const topCategories = getTopCategories();
+    
+    return (
+      <View style={styles.quickCategoriesContainer}>
+        {topCategories.map((category, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[styles.quickCategoryButton, { backgroundColor: category.color }]}
+            onPress={() => handleQuickAddExpense(category.name)}
+          >
+            <Text style={styles.quickCategoryIcon}>{category.icon}</Text>
+            <Text style={styles.quickCategoryText}>{category.name}</Text>
+          </TouchableOpacity>
+        ))}
+        
+        <TouchableOpacity
+          style={[styles.quickCategoryButton, { backgroundColor: '#95a5a6' }]}
+          onPress={() => navigation.navigate('AddExpense' as never)}
+        >
+          <Text style={styles.quickCategoryIcon}>➕</Text>
+          <Text style={styles.quickCategoryText}>אחר</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
       {renderSummary()}
       
-      <View style={styles.header}>
+      <View style={styles.headerContainer}>
+        <View style={styles.quickCategoriesWrapper}>
+          {renderQuickCategories()}
+        </View>
+        
         <Text style={styles.sectionTitle}>הוצאות אחרונות</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddExpense' as never)}
-        >
-          <Text style={styles.addButtonText}>+ הוסף</Text>
-        </TouchableOpacity>
       </View>
 
-      {expenses.length === 0 ? (
+      {boardExpenses.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateTitle}>אין הוצאות עדיין</Text>
           <Text style={styles.emptyStateSubtitle}>
@@ -165,7 +331,7 @@ const HomeScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
-          data={expenses}
+          data={boardExpenses}
           renderItem={renderExpenseItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.expenseList}
@@ -173,6 +339,16 @@ const HomeScreen: React.FC = () => {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
           showsVerticalScrollIndicator={false}
+        />
+      )}
+      
+      {selectedExpense && (
+        <ExpenseDetailsModal
+          visible={!!selectedExpense}
+          onClose={() => setSelectedExpense(null)}
+          expense={selectedExpense}
+          getMemberName={getMemberName}
+          getCategoryColor={getCategoryColor}
         />
       )}
     </View>
@@ -198,20 +374,25 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  summaryItem: {
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  summaryItem: {
     alignItems: 'center',
-    marginBottom: 12,
+    flex: 1,
   },
   summaryLabel: {
     fontSize: 16,
     color: '#7f8c8d',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   summaryValue: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#2c3e50',
+    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -220,21 +401,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2c3e50',
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
   },
-  addButton: {
-    backgroundColor: '#3498db',
+  debugButton: {
+    backgroundColor: '#e74c3c',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 6,
   },
-  addButtonText: {
+  debugButtonText: {
     color: 'white',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'right',
   },
   emptyState: {
     flex: 1,
@@ -270,6 +456,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  expenseMain: {
+    flex: 1,
   },
   expenseHeader: {
     flexDirection: 'row',
@@ -332,6 +521,57 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     color: '#7f8c8d',
+  },
+  imageContainer: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  expenseImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    resizeMode: 'cover',
+  },
+  quickCategoriesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  quickCategoryButton: {
+    width: '23%', // 4 buttons per row with some margin
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+    minHeight: 70, // Ensure consistent height
+  },
+  quickCategoryIcon: {
+    fontSize: 18,
+    marginBottom: 4,
+  },
+  quickCategoryText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  headerContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  quickCategoriesWrapper: {
+    marginBottom: 16,
   },
 });
 

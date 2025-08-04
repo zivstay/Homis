@@ -1,25 +1,33 @@
-import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
+    Image,
     KeyboardAvoidingView,
+    Linking,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+import { uploadExpenseImage } from '../config/api';
 import { getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Category } from '../services/api';
 
 const AddExpenseScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { selectedBoard, boardMembers } = useBoard();
+  const route = useRoute();
+  const { selectedBoard, boardMembers, refreshBoardExpenses } = useBoard();
   const { user } = useAuth();
+  const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
   
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -29,9 +37,46 @@ const AddExpenseScreen: React.FC = () => {
   const [isRecurring, setIsRecurring] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
   const quickCategories = boardType?.quickCategories || [];
+
+  // Get preselected category from navigation params
+  const params = route.params as { preselectedCategory?: string } | undefined;
+  const preselectedCategory = params?.preselectedCategory;
+
+  // Update tutorial context when this screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🎓 AddExpenseScreen: Setting tutorial screen to AddExpense');
+      setCurrentScreen('AddExpense');
+      
+      // Check if we should show tutorial for this screen
+      const checkAndStartTutorial = async () => {
+        try {
+          console.log('🎓 AddExpenseScreen: About to check tutorial for AddExpense screen');
+          const shouldShow = await checkScreenTutorial('AddExpense');
+          console.log('🎓 AddExpenseScreen: checkScreenTutorial returned:', shouldShow);
+          
+          if (shouldShow) {
+            console.log('🎓 AddExpenseScreen: Starting tutorial now');
+            startTutorial();
+          } else {
+            console.log('🎓 AddExpenseScreen: Not starting tutorial - already completed or error');
+          }
+        } catch (error) {
+          console.error('🎓 AddExpenseScreen: Error in checkAndStartTutorial:', error);
+        }
+      };
+      
+      // Add a small delay to let the screen settle
+      setTimeout(() => {
+        checkAndStartTutorial();
+      }, 500);
+    }, [setCurrentScreen, checkScreenTutorial, startTutorial])
+  );
 
   useEffect(() => {
     if (selectedBoard) {
@@ -41,7 +86,7 @@ const AddExpenseScreen: React.FC = () => {
         setSelectedPaidBy(user.id);
       }
     }
-  }, [selectedBoard, user]);
+  }, [selectedBoard, user, preselectedCategory]);
 
   const loadCategories = async () => {
     if (!selectedBoard) return;
@@ -50,11 +95,18 @@ const AddExpenseScreen: React.FC = () => {
       const result = await apiService.getBoardCategories(selectedBoard.id);
       if (result.success && result.data) {
         setCategories(result.data.categories);
-        // Set first quick category as default if available
-        if (quickCategories.length > 0) {
-          setSelectedCategory(quickCategories[0].name);
-        } else if (result.data.categories.length > 0) {
-          setSelectedCategory(result.data.categories[0].name);
+        
+        // Use preselected category if provided
+        if (preselectedCategory) {
+          setSelectedCategory(preselectedCategory);
+          setDescription(preselectedCategory); // Set description to category name
+        } else {
+          // Set first quick category as default if available
+          if (quickCategories.length > 0) {
+            setSelectedCategory(quickCategories[0].name);
+          } else if (result.data.categories.length > 0) {
+            setSelectedCategory(result.data.categories[0].name);
+          }
         }
       }
     } catch (error) {
@@ -86,6 +138,16 @@ const AddExpenseScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
+      // Upload image if selected
+      let imageUrl = null;
+      if (selectedImage) {
+        imageUrl = await uploadImage(selectedImage);
+        if (selectedImage && !imageUrl) {
+          // Upload failed, but continue without image
+          Alert.alert('הודעה', 'העלאת התמונה נכשלה, ההוצאה תישמר ללא תמונה');
+        }
+      }
+
       const expenseData = {
         amount: amountValue,
         category: selectedCategory,
@@ -95,13 +157,23 @@ const AddExpenseScreen: React.FC = () => {
         is_recurring: isRecurring,
         frequency: 'monthly',
         tags: tags.trim() ? tags.split(',').map(tag => tag.trim()) : [],
+        image_url: imageUrl, // Add image URL to the expense data
       };
 
       const result = await apiService.createExpense(selectedBoard.id, expenseData);
       
       if (result.success) {
-        Alert.alert('הצלחה', 'ההוצאה נוספה בהצלחה', [
-          { text: 'אישור', onPress: () => navigation.goBack() }
+        // Refresh board expenses to get the updated list
+        await refreshBoardExpenses();
+        
+        Alert.alert('', 'ההוצאה נוספה בהצלחה', [
+          { 
+            text: 'אישור', 
+            onPress: () => {
+              // Simply navigate back
+              navigation.goBack();
+            }
+          }
         ]);
       } else {
         Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
@@ -117,6 +189,113 @@ const AddExpenseScreen: React.FC = () => {
   const getMemberName = (userId: string) => {
     const member = boardMembers.find(m => m.user_id === userId);
     return member ? `${member.user.first_name} ${member.user.last_name}` : 'לא ידוע';
+  };
+
+  // Image upload functions
+  const uploadImage = async (imageUri: string): Promise<string | null> => {
+    try {
+      setIsUploading(true);
+      const token = apiService.getAccessToken();
+      return await uploadExpenseImage(imageUri, token || undefined);
+    } catch (error) {
+      Alert.alert('שגיאה', error instanceof Error ? error.message : 'שגיאה בהעלאת התמונה');
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const pickImage = async () => {
+    // Check current permissions
+    const { status: existingStatus } = await ImagePicker.getMediaLibraryPermissionsAsync();
+    
+    let finalStatus = existingStatus;
+    
+    // If permissions not granted, request them
+    if (existingStatus !== 'granted') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      Alert.alert(
+        'הרשאה נדרשת',
+        'אנא אפשר גישה לגלריה בהגדרות האפליקציה כדי לבחור תמונה',
+        [
+          { text: 'ביטול', style: 'cancel' },
+          { text: 'פתח הגדרות', onPress: () => {
+            // Open app settings on both iOS and Android
+            Linking.openSettings();
+          }}
+        ]
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    // Check current permissions
+    const { status: existingStatus } = await ImagePicker.getCameraPermissionsAsync();
+    
+    let finalStatus = existingStatus;
+    
+    // If permissions not granted, request them
+    if (existingStatus !== 'granted') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      Alert.alert(
+        'הרשאה נדרשת',
+        'אנא אפשר גישה למצלמה בהגדרות האפליקציה כדי לצלם תמונה',
+        [
+          { text: 'ביטול', style: 'cancel' },
+          { text: 'פתח הגדרות', onPress: () => {
+            // Open app settings on both iOS and Android
+            Linking.openSettings();
+          }}
+        ]
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const showImageOptions = () => {
+    Alert.alert(
+      'הוסף תמונה',
+      'בחר אופציה',
+      [
+        { text: 'מצלמה', onPress: takePhoto },
+        { text: 'גלריה', onPress: pickImage },
+        { text: 'בטל', style: 'cancel' },
+      ]
+    );
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
   };
 
   const renderCategoryButtons = () => {
@@ -221,6 +400,29 @@ const AddExpenseScreen: React.FC = () => {
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
+            {selectedImage ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
+                  <Ionicons name="close-circle" size={24} color="#FF3B30" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity 
+                style={styles.imageUploadButton} 
+                onPress={showImageOptions}
+                disabled={isUploading}
+              >
+                <Ionicons name="camera" size={24} color="#007AFF" />
+                <Text style={styles.imageUploadText}>
+                  {isUploading ? 'מעלה...' : 'הוסף תמונה'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.section}>
             <TouchableOpacity
               style={styles.recurringContainer}
               onPress={() => setIsRecurring(!isRecurring)}
@@ -232,15 +434,24 @@ const AddExpenseScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[styles.submitButton, isLoading && styles.disabledButton]}
-            onPress={handleSubmit}
-            disabled={isLoading}
-          >
-            <Text style={styles.submitButtonText}>
-              {isLoading ? 'מוסיף...' : 'הוסף הוצאה'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.cancelButtonText}>בטל</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.submitButton, isLoading && styles.disabledButton]}
+              onPress={handleSubmit}
+              disabled={isLoading}
+            >
+              <Text style={styles.submitButtonText}>
+                {isLoading ? 'מוסיף...' : 'הוסף הוצאה'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -392,13 +603,67 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
-    marginTop: 16,
+    flex: 1,
+    marginLeft: 10,
   },
   disabledButton: {
     backgroundColor: '#bdc3c7',
   },
   submitButtonText: {
     color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#e0e0e0',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 12,
+    padding: 5,
+  },
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+  },
+  imageUploadText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#007AFF',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  cancelButton: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  cancelButtonText: {
+    color: '#2c3e50',
     fontSize: 16,
     fontWeight: 'bold',
   },

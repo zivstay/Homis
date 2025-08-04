@@ -26,7 +26,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'אטרקציות', icon: '🎡', color: '#FFEAA7' },
       { name: 'קניות', icon: '🛍️', color: '#DDA0DD' },
       { name: 'תחבורה', icon: '🚌', color: '#98D8C8' },
-      { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   },
   {
@@ -40,9 +40,9 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'ארנונה', icon: '🏘️', color: '#32CD32' },
       { name: 'גז', icon: '🔥', color: '#FF6347' },
       { name: 'אינטרנט', icon: '🌐', color: '#9370DB' },
-      { name: 'ניקיון', icon: '🧹', color: '#20B2AA' },
       { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
       { name: 'קניות בית', icon: '🛒', color: '#FF69B4' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   },
   {
@@ -58,7 +58,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'בריאות', icon: '🏥', color: '#FF6B6B' },
       { name: 'חינוך', icon: '📚', color: '#4ECDC4' },
       { name: 'ספורט', icon: '🏃', color: '#96CEB4' },
-      { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   },
   {
@@ -74,7 +74,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
       { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
       { name: 'חשבונאות', icon: '📊', color: '#9370DB' },
-      { name: 'אחר', icon: '📋', color: '#20B2AA' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   },
   {
@@ -90,7 +90,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'קניות', icon: '🛍️', color: '#DDA0DD' },
       { name: 'ספורט', icon: '🏃', color: '#96CEB4' },
       { name: 'תחבורה', icon: '🚌', color: '#98D8C8' },
-      { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   },
   {
@@ -106,7 +106,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'בריאות', icon: '🏥', color: '#FF6B6B' },
       { name: 'חינוך', icon: '📚', color: '#4ECDC4' },
       { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
-      { name: 'אחר', icon: '📋', color: '#20B2AA' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   }
 ];

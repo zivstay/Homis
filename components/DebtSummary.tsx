@@ -33,10 +33,10 @@ export function DebtSummary({
     return 'remove-circle';
   };
 
-  const getNetBalanceText = () => {
-    if (netBalance > 0) return 'מגיע לי';
-    if (netBalance < 0) return 'אני חייב';
-    return 'איזון מושלם';
+  const getBalanceDescription = (balance: number) => {
+    if (balance > 0) return 'צריכים להחזיר לי';
+    if (balance < 0) return 'אני צריך להחזיר';
+    return 'מאוזן';
   };
 
   return (
@@ -59,7 +59,7 @@ export function DebtSummary({
           </ThemedText>
         </View>
         <ThemedText style={[styles.balanceText, { color: getNetBalanceColor() }]}>
-          {getNetBalanceText()}
+          {getBalanceDescription(netBalance)}
         </ThemedText>
       </View>
 

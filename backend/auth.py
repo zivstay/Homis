@@ -7,6 +7,11 @@ from flask_jwt_extended import (
 from flask_bcrypt import Bcrypt
 from datetime import datetime, timedelta
 import re
+import os
+import random
+import threading
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 from email_validator import validate_email, EmailNotValidError
 from models import DatabaseManager, UserRole, BoardPermission
 
@@ -19,6 +24,28 @@ def init_auth(app):
 class AuthManager:
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
+        
+        # Initialize email verification
+        # Remove in-memory storage - now using database
+        self._init_brevo_client()
+        
+    def _init_brevo_client(self):
+        """Initialize Brevo API client"""
+        try:
+            brevo_api_key = os.getenv('BREVO_API_KEY')
+            if not brevo_api_key:
+                print("Warning: BREVO_API_KEY not found in environment variables")
+                self.brevo_client = None
+                return
+                
+            configuration = sib_api_v3_sdk.Configuration()
+            configuration.api_key['api-key'] = brevo_api_key
+            api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+            self.brevo_client = api_instance
+            print("✅ Brevo email client initialized successfully")
+        except Exception as e:
+            print(f"❌ Failed to initialize Brevo client: {e}")
+            self.brevo_client = None
 
     def register_user(self, user_data: dict) -> dict:
         """Register a new user"""
@@ -292,6 +319,215 @@ class AuthManager:
             }
 
         return {'valid': True}
+
+    def _generate_verification_code(self) -> str:
+        """Generate a 5-digit verification code"""
+        return str(random.randint(10000, 99999))
+    
+    def _send_verification_email(self, email: str, code: str, first_name: str) -> bool:
+        """Send verification email via Brevo"""
+        if not self.brevo_client:
+            print("❌ Brevo client not initialized")
+            return False
+            
+        try:
+            send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+                to=[{"email": email, "name": first_name}],
+                sender={"name": "Homis Team", "email": "sarusiziv96@gmail.com"},  # Update with your verified email
+                subject="אימות אימייל - Homis",
+                html_content=f"""
+                <div dir="rtl" style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+                    <h2 style="color: #2c3e50;">ברוך הבא ל-Homis!</h2>
+                    <p>שלום {first_name},</p>
+                    <p>תודה על ההרשמה לאפליקציית Homis לניהול הוצאות משותפות.</p>
+                    <p>הקוד שלך לאימות האימייל הוא:</p>
+                    <div style="background-color: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px;">
+                        <h1 style="color: #3498db; font-size: 48px; margin: 0; letter-spacing: 8px;">{code}</h1>
+                    </div>
+                    <p style="color: #7f8c8d; font-size: 14px;">הקוד תקף למשך 5 דקות בלבד</p>
+                    <p style="color: #e74c3c; font-size: 12px;">אם לא ביקשת הרשמה זו, אנא התעלם מהודעה זו</p>
+                </div>
+                """,
+                text_content=f"""
+                ברוך הבא ל-Homis!
+                
+                שלום {first_name},
+                
+                תודה על ההרשמה לאפליקציית Homis לניהול הוצאות משותפות.
+                
+                הקוד שלך לאימות האימייל הוא: {code}
+                
+                הקוד תקף למשך 5 דקות בלבד.
+                
+                אם לא ביקשת הרשמה זו, אנא התעלם מהודעה זו.
+                """
+            )
+            
+            api_response = self.brevo_client.send_transac_email(send_smtp_email)
+            print(f"✅ Verification email sent successfully to {email}")
+            return True
+            
+        except ApiException as e:
+            print(f"❌ Failed to send verification email: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error sending email: {e}")
+            return False
+    
+    def send_verification_code(self, user_data: dict) -> dict:
+        """Send verification code for registration"""
+        # Validate input
+        validation_result = self._validate_user_data(user_data)
+        if not validation_result['valid']:
+            return validation_result
+
+        # Check if user already exists in the main users table
+        if self.db.get_user_by_email(user_data['email']):
+            return {
+                'valid': False,
+                'error': 'Email already exists',
+                'code': 409
+            }
+
+        if self.db.get_user_by_username(user_data['username']):
+            return {
+                'valid': False,
+                'error': 'Username already exists',
+                'code': 409
+            }
+
+        # Check if there's already a pending registration for this email
+        existing_pending_email = self.db.get_pending_registration(user_data['email'])
+        if existing_pending_email:
+            # Delete the existing pending registration to start fresh
+            self.db.delete_pending_registration(user_data['email'])
+            print(f"🔄 Removed existing pending registration for email: {user_data['email']}")
+
+        # Check if there's a pending registration with this username (but different email)
+        existing_pending_username = self.db.get_pending_registration_by_username(user_data['username'])
+        if existing_pending_username and existing_pending_username.email != user_data['email']:
+            # Delete the existing pending registration with the same username
+            self.db.delete_pending_registration(existing_pending_username.email)
+            print(f"🔄 Removed existing pending registration for username: {user_data['username']} (email: {existing_pending_username.email})")
+
+        # Generate verification code
+        verification_code = self._generate_verification_code()
+        expiry_time = datetime.now() + timedelta(minutes=5)
+        
+        # Hash password for storage
+        password_hash = bcrypt.generate_password_hash(user_data['password']).decode('utf-8')
+
+        # Store pending registration
+        self.db.create_pending_registration({
+            'email': user_data['email'],
+            'username': user_data['username'],
+            'password_hash': password_hash,
+            'first_name': user_data['first_name'],
+            'last_name': user_data['last_name'],
+            'verification_code': verification_code,
+            'expiry_time': expiry_time.isoformat(),  # Convert to string
+            'attempts': 0
+        })
+
+        # Send verification email
+        email_sent = self._send_verification_email(
+            user_data['email'], 
+            verification_code, 
+            user_data['first_name']
+        )
+        
+        if not email_sent:
+            # Remove from pending if email failed
+            self.db.delete_pending_registration(user_data['email'])
+            return {
+                'valid': False,
+                'error': 'Failed to send verification email',
+                'code': 500
+            }
+
+        # Set up automatic cleanup
+        def cleanup():
+            self.db.delete_pending_registration(user_data['email'])
+            print(f"🗑️ Auto-cleaned expired verification for {user_data['email']}")
+        
+        timer = threading.Timer(300.0, cleanup)  # 5 minutes
+        timer.start()
+
+        return {
+            'valid': True,
+            'message': 'Verification code sent to your email'
+        }
+    
+    def verify_code_and_register(self, email: str, code: str) -> dict:
+        """Verify code and complete registration"""
+        # Get pending registration
+        pending_reg = self.db.get_pending_registration(email)
+        if not pending_reg:
+            return {
+                'valid': False,
+                'error': 'No pending registration found for this email',
+                'code': 400
+            }
+
+        # Check if code expired
+        expiry_time = datetime.fromisoformat(pending_reg.expiry_time)
+        if datetime.now() > expiry_time:
+            self.db.delete_pending_registration(email)
+            return {
+                'valid': False,
+                'error': 'Verification code has expired',
+                'code': 400
+            }
+
+        # Check verification code
+        if pending_reg.verification_code != code:
+            pending_reg.attempts += 1
+            self.db.update_pending_registration_attempts(email, pending_reg.attempts)
+            
+            # Block after 3 failed attempts
+            if pending_reg.attempts >= 3:
+                self.db.delete_pending_registration(email)
+                return {
+                    'valid': False,
+                    'error': 'Too many failed attempts. Please try again.',
+                    'code': 400
+                }
+            
+            return {
+                'valid': False,
+                'error': 'Invalid verification code',
+                'code': 400
+            }
+
+        # Create user in database
+        user = self.db.create_user({
+            'email': pending_reg.email,
+            'username': pending_reg.username,
+            'password_hash': pending_reg.password_hash,
+            'first_name': pending_reg.first_name,
+            'last_name': pending_reg.last_name
+        })
+
+        # Clean up pending registration
+        self.db.delete_pending_registration(email)
+
+        # Generate tokens
+        access_token = create_access_token(identity=user.id)
+        refresh_token = create_refresh_token(identity=user.id)
+
+        return {
+            'valid': True,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'created_at': user.created_at
+            },
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        }
 
 # Decorators for route protection
 def require_auth(f):

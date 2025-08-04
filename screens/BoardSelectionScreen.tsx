@@ -1,27 +1,59 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Modal,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { BOARD_TYPES, BoardType } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useTutorial } from '../contexts/TutorialContext';
 import { Board } from '../services/api';
 
 const BoardSelectionScreen: React.FC = () => {
   const { user, logout } = useAuth();
-  const { boards, selectedBoard, selectBoard, createBoard, isLoading } = useBoard();
+  const { boards, selectedBoard, selectBoard, createBoard, refreshBoards, isLoading } = useBoard();
+  const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
+  
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newBoardName, setNewBoardName] = useState('');
   const [newBoardDescription, setNewBoardDescription] = useState('');
   const [selectedBoardType, setSelectedBoardType] = useState<BoardType>(BOARD_TYPES[0]);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Update tutorial context when this screen is focused
+  useEffect(() => {
+    console.log('🎓 BoardSelectionScreen: Setting tutorial screen to BoardSelection');
+    setCurrentScreen('BoardSelection');
+    
+    // Check if we should show tutorial for this screen
+    const checkAndStartTutorial = async () => {
+      try {
+        console.log('🎓 BoardSelectionScreen: About to check tutorial for BoardSelection screen');
+        const shouldShow = await checkScreenTutorial('BoardSelection');
+        console.log('🎓 BoardSelectionScreen: checkScreenTutorial returned:', shouldShow);
+        
+        if (shouldShow) {
+          console.log('🎓 BoardSelectionScreen: Starting tutorial now');
+          startTutorial();
+        } else {
+          console.log('🎓 BoardSelectionScreen: Not starting tutorial - already completed or error');
+        }
+      } catch (error) {
+        console.error('🎓 BoardSelectionScreen: Error in checkAndStartTutorial:', error);
+      }
+    };
+    
+    // Add a small delay to let the screen settle
+    setTimeout(() => {
+      checkAndStartTutorial();
+    }, 500);
+  }, [setCurrentScreen, checkScreenTutorial, startTutorial]);
 
   const handleCreateBoard = async () => {
     if (!newBoardName.trim()) {

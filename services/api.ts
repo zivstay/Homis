@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-const API_BASE_URL = 'http://192.168.7.9:5000/api';   // <-- your IP
+const API_BASE_URL = 'http://192.168.7.11:5000/api';   // <-- your IP
 
 // Types
 export interface User {
@@ -32,6 +32,7 @@ export interface Board {
   settings?: any;
   member_count?: number;
   user_role?: string;
+  is_default_board?: boolean;
 }
 
 export interface BoardMember {
@@ -59,6 +60,7 @@ export interface Expense {
   start_date?: string;
   end_date?: string;
   receipt_url?: string;
+  image_url?: string; // Add this field to match server response
   tags: string[];
 }
 
@@ -97,20 +99,36 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   success: boolean;
+  needsRetry?: boolean; // Added for retry logic
 }
 
 class ApiService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+  private refreshPromise: Promise<ApiResponse<{ access_token: string }>> | null = null; // Queue for concurrent requests
+  private pendingRequests: Array<() => Promise<any>> = []; // Queue for requests during refresh
+  private activeRequestCount: number = 0; // Track concurrent requests
+  private tokenExpiryDate: Date | null = null; // Track when the token expires
+  private authFailureCallback: (() => void) | null = null; // Callback for auth failures
 
   constructor() {
     this.loadTokens();
+    this.startTokenRefreshTimer(); // Start proactive token refresh
+  }
+
+  // Method to set auth failure callback (to be used by AuthContext)
+  setAuthFailureCallback(callback: () => void) {
+    this.authFailureCallback = callback;
   }
 
   private async loadTokens() {
     try {
       this.accessToken = await AsyncStorage.getItem('access_token');
       this.refreshToken = await AsyncStorage.getItem('refresh_token');
+      const expiryStr = await AsyncStorage.getItem('token_expiry');
+      if (expiryStr) {
+        this.tokenExpiryDate = new Date(expiryStr);
+      }
     } catch (error) {
       console.error('Error loading tokens:', error);
     }
@@ -118,10 +136,17 @@ class ApiService {
 
   private async saveTokens(accessToken: string, refreshToken: string) {
     try {
+      // JWT tokens typically expire in 7 days, so we set expiry accordingly
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 7); // 7 days from now
+      
       await AsyncStorage.setItem('access_token', accessToken);
       await AsyncStorage.setItem('refresh_token', refreshToken);
+      await AsyncStorage.setItem('token_expiry', expiryDate.toISOString());
+      
       this.accessToken = accessToken;
       this.refreshToken = refreshToken;
+      this.tokenExpiryDate = expiryDate;
     } catch (error) {
       console.error('Error saving tokens:', error);
     }
@@ -131,10 +156,114 @@ class ApiService {
     try {
       await AsyncStorage.removeItem('access_token');
       await AsyncStorage.removeItem('refresh_token');
+      await AsyncStorage.removeItem('token_expiry');
       this.accessToken = null;
       this.refreshToken = null;
+      this.tokenExpiryDate = null;
     } catch (error) {
       console.error('Error clearing tokens:', error);
+    }
+  }
+
+  private startTokenRefreshTimer() {
+    // Check every 30 minutes instead of 1 hour
+    setInterval(() => {
+      this.checkAndRefreshToken();
+    }, 30 * 60 * 1000); // 30 minutes
+
+    // Also check immediately
+    setTimeout(() => {
+      this.checkAndRefreshToken();
+    }, 5000); // Check after 5 seconds
+  }
+
+  private async checkAndRefreshToken() {
+    if (!this.accessToken || !this.refreshToken || !this.tokenExpiryDate) {
+      return;
+    }
+
+    const now = new Date();
+    const timeUntilExpiry = this.tokenExpiryDate.getTime() - now.getTime();
+    const hoursUntilExpiry = timeUntilExpiry / (1000 * 60 * 60);
+
+    console.log(`🕐 API: Token expires in ${hoursUntilExpiry.toFixed(1)} hours`);
+
+    // Refresh token if it expires in less than 2 hours (more conservative)
+    if (hoursUntilExpiry < 2 && hoursUntilExpiry > 0) {
+      console.log(`🔄 API: Token expires in ${hoursUntilExpiry.toFixed(1)} hours, refreshing proactively`);
+      try {
+        await this.refreshAccessToken();
+      } catch (error) {
+        console.error('🔴 API: Proactive token refresh failed:', error);
+      }
+    }
+  }
+
+  // Add method to expose token validity
+  isTokenValid(): boolean {
+    if (!this.accessToken || !this.tokenExpiryDate) {
+      return false;
+    }
+    return new Date() < this.tokenExpiryDate;
+  }
+
+  // Add method to expose token authentication status
+  isAuthenticated(): boolean {
+    return !!this.accessToken && this.isTokenValid();
+  }
+
+  // Method to get access token (for external use)
+  getAccessToken(): string | null {
+    return this.isTokenValid() ? this.accessToken : null;
+  }
+
+  // Add method to check if token needs refresh soon
+  private needsRefreshSoon(): boolean {
+    if (!this.tokenExpiryDate) return false;
+    
+    const now = new Date();
+    const timeUntilExpiry = this.tokenExpiryDate.getTime() - now.getTime();
+    const minutesUntilExpiry = timeUntilExpiry / (1000 * 60);
+    
+    // Return true if token expires in less than 30 minutes
+    return minutesUntilExpiry < 30 && minutesUntilExpiry > 0;
+  }
+
+  // Improved method to check token and refresh if needed
+  private async ensureValidToken(): Promise<boolean> {
+    // If no token, can't refresh
+    if (!this.accessToken || !this.refreshToken) {
+      console.log('🔴 API: No tokens available');
+      return false;
+    }
+
+    // If token is still valid and doesn't need refresh soon, we're good
+    if (this.isTokenValid() && !this.needsRefreshSoon()) {
+      return true;
+    }
+
+    // If token is expired or needs refresh soon, try to refresh
+    console.log('🔄 API: Token expired or needs refresh, attempting refresh...');
+    try {
+      const refreshResult = await this.refreshAccessToken();
+      if (refreshResult.success) {
+        console.log('✅ API: Token refreshed successfully');
+        return true;
+      } else {
+        console.log('🔴 API: Token refresh failed:', refreshResult.error);
+        await this.clearTokens();
+        if (this.authFailureCallback) {
+          this.authFailureCallback();
+        }
+        return false;
+      }
+    } catch (error) {
+      console.log('🔴 API: Token refresh error:', error);
+      await this.clearTokens();
+      if (this.authFailureCallback) {
+        this.authFailureCallback();
+      }
+      return false;
     }
   }
 
@@ -150,67 +279,144 @@ class ApiService {
     return headers;
   }
 
+  // Generic method for making authenticated requests
+  private async makeAuthenticatedRequest<T>(
+    url: string, 
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    // Ensure we have a valid token before making the request
+    const hasValidToken = await this.ensureValidToken();
+    if (!hasValidToken) {
+      return { success: false, error: 'Authentication required' };
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...this.getHeaders(),
+        ...options.headers,
+      },
+    });
+
+    const result = await this.handleResponse<T>(response);
+    
+    // If token was refreshed during the request, retry once
+    if (!result.success && result.needsRetry) {
+      console.log('🔄 API: Retrying request after token refresh...');
+      const retryResponse = await fetch(url, {
+        ...options,
+        headers: {
+          ...this.getHeaders(),
+          ...options.headers,
+        },
+      });
+      return this.handleResponse<T>(retryResponse);
+    }
+
+    return result;
+  }
+
   private async handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
-    if (response.status === 401 && this.refreshToken) {
-      // Try to refresh token
-      const refreshResult = await this.refreshAccessToken();
-      if (refreshResult.success) {
-        // Retry the original request
-        const retryResponse = await fetch(response.url, {
-          method: response.type,
-          headers: this.getHeaders(),
-          body: response.body,
-        });
-        return this.handleResponse<T>(retryResponse);
-      } else {
-        // Refresh failed, user needs to login again
-        await this.clearTokens();
-        return { success: false, error: 'Authentication required' };
-      }
-    }
-
-    let data;
+    this.activeRequestCount++;
+    const requestId = Math.random().toString(36).substr(2, 9);
+    console.log(`🔵 API [${requestId}]: Handling response for ${response.url} (Active requests: ${this.activeRequestCount})`);
+    
     try {
-      data = await response.json();
-    } catch (error) {
-      console.error('🔴 API: Failed to parse response JSON:', error);
-      return { success: false, error: 'Invalid response from server' };
-    }
-
-    if (response.ok) {
-      return { success: true, data };
-    } else {
-      // Handle different types of error responses
-      let errorMessage = 'Request failed';
-      
-      if (data) {
-        // Check for different error formats
-        if (data.error) {
-          errorMessage = data.error;
-        } else if (data.message) {
-          errorMessage = data.message;
-        } else if (data.detail) {
-          errorMessage = data.detail;
-        } else if (typeof data === 'string') {
-          errorMessage = data;
-        } else if (data.errors && Array.isArray(data.errors)) {
-          // Handle validation errors array
-          errorMessage = data.errors.join(', ');
-        } else if (data.validation_errors) {
-          // Handle validation errors object
-          const validationErrors = Object.values(data.validation_errors).flat();
-          errorMessage = validationErrors.join(', ');
+      if (response.status === 401) {
+        console.log(`🔴 API [${requestId}]: Got 401 for URL:`, response.url);
+        
+        if (!this.refreshToken) {
+          console.log(`🔴 API [${requestId}]: No refresh token available, triggering auth failure`);
+          await this.clearTokens();
+          if (this.authFailureCallback) {
+            this.authFailureCallback();
+          }
+          return { success: false, error: 'Authentication required' };
+        }
+        
+        // If refresh is already in progress, don't trigger another one
+        if (this.refreshPromise) {
+          console.log(`🟡 API [${requestId}]: Refresh in progress, waiting for completion...`);
+          await this.refreshPromise;
+          // Return error to let the calling method handle retry after refresh
+          return { success: false, error: 'Token was refreshed, please retry request', needsRetry: true };
+        }
+        
+        console.log(`🔄 API [${requestId}]: Starting token refresh...`);
+        
+        // Try to refresh token
+        const refreshResult = await this.refreshAccessToken();
+        if (refreshResult.success) {
+          console.log(`✅ API [${requestId}]: Token refresh successful, requesting retry`);
+          // Don't automatically retry here - let the calling method handle retry
+          // This prevents the loop and malformed retry requests
+          return { success: false, error: 'Token refreshed, please retry', needsRetry: true };
+        } else {
+          console.log(`🔴 API [${requestId}]: Token refresh failed:`, refreshResult.error);
+          // Refresh failed, user needs to login again
+          await this.clearTokens();
+          if (this.authFailureCallback) {
+            console.log(`🔴 API [${requestId}]: Triggering auth failure callback`);
+            this.authFailureCallback();
+          }
+          return { success: false, error: 'Authentication required' };
         }
       }
 
-      console.log('🔴 API: Error response:', {
-        status: response.status,
-        statusText: response.statusText,
-        data: data,
-        errorMessage: errorMessage
-      });
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        console.error(`🔴 API [${requestId}]: Failed to parse response JSON:`, error);
+        return { success: false, error: 'Invalid response from server' };
+      }
 
-      return { success: false, error: errorMessage };
+      if (response.ok) {
+        console.log(`✅ API [${requestId}]: Request successful`);
+        return { success: true, data };
+      } else {
+        // Handle different types of error responses
+        let errorMessage = 'Request failed';
+        
+        if (data) {
+          // Check for different error formats
+          if (data.error) {
+            errorMessage = data.error;
+          } else if (data.data && data.data.error) {
+            // Handle nested error structure: {"data": {"error": "message"}}
+            errorMessage = data.data.error;
+          } else if (data.message) {
+            errorMessage = data.message;
+          } else if (data.detail) {
+            errorMessage = data.detail;
+          } else if (typeof data === 'string') {
+            errorMessage = data;
+          } else if (data.errors && Array.isArray(data.errors)) {
+            // Handle validation errors array
+            errorMessage = data.errors.join(', ');
+          } else if (data.validation_errors) {
+            // Handle validation errors object
+            const validationErrors = Object.values(data.validation_errors).flat();
+            errorMessage = validationErrors.join(', ');
+          }
+        }
+
+        console.log(`🔴 API [${requestId}]: Error response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          data: data,
+          errorMessage: errorMessage,
+          dataType: typeof data,
+          hasError: !!data?.error,
+          hasDataError: !!data?.data?.error,
+          hasMessage: !!data?.message
+        });
+
+        return { success: false, error: errorMessage };
+      }
+    } finally {
+      this.activeRequestCount--;
+      console.log(`🔵 API [${requestId}]: Response handling complete (Active requests: ${this.activeRequestCount})`);
     }
   }
 
@@ -239,10 +445,74 @@ class ApiService {
       
       if (result.success && result.data) {
         await this.saveTokens(result.data.access_token, result.data.refresh_token);
+        console.log('🔵 API: Registration tokens saved successfully with expiry tracking');
       }
       return result;
     } catch (error) {
       console.error('🔴 API: Register network error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network error';
+      return { success: false, error: `Connection failed: ${errorMessage}` };
+    }
+  }
+
+  // Email Verification
+  async sendVerificationCode(userData: {
+    email: string;
+    username: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+  }): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Sending verification code to:', userData.email);
+    const url = `${API_BASE_URL}/auth/send-verification`;
+    console.log('🔵 API: Send verification URL:', url);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData),
+      });
+
+      console.log('🔵 API: Send verification response status:', response.status);
+      const result = await this.handleResponse<{ message: string }>(response);
+      console.log('🔵 API: Send verification result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
+      
+      return result;
+    } catch (error) {
+      console.error('🔴 API: Send verification network error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network error';
+      return { success: false, error: `Connection failed: ${errorMessage}` };
+    }
+  }
+
+  async verifyCodeAndRegister(email: string, code: string): Promise<ApiResponse<AuthResponse>> {
+    console.log('🔵 API: Verifying code for:', email);
+    console.log('🔵 API: Code length:', code.length);
+    console.log('🔵 API: Code value:', code);
+    const url = `${API_BASE_URL}/auth/verify-and-register`;
+    console.log('🔵 API: Full URL:', url);
+    
+    try {
+      console.log('🔵 API: Making fetch request...');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+
+      console.log('🔵 API: Verify code response status:', response.status);
+      console.log('🔵 API: Response headers:', response.headers);
+      const result = await this.handleResponse<AuthResponse>(response);
+      console.log('🔵 API: Verify code result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
+      
+      if (result.success && result.data) {
+        await this.saveTokens(result.data.access_token, result.data.refresh_token);
+        console.log('🔵 API: Verification and registration tokens saved successfully');
+      }
+      return result;
+    } catch (error) {
+      console.error('🔴 API: Verify code network error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Network error';
       return { success: false, error: `Connection failed: ${errorMessage}` };
     }
@@ -266,6 +536,7 @@ class ApiService {
       
       if (result.success && result.data) {
         await this.saveTokens(result.data.access_token, result.data.refresh_token);
+        console.log('🔵 API: Tokens saved successfully with expiry tracking');
       }
       return result;
     } catch (error) {
@@ -280,59 +551,120 @@ class ApiService {
   }
 
   async getCurrentUser(): Promise<ApiResponse<{ user: User }>> {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ user: User }>(response);
+    return this.makeAuthenticatedRequest<{ user: User }>(
+      `${API_BASE_URL}/auth/me`
+    );
   }
 
   private async refreshAccessToken(): Promise<ApiResponse<{ access_token: string }>> {
     if (!this.refreshToken) {
+      console.log('🔴 API: No refresh token available');
       return { success: false, error: 'No refresh token available' };
     }
 
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${this.refreshToken}` },
-    });
-
-    const result = await this.handleResponse<{ access_token: string }>(response);
-    if (result.success && result.data) {
-      this.accessToken = result.data.access_token;
-      await AsyncStorage.setItem('access_token', result.data.access_token);
+    // If a refresh is already in progress, wait for it
+    if (this.refreshPromise) {
+      console.log('🟡 API: Refresh already in progress, waiting for existing promise...');
+      return this.refreshPromise;
     }
-    return result;
+
+    console.log('🔄 API: Starting NEW token refresh process...');
+    
+    // Create the refresh promise
+    this.refreshPromise = this._performRefresh();
+    
+    try {
+      const result = await this.refreshPromise;
+      console.log('🔄 API: Refresh promise completed:', result.success ? 'SUCCESS' : 'FAILED');
+      return result;
+    } finally {
+      // Clear the promise when done
+      console.log('🔄 API: Clearing refresh promise');
+      this.refreshPromise = null;
+    }
+  }
+
+  private async _performRefresh(): Promise<ApiResponse<{ access_token: string }>> {
+    try {
+      console.log('🔄 API: Making refresh request to /auth/refresh');
+      console.log('🔄 API: Using refresh token:', this.refreshToken ? 'Present' : 'Missing');
+      
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${this.refreshToken}`,
+          'Content-Type': 'application/json'
+        },
+      });
+
+      console.log('🔄 API: Refresh response status:', response.status);
+
+      // Handle the refresh response manually (don't use handleResponse to avoid recursion)
+      if (response.ok) {
+        const data = await response.json();
+        console.log('🔄 API: Refresh response data:', data ? 'Present' : 'Missing');
+        
+        if (data && data.access_token) {
+          console.log('✅ API: Token refresh successful, updating tokens');
+          
+          // Update token and expiry date
+          this.accessToken = data.access_token;
+          const expiryDate = new Date();
+          expiryDate.setDate(expiryDate.getDate() + 7); // 7 days from now
+          this.tokenExpiryDate = expiryDate;
+          
+          await AsyncStorage.setItem('access_token', data.access_token);
+          await AsyncStorage.setItem('token_expiry', expiryDate.toISOString());
+          
+          // Small delay to ensure token propagation
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+          return { success: true, data: { access_token: data.access_token } };
+        } else {
+          console.log('🔴 API: Refresh response missing access_token field');
+          return { success: false, error: 'Invalid refresh response' };
+        }
+      } else {
+        console.log('🔴 API: Refresh failed with status:', response.status);
+        
+        // Try to get error details
+        try {
+          const errorData = await response.json();
+          console.log('🔴 API: Refresh error details:', errorData);
+        } catch (e) {
+          console.log('🔴 API: Could not parse error response');
+        }
+        
+        // Clear tokens if refresh fails
+        await this.clearTokens();
+        
+        // Trigger auth failure callback
+        if (this.authFailureCallback) {
+          console.log('🔴 API: Triggering auth failure callback');
+          this.authFailureCallback();
+        }
+        
+        return { success: false, error: 'Refresh token expired' };
+      }
+    } catch (error) {
+      console.error('🔴 API: Refresh network error:', error);
+      
+      // Trigger auth failure callback on network error during refresh
+      if (this.authFailureCallback) {
+        console.log('🔴 API: Triggering auth failure callback due to network error');
+        this.authFailureCallback();
+      }
+      
+      return { success: false, error: 'Network error during refresh' };
+    }
   }
 
   // Boards
   async getBoards(): Promise<ApiResponse<{ boards: Board[] }>> {
     console.log('🔵 API: Getting boards...');
-    console.log('🔵 API: Access token:', this.accessToken ? 'Present' : 'Missing');
-    
-    const url = `${API_BASE_URL}/boards`;
-    console.log('🔵 API: Boards URL:', url);
-    
-    const headers = this.getHeaders();
-    console.log('🔵 API: Request headers:', headers);
-    
-    try {
-      const response = await fetch(url, {
-        headers: headers,
-      });
-
-      console.log('🔵 API: Boards response status:', response.status);
-      console.log('🔵 API: Boards response headers:', response.headers);
-      
-      const result = await this.handleResponse<{ boards: Board[] }>(response);
-      console.log('🔵 API: Boards result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
-      
-      return result;
-    } catch (error) {
-      console.error('🔴 API: Boards network error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Network error';
-      return { success: false, error: `Connection failed: ${errorMessage}` };
-    }
+    return this.makeAuthenticatedRequest<{ boards: Board[] }>(
+      `${API_BASE_URL}/boards`
+    );
   }
 
   async createBoard(boardData: {
@@ -342,85 +674,94 @@ class ApiService {
     timezone?: string;
     board_type?: string;
   }): Promise<ApiResponse<Board>> {
-    const response = await fetch(`${API_BASE_URL}/boards`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(boardData),
-    });
-
-    return this.handleResponse<Board>(response);
+    return this.makeAuthenticatedRequest<Board>(
+      `${API_BASE_URL}/boards`,
+      {
+        method: 'POST',
+        body: JSON.stringify(boardData),
+      }
+    );
   }
 
   async getBoard(boardId: string): Promise<ApiResponse<Board & { members: BoardMember[]; user_role: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}`, {
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<Board & { members: BoardMember[]; user_role: string }>(response);
+    return this.makeAuthenticatedRequest<Board & { members: BoardMember[]; user_role: string }>(
+      `${API_BASE_URL}/boards/${boardId}`
+    );
   }
 
   async updateBoard(boardId: string, updateData: Partial<Board>): Promise<ApiResponse<Board>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify(updateData),
-    });
-
-    return this.handleResponse<Board>(response);
+    return this.makeAuthenticatedRequest<Board>(
+      `${API_BASE_URL}/boards/${boardId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      }
+    );
   }
 
   async deleteBoard(boardId: string): Promise<ApiResponse<{ message: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ message: string }>(response);
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}`,
+      {
+        method: 'DELETE',
+      }
+    );
   }
 
   // Board Members
   async getBoardMembers(boardId: string): Promise<ApiResponse<{ members: BoardMember[] }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/members`, {
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ members: BoardMember[] }>(response);
+    return this.makeAuthenticatedRequest<{ members: BoardMember[] }>(
+      `${API_BASE_URL}/boards/${boardId}/members`
+    );
   }
 
   async inviteMember(boardId: string, inviteData: {
     email: string;
     role: string;
   }): Promise<ApiResponse<{ message: string; member_id?: string; invitation_id?: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/members`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(inviteData),
-    });
-
-    return this.handleResponse<{ message: string; member_id?: string; invitation_id?: string }>(response);
+    return this.makeAuthenticatedRequest<{ message: string; member_id?: string; invitation_id?: string }>(
+      `${API_BASE_URL}/boards/${boardId}/members`,
+      {
+        method: 'POST',
+        body: JSON.stringify(inviteData),
+      }
+    );
   }
 
   async removeMember(boardId: string, userId: string): Promise<ApiResponse<{ message: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/members/${userId}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ message: string }>(response);
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}/members/${userId}`,
+      {
+        method: 'DELETE',
+      }
+    );
   }
 
-  // Expenses
-  async getBoardExpenses(boardId: string, month?: number, year?: number): Promise<ApiResponse<{ expenses: Expense[] }>> {
-    let url = `${API_BASE_URL}/boards/${boardId}/expenses`;
-    if (month !== undefined && year !== undefined) {
-      url += `?month=${month}&year=${year}`;
-    }
+  async setDefaultBoard(boardId: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Setting default board:', boardId);
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}/set-default`,
+      {
+        method: 'PUT',
+      }
+    );
+  }
 
-    const response = await fetch(url, {
-      headers: this.getHeaders(),
-    });
+  async clearDefaultBoard(): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Clearing default board...');
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/clear-default`,
+      {
+        method: 'PUT',
+      }
+    );
+  }
 
-    return this.handleResponse<{ expenses: Expense[] }>(response);
+  // Board Expenses
+  async getBoardExpenses(boardId: string): Promise<ApiResponse<{ expenses: Expense[] }>> {
+    return this.makeAuthenticatedRequest<{ expenses: Expense[] }>(
+      `${API_BASE_URL}/boards/${boardId}/expenses`
+    );
   }
 
   async createExpense(boardId: string, expenseData: {
@@ -436,41 +777,39 @@ class ApiService {
     receipt_url?: string;
     tags?: string[];
   }): Promise<ApiResponse<Expense>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/expenses`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(expenseData),
-    });
-
-    return this.handleResponse<Expense>(response);
+    return this.makeAuthenticatedRequest<Expense>(
+      `${API_BASE_URL}/boards/${boardId}/expenses`,
+      {
+        method: 'POST',
+        body: JSON.stringify(expenseData),
+      }
+    );
   }
 
   async updateExpense(boardId: string, expenseId: string, updateData: Partial<Expense>): Promise<ApiResponse<{ message: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/expenses/${expenseId}`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify(updateData),
-    });
-
-    return this.handleResponse<{ message: string }>(response);
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}/expenses/${expenseId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      }
+    );
   }
 
   async deleteExpense(boardId: string, expenseId: string): Promise<ApiResponse<{ message: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/expenses/${expenseId}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ message: string }>(response);
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}/expenses/${expenseId}`,
+      {
+        method: 'DELETE',
+      }
+    );
   }
 
   // Categories
   async getBoardCategories(boardId: string): Promise<ApiResponse<{ categories: Category[] }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/categories`, {
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ categories: Category[] }>(response);
+    return this.makeAuthenticatedRequest<{ categories: Category[] }>(
+      `${API_BASE_URL}/boards/${boardId}/categories`
+    );
   }
 
   async createCategory(boardId: string, categoryData: {
@@ -479,31 +818,29 @@ class ApiService {
     color: string;
     is_default?: boolean;
   }): Promise<ApiResponse<Category>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/categories`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(categoryData),
-    });
-
-    return this.handleResponse<Category>(response);
+    return this.makeAuthenticatedRequest<Category>(
+      `${API_BASE_URL}/boards/${boardId}/categories`,
+      {
+        method: 'POST',
+        body: JSON.stringify(categoryData),
+      }
+    );
   }
 
   // Debts
   async getBoardDebts(boardId: string): Promise<ApiResponse<{ debts: Debt[] }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/debts`, {
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ debts: Debt[] }>(response);
+    return this.makeAuthenticatedRequest<{ debts: Debt[] }>(
+      `${API_BASE_URL}/boards/${boardId}/debts`
+    );
   }
 
   async markDebtAsPaid(boardId: string, debtId: string): Promise<ApiResponse<{ message: string }>> {
-    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/debts/${debtId}/mark-paid`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{ message: string }>(response);
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}/debts/${debtId}/mark-paid`,
+      {
+        method: 'PUT',
+      }
+    );
   }
 
   // Summary and Statistics
@@ -531,17 +868,13 @@ class ApiService {
       url += `?${params.toString()}`;
     }
 
-    const response = await fetch(url, {
-      headers: this.getHeaders(),
-    });
-
-    return this.handleResponse<{
+    return this.makeAuthenticatedRequest<{
       total_amount: number;
       total_expenses: number;
       expenses_by_category: { [category: string]: number };
       expenses_by_board: { [board_id: string]: number };
       monthly_trend: { [month: string]: number };
-    }>(response);
+    }>(url);
   }
 
   async getAllDebts(filters?: {
@@ -558,6 +891,10 @@ class ApiService {
       total_paid: number;
     };
   }>> {
+    console.log('🔵 API: getAllDebts called with filters:', filters);
+    console.log('🔵 API: Current token valid?', this.isTokenValid());
+    console.log('🔵 API: Current token exists?', !!this.accessToken);
+    
     let url = `${API_BASE_URL}/debts/all`;
     const params = new URLSearchParams();
     
@@ -572,11 +909,9 @@ class ApiService {
       url += `?${params.toString()}`;
     }
 
-    const response = await fetch(url, {
-      headers: this.getHeaders(),
-    });
+    console.log('🔵 API: getAllDebts URL:', url);
 
-    return this.handleResponse<{
+    const result = await this.makeAuthenticatedRequest<{
       debts: Debt[];
       summary: {
         total_owed: number;
@@ -584,7 +919,10 @@ class ApiService {
         total_unpaid: number;
         total_paid: number;
       };
-    }>(response);
+    }>(url);
+
+    console.log('🔵 API: getAllDebts result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
+    return result;
   }
 
   async getExpensesByPeriod(startDate: string, endDate: string, boardIds?: string[]): Promise<ApiResponse<{
@@ -617,7 +955,7 @@ class ApiService {
 
   // Health check
   async healthCheck(): Promise<ApiResponse<{ status: string; message: string; timestamp: string }>> {
-    console.log('🔵 API: Attempting health check');
+    console.log('🔵 API: Health check...');
     const url = `${API_BASE_URL}/health`;
     console.log('🔵 API: Health check URL:', url);
     
@@ -633,13 +971,42 @@ class ApiService {
     }
   }
 
-  // Utility methods
-  isAuthenticated(): boolean {
-    return !!this.accessToken;
+  // Notifications
+  async getNotifications(): Promise<ApiResponse<{ notifications: any[] }>> {
+    console.log('🔵 API: Getting notifications...');
+    return this.makeAuthenticatedRequest<{ notifications: any[] }>(
+      `${API_BASE_URL}/notifications`
+    );
   }
 
-  getAccessToken(): string | null {
-    return this.accessToken;
+  async markNotificationAsRead(notificationId: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Marking notification as read:', notificationId);
+    const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/read`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse<{ message: string }>(response);
+  }
+
+  async markAllNotificationsAsRead(): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Marking all notifications as read...');
+    const response = await fetch(`${API_BASE_URL}/notifications/mark-all-read`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse<{ message: string }>(response);
+  }
+
+  async deleteNotification(notificationId: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Deleting notification:', notificationId);
+    const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse<{ message: string }>(response);
   }
 }
 

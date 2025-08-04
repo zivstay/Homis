@@ -1,11 +1,15 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import { apiService, User } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  showVerification: boolean;
+  setShowVerification: (show: boolean) => void;
+  pendingUserData: any | null; // Add pending user data
+  login: (credentials: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   register: (userData: {
     email: string;
     username: string;
@@ -14,7 +18,15 @@ interface AuthContextType {
     last_name: string;
   }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  sendVerificationCode: (userData: {
+    email: string;
+    username: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  verifyCodeAndRegister: (email: string, code: string) => Promise<{ success: boolean; error?: string }>;
+  resetVerification: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,11 +46,35 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isVerifying, setIsVerifying] = useState(false); // Add state for verification process
+  const [showVerification, setShowVerification] = useState(false); // Add state for verification screen
+  const [pendingUserData, setPendingUserData] = useState<any | null>(null); // Add pending user data state
 
-  const isAuthenticated = !!user;
+  const isAuthenticated = !!user && !isVerifying; // Don't consider authenticated during verification
+
+  useEffect(() => {
+    console.log('🔐 AuthContext: isAuthenticated changed to:', isAuthenticated, 'user:', !!user, 'isVerifying:', isVerifying);
+    console.log('🔐 AuthContext: user object:', user);
+  }, [isAuthenticated, user, isVerifying]);
+
+  useEffect(() => {
+    console.log('🔐 AuthContext: showVerification changed to:', showVerification);
+  }, [showVerification]);
 
   useEffect(() => {
     checkAuthStatus();
+    
+    // Set up auth failure callback
+    apiService.setAuthFailureCallback(() => {
+      console.log('🔐 AuthContext: Auth failure detected, logging out user');
+      setUser(null);
+      // Show user-friendly message
+      Alert.alert(
+        'פג תוקף ההתחברות',
+        'נדרש להתחבר מחדש לחשבון',
+        [{ text: 'אישור', style: 'default' }]
+      );
+    });
   }, []);
 
   const checkAuthStatus = async () => {
@@ -66,15 +102,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (credentials: { email: string; password: string }) => {
     try {
       setIsLoading(true);
-      console.log('🔐 AuthContext: Attempting login for:', email);
-      const result = await apiService.login({ email, password });
+      console.log('🔐 AuthContext: Attempting login for:', credentials.email);
+      const result = await apiService.login(credentials);
       
       if (result.success && result.data) {
         console.log('🔐 AuthContext: Login successful, setting user:', result.data.user);
         setUser(result.data.user);
+        console.log('🔐 AuthContext: User set, isAuthenticated should be:', !!result.data.user && !isVerifying);
         return { success: true };
       } else {
         console.log('🔐 AuthContext: Login failed:', result.error);
@@ -125,6 +162,70 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const sendVerificationCode = async (userData: {
+    email: string;
+    username: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+  }) => {
+    try {
+      setIsLoading(true);
+      setIsVerifying(true); // Set verification mode
+      setShowVerification(true); // Show verification screen
+      console.log('🔐 AuthContext: Sending verification code to:', userData.email);
+      console.log('🔐 AuthContext: Storing pending user data:', userData);
+      setPendingUserData(userData); // Store the user data for later use
+      const result = await apiService.sendVerificationCode(userData);
+      
+      console.log('🔐 AuthContext: sendVerificationCode result:', result);
+      
+      if (result.success) {
+        console.log('🔐 AuthContext: Verification code sent successfully');
+        return { success: true };
+      } else {
+        console.log('🔐 AuthContext: Failed to send verification code:', result.error);
+        setIsVerifying(false); // Reset if failed
+        setShowVerification(false); // Hide verification screen if failed
+        setPendingUserData(null); // Clear pending data if failed
+        return { success: false, error: result.error || 'Failed to send verification code' };
+      }
+    } catch (error) {
+      console.error('🔐 AuthContext: Send verification code error:', error);
+      setIsVerifying(false); // Reset if error
+      setShowVerification(false); // Hide verification screen if error
+      setPendingUserData(null); // Clear pending data if error
+      return { success: false, error: 'Network error occurred' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifyCodeAndRegister = async (email: string, code: string) => {
+    try {
+      setIsLoading(true);
+      console.log('🔐 AuthContext: Verifying code and registering for:', email);
+      console.log('🔐 AuthContext: Using pending user data:', pendingUserData);
+      const result = await apiService.verifyCodeAndRegister(email, code);
+      
+      if (result.success && result.data) {
+        console.log('🔐 AuthContext: Verification and registration successful, setting user:', result.data.user);
+        setUser(result.data.user);
+        setIsVerifying(false); // Exit verification mode
+        setPendingUserData(null); // Clear pending data after successful registration
+        return { success: true };
+      } else {
+        console.log('🔐 AuthContext: Verification failed:', result.error);
+        return { success: false, error: result.error || 'Verification failed' };
+      }
+    } catch (error) {
+      console.error('🔐 AuthContext: Verification error:', error);
+      return { success: false, error: 'Network error occurred' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const refreshUser = async () => {
     try {
       const result = await apiService.getCurrentUser();
@@ -136,14 +237,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const resetVerification = () => {
+    setIsVerifying(false);
+    setShowVerification(false);
+    setPendingUserData(null); // Clear pending data when resetting verification
+  };
+
   const value: AuthContextType = {
     user,
     isLoading,
     isAuthenticated,
+    showVerification,
+    setShowVerification,
+    pendingUserData, // Add pendingUserData to the context value
     login,
     register,
     logout,
-    refreshUser,
+    sendVerificationCode,
+    verifyCodeAndRegister,
+    resetVerification,
   };
 
   return (

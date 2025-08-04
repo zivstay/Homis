@@ -10,14 +10,27 @@
     "newArchEnabled": true,
     "description": "אפליקציה לניהול הוצאות בית חודשיות",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "אפליקציה זו זקוקה לגישה לגלריה כדי להוסיף תמונות להוצאות",
+        "NSCameraUsageDescription": "אפליקציה זו זקוקה לגישה למצלמה כדי לצלם תמונות להוצאות"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.CAMERA"
+      ],
+      "package": "com.sarusiziv96.homeexpensemanager"
     },
     "web": {
       "bundler": "metro",

@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import React, { useState } from 'react';
 import {
     Alert,
@@ -12,15 +14,36 @@ import {
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useTutorial } from '../contexts/TutorialContext';
 import { BoardMember } from '../services/api';
 
 const SettingsScreen: React.FC = () => {
   const { selectedBoard, boardMembers, inviteMember, removeMember } = useBoard();
   const { user, logout } = useAuth();
+  const { startTutorial, forceStartTutorial, resetTutorial, setCurrentScreen, checkScreenTutorial, clearAllTutorialData } = useTutorial();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [isInviting, setIsInviting] = useState(false);
+
+  // Update tutorial context when this screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🎓 SettingsScreen: Setting tutorial screen to Settings');
+      setCurrentScreen('Settings');
+      
+      // Check if we should show tutorial for this screen
+      const checkAndStartTutorial = async () => {
+        const shouldShow = await checkScreenTutorial('Settings');
+        if (shouldShow) {
+          console.log('🎓 SettingsScreen: Starting tutorial');
+          startTutorial();
+        }
+      };
+      
+      checkAndStartTutorial();
+    }, [setCurrentScreen, checkScreenTutorial, startTutorial])
+  );
 
   const handleInviteMember = async () => {
     if (!inviteEmail.trim()) {
@@ -29,7 +52,8 @@ const SettingsScreen: React.FC = () => {
     }
 
     setIsInviting(true);
-    const result = await inviteMember(inviteEmail.trim(), inviteRole);
+    // Always invite as 'member' role
+    const result = await inviteMember(inviteEmail.trim(), 'member');
     setIsInviting(false);
 
     if (result.success) {
@@ -62,6 +86,101 @@ const SettingsScreen: React.FC = () => {
               Alert.alert('הצלחה', 'החבר הוסר מהלוח');
             } else {
               Alert.alert('שגיאה', result.error || 'שגיאה בהסרת החבר');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRestartTutorial = () => {
+    Alert.alert(
+      'הפעלת מדריך מחדש',
+      'האם ברצונך להפעיל מחדש את המדריך להכרת האפליקציה?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'כן, הפעל מדריך',
+          onPress: () => {
+            console.log('🎓 SettingsScreen: User requested to restart tutorial');
+            forceStartTutorial();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleResetTutorial = () => {
+    Alert.alert(
+      'איפוס מדריך',
+      'פעולה זו תאפס את סטטוס המדריך ותציג אותו שוב בכניסה הבאה לאפליקציה. האם להמשיך?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'כן, אפס מדריך',
+          style: 'destructive',
+          onPress: async () => {
+            await resetTutorial();
+            Alert.alert('הושלם', 'המדריך אופס בהצלחה. יופיע בכניסה הבאה לאפליקציה.');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearAllTutorialData = () => {
+    Alert.alert(
+      'מחיקת כל נתוני המדריך',
+      'פעולה זו תמחק לחלוטין את כל נתוני המדריך מהמכשיר. המדריך יופיע שוב בכל המסכים. האם להמשיך?',
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'כן, מחק הכל',
+          style: 'destructive',
+          onPress: async () => {
+            console.log('🎓 SettingsScreen: User requested to clear all tutorial data');
+            await clearAllTutorialData();
+            Alert.alert('הושלם', 'כל נתוני המדריך נמחקו. המדריך יופיע שוב בכל המסכים.');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSpecificTutorial = (screenName: string) => {
+    Alert.alert(
+      `מדריך ${screenName}`,
+      `האם ברצונך להציג את המדריך עבור מסך ${screenName}?`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'כן, הצג מדריך',
+          onPress: () => {
+            console.log(`🎓 SettingsScreen: Starting specific tutorial for ${screenName}`);
+            setCurrentScreen(screenName);
+            forceStartTutorial();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearSpecificTutorial = (screenName: string) => {
+    Alert.alert(
+      `אפס מדריך ${screenName}`,
+      `האם ברצונך לאפס את המדריך עבור מסך ${screenName}? המדריך יופיע שוב בפעם הבאה שתגיעו למסך.`,
+      [
+        { text: 'ביטול', style: 'cancel' },
+        {
+          text: 'כן, אפס',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem(`tutorial_completed_${screenName}`);
+              Alert.alert('הושלם', `מדריך ${screenName} אופס בהצלחה`);
+            } catch (error) {
+              console.error('Error clearing specific tutorial:', error);
+              Alert.alert('שגיאה', 'שגיאה באיפוס המדריך');
             }
           },
         },
@@ -187,31 +306,6 @@ const SettingsScreen: React.FC = () => {
             textAlign="right"
           />
           
-          <View style={styles.roleSelector}>
-            <Text style={styles.roleLabel}>תפקיד:</Text>
-            <View style={styles.roleButtons}>
-              {['member', 'viewer'].map((role) => (
-                <TouchableOpacity
-                  key={role}
-                  style={[
-                    styles.roleButton,
-                    inviteRole === role && styles.selectedRoleButton,
-                  ]}
-                  onPress={() => setInviteRole(role)}
-                >
-                  <Text
-                    style={[
-                      styles.roleButtonText,
-                      inviteRole === role && styles.selectedRoleButtonText,
-                    ]}
-                  >
-                    {getRoleDisplayName(role)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={[styles.modalButton, styles.cancelButton]}
@@ -258,6 +352,20 @@ const SettingsScreen: React.FC = () => {
           keyExtractor={(item) => item.id}
           scrollEnabled={false}
         />
+      </View>
+
+      {/* Tutorial Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>מדריך ועזרה</Text>
+        <View style={styles.tutorialContainer}>
+          <TouchableOpacity
+            style={[styles.tutorialButton, styles.resetTutorialButton]}
+            onPress={handleResetTutorial}
+          >
+            <Text style={styles.resetTutorialButtonText}>🔄 אפס מדריך</Text>
+            <Text style={styles.tutorialButtonSubtext}>המדריך יופיע בכניסה הבאה</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -408,39 +516,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 16,
   },
-  roleSelector: {
-    marginBottom: 20,
-  },
-  roleLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 12,
-  },
-  roleButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  roleButton: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  selectedRoleButton: {
-    borderColor: '#3498db',
-    backgroundColor: '#ebf3fd',
-  },
-  roleButtonText: {
-    fontSize: 14,
-    color: '#2c3e50',
-  },
-  selectedRoleButtonText: {
-    fontWeight: 'bold',
-    color: '#3498db',
-  },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -470,6 +545,58 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  tutorialContainer: {
+    marginTop: 16,
+  },
+  tutorialButton: {
+    backgroundColor: '#2ecc71',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  tutorialButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  tutorialButtonSubtext: {
+    fontSize: 14,
+    color: 'white',
+  },
+  resetTutorialButton: {
+    backgroundColor: '#2ecc71',
+  },
+  resetTutorialButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  clearTutorialButton: {
+    backgroundColor: '#c0392b',
+  },
+  clearTutorialButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  specificTutorialsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  specificTutorialButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    backgroundColor: '#8e44ad',
+  },
+  clearSpecificButton: {
+    backgroundColor: '#e74c3c',
   },
 });
 

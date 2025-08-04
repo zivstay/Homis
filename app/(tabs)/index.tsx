@@ -1,34 +1,34 @@
-import React, { useState } from 'react';
-import { Alert, FlatList, StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    Alert,
+    FlatList,
+    RefreshControl,
+    StyleSheet
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddExpenseModal } from '@/components/AddExpenseModal';
 import { Expense, ExpenseCard } from '@/components/ExpenseCard';
 import { MonthlyBalance } from '@/components/MonthlyBalance';
 import { MonthPickerModal } from '@/components/MonthPickerModal';
-import { OnboardingModal } from '@/components/OnboardingModal';
 import { QuickAmountModal } from '@/components/QuickAmountModal';
 import { QuickCategoryButtons } from '@/components/QuickCategoryButtons';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import { useExpenses } from '@/contexts/ExpenseContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useBoard } from '@/contexts/BoardContext';
+
+import { Expense as ApiExpense, apiService, Category } from '@/services/api';
 
 export default function HomeScreen() {
-  const {
-    addExpense,
-    updateExpense,
-    deleteExpense,
-    getCurrentMonthExpenses,
-    getTotalMonthlyExpenses,
-    getCurrentMonthAndYear,
-    goToPreviousMonth,
-    goToNextMonth,
-    goToCurrentMonth,
-    isOnboardingComplete,
-    completeOnboarding,
-    onboardingConfig,
-    users,
-  } = useExpenses();
+  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses } = useBoard();
+  const { user } = useAuth();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
 
   const [isAmountModalVisible, setIsAmountModalVisible] = useState(false);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
@@ -36,78 +36,211 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [editingExpense, setEditingExpense] = useState<Expense | undefined>();
 
-  const currentMonthExpenses = getCurrentMonthExpenses();
-  const totalExpenses = getTotalMonthlyExpenses();
-  const { month, year } = getCurrentMonthAndYear();
+  // Convert API Expense to component Expense
+  const convertApiExpenseToExpense = (apiExpense: ApiExpense): Expense => ({
+    id: apiExpense.id,
+    amount: apiExpense.amount,
+    category: apiExpense.category,
+    description: apiExpense.description,
+    imageUri: apiExpense.image_url, // Map image_url to imageUri
+    paidBy: apiExpense.paid_by,
+    date: new Date(apiExpense.date),
+    isRecurring: apiExpense.is_recurring,
+    frequency: apiExpense.frequency as 'daily' | 'weekly' | 'monthly',
+    startDate: apiExpense.start_date ? new Date(apiExpense.start_date) : undefined,
+  });
+
+  // Filter expenses for current month/year from boardExpenses
+  const getCurrentMonthExpenses = () => {
+    return boardExpenses.filter(expense => {
+      const expenseDate = new Date(expense.date);
+      return expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear;
+    });
+  };
+
+  // Load data when board changes or month/year changes
+  useEffect(() => {
+    if (selectedBoard) {
+      loadCategories();
+    }
+  }, [selectedBoard, currentMonth, currentYear]);
+
+  // Refresh data when screen comes into focus (e.g., after adding expense)
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedBoard) {
+        refreshBoardExpenses();
+      }
+    }, [selectedBoard, currentMonth, currentYear])
+  );
+
+  const loadCategories = async () => {
+    if (!selectedBoard) return;
+
+    setIsLoading(true);
+    try {
+      const categoriesResult = await apiService.getBoardCategories(selectedBoard.id);
+
+      if (categoriesResult.success && categoriesResult.data) {
+        setCategories(categoriesResult.data.categories);
+      } else {
+        console.error('Failed to load categories:', categoriesResult.error);
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      Alert.alert('שגיאה', 'שגיאה בטעינת הנתונים');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refreshBoardExpenses(),
+      loadCategories()
+    ]);
+    setRefreshing(false);
+  };
+
+  // Calculate monthly totals from filtered expenses
+  const getTotalExpenses = () => {
+    const currentMonthExpenses = getCurrentMonthExpenses();
+    return currentMonthExpenses.reduce((total, expense) => total + expense.amount, 0);
+  };
+
+  const getCurrentMonthAndYear = () => ({
+    month: currentMonth,
+    year: currentYear,
+  });
+
+  const goToPreviousMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(currentYear - 1);
+    } else {
+      setCurrentMonth(currentMonth - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(currentYear + 1);
+    } else {
+      setCurrentMonth(currentMonth + 1);
+    }
+  };
+
+  const goToCurrentMonth = () => {
+    const now = new Date();
+    setCurrentMonth(now.getMonth());
+    setCurrentYear(now.getFullYear());
+  };
 
   const getPersonalizedTitle = () => {
-    if (!onboardingConfig) return 'מנהל הוצאות הבית';
-    
-    switch (onboardingConfig.type) {
-      case 'roommates':
-        return 'מנהל הוצאות שותפים';
-      case 'travelers':
-        return 'מנהל הוצאות טיול';
-      case 'couple':
-        return 'מנהל הוצאות זוגי';
-      case 'family':
-        return 'מנהל הוצאות משפחתי';
-      case 'custom':
-        return 'מנהל הוצאות מותאם';
-      default:
-        return 'מנהל הוצאות הבית';
-    }
+    return 'מנהל הוצאות הבית';
   };
 
   const getPersonalizedEmptyMessage = () => {
-    if (!onboardingConfig) {
-      return {
-        title: 'אין הוצאות החודש',
-        subtitle: 'הוסף הוצאה ראשונה כדי להתחיל לעקוב אחר ההוצאות שלך'
+    return {
+      title: 'אין הוצאות החודש',
+      subtitle: 'הוסף הוצאה ראשונה כדי להתחיל לעקוב אחר ההוצאות',
+    };
+  };
+
+  const handleAddExpense = async (expenseData: Omit<Expense, 'id' | 'date'>) => {
+    if (!selectedBoard) return;
+
+    try {
+      const apiExpenseData = {
+        amount: expenseData.amount,
+        category: expenseData.category,
+        description: expenseData.description || '',
+        paid_by: expenseData.paidBy,
+        is_recurring: expenseData.isRecurring,
+        frequency: expenseData.frequency || 'monthly',
       };
-    }
-    
-    switch (onboardingConfig.type) {
-      case 'roommates':
-        return {
-          title: 'אין הוצאות משותפות החודש',
-          subtitle: 'הוסף הוצאה משותפת ראשונה עם השותפים שלך'
+
+      const result = await apiService.createExpense(selectedBoard.id, apiExpenseData);
+      if (result.success) {
+        // Optimistic update - add expense to local state immediately
+        const newExpense: Expense = {
+          id: result.data?.id || Date.now().toString(), // Use server ID if available, fallback to timestamp
+          amount: expenseData.amount,
+          category: expenseData.category,
+          description: expenseData.description,
+          paidBy: expenseData.paidBy,
+          date: new Date(),
+          isRecurring: expenseData.isRecurring,
+          frequency: expenseData.frequency,
+          startDate: expenseData.startDate,
         };
-      case 'travelers':
-        return {
-          title: 'אין הוצאות טיול החודש',
-          subtitle: 'הוסף הוצאה ראשונה מהטיול שלך'
-        };
-      case 'couple':
-        return {
-          title: 'אין הוצאות זוגיות החודש',
-          subtitle: 'הוסף הוצאה משותפת ראשונה עם בן/בת הזוג'
-        };
-      case 'family':
-        return {
-          title: 'אין הוצאות משפחתיות החודש',
-          subtitle: 'הוסף הוצאה משפחתית ראשונה'
-        };
-      case 'custom':
-        return {
-          title: 'אין הוצאות החודש',
-          subtitle: 'הוסף הוצאה ראשונה כדי להתחיל לעקוב אחר ההוצאות שלך'
-        };
-      default:
-        return {
-          title: 'אין הוצאות החודש',
-          subtitle: 'הוסף הוצאה ראשונה כדי להתחיל לעקוב אחר ההוצאות שלך'
-        };
+        
+        // Add to the beginning of the list
+        // setExpenses(prev => [newExpense, ...prev]); // This line is removed as expenses are now managed by BoardContext
+        
+        Alert.alert('', 'ההוצאה נוספה בהצלחה');
+        
+        // Sync with server in background - ensure loadData is called
+        setTimeout(async () => {
+          console.log('Background sync: loading expenses from server...');
+          await refreshBoardExpenses(); // Use refreshBoardExpenses from BoardContext
+        }, 500);
+      } else {
+        Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
+      }
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      Alert.alert('שגיאה', 'שגיאה בהוספת ההוצאה');
     }
   };
 
-  const handleCategoryPress = (category: string) => {
-    setSelectedCategory(category);
-    setIsAmountModalVisible(true);
-  };
+  const handleUpdateExpense = async (expenseData: Omit<Expense, 'id' | 'date'>) => {
+    if (!editingExpense || !selectedBoard) return;
 
-  const handleAddExpense = (expenseData: Omit<Expense, 'id' | 'date'>) => {
-    addExpense(expenseData);
+    try {
+      const result = await apiService.updateExpense(selectedBoard.id, editingExpense.id, {
+        amount: expenseData.amount,
+        category: expenseData.category,
+        description: expenseData.description || '',
+        paid_by: expenseData.paidBy,
+        is_recurring: expenseData.isRecurring,
+        frequency: expenseData.frequency || 'monthly',
+      });
+
+      if (result.success) {
+        // Optimistic update - update expense in local state immediately
+        const updatedExpense: Expense = {
+          ...editingExpense,
+          amount: expenseData.amount,
+          category: expenseData.category,
+          description: expenseData.description,
+          paidBy: expenseData.paidBy,
+          isRecurring: expenseData.isRecurring,
+          frequency: expenseData.frequency,
+          startDate: expenseData.startDate,
+        };
+        
+        // setExpenses(prev => prev.map(expense => 
+        //   expense.id === editingExpense.id ? updatedExpense : expense
+        // )); // This line is removed as expenses are now managed by BoardContext
+        
+        setEditingExpense(undefined);
+        Alert.alert('הצלחה', 'ההוצאה עודכנה בהצלחה');
+        
+        // Sync with server in background - ensure loadData is called
+        setTimeout(async () => {
+          console.log('Background sync: loading expenses from server...');
+          await refreshBoardExpenses(); // Use refreshBoardExpenses from BoardContext
+        }, 1000);
+      } else {
+        Alert.alert('שגיאה', result.error || 'שגיאה בעדכון ההוצאה');
+      }
+    } catch (error) {
+      console.error('Error updating expense:', error);
+      Alert.alert('שגיאה', 'שגיאה בעדכון ההוצאה');
+    }
   };
 
   const handleEditExpense = (expense: Expense) => {
@@ -115,23 +248,47 @@ export default function HomeScreen() {
     setIsAddModalVisible(true);
   };
 
-  const handleUpdateExpense = (expenseData: Omit<Expense, 'id' | 'date'>) => {
-    if (editingExpense) {
-      updateExpense(editingExpense.id, expenseData);
-      setEditingExpense(undefined);
-    }
+  const handleCategoryPress = (category: string) => {
+    setSelectedCategory(category);
+    setIsAmountModalVisible(true);
   };
 
-  const handleDeleteExpense = (expenseId: string) => {
+  const handleDeleteExpense = async (expense: ApiExpense) => {
+    if (!selectedBoard || !user) return;
+    
+    // Check if user can delete this expense (only the creator can delete)
+    if (expense.created_by !== user.id) {
+      Alert.alert('שגיאה', 'ניתן למחוק רק הוצאות שיצרת בעצמך');
+      return;
+    }
+
     Alert.alert(
-      'מחיקת הוצאה',
-      'האם אתה בטוח שברצונך למחוק הוצאה זו?',
+      'מחק הוצאה',
+      `האם אתה בטוח שברצונך למחוק את ההוצאה "${expense.description || expense.category}"?`,
       [
         { text: 'ביטול', style: 'cancel' },
         {
           text: 'מחק',
           style: 'destructive',
-          onPress: () => deleteExpense(expenseId),
+          onPress: async () => {
+            try {
+              const result = await apiService.deleteExpense(selectedBoard.id, expense.id);
+              if (result.success) {
+                await refreshBoardExpenses(); // Use refreshBoardExpenses from BoardContext
+                Alert.alert('הצלחה', 'ההוצאה נמחקה בהצלחה');
+              } else {
+                // Handle different error types
+                let errorMessage = result.error || 'שגיאה במחיקת ההוצאה';
+                if (result.error?.includes('payments have already been made')) {
+                  errorMessage = 'לא ניתן למחוק הוצאה שכבר בוצעו עליה תשלומים. פנה לתמיכה אם יש צורך בשינוי';
+                }
+                Alert.alert('שגיאה', errorMessage);
+              }
+            } catch (error) {
+              console.error('Error deleting expense:', error);
+              Alert.alert('שגיאה', 'שגיאה במחיקת ההוצאה');
+            }
+          },
         },
       ]
     );
@@ -151,82 +308,95 @@ export default function HomeScreen() {
     setIsMonthPickerVisible(true);
   };
 
-  const handleOnboardingComplete = (config: any, categories: string[], usersList: string[]) => {
-    completeOnboarding(config, categories, usersList);
+  const handleAmountModalSave = (amount: number) => {
+    const expenseData: Omit<Expense, 'id' | 'date'> = {
+      amount,
+      category: selectedCategory,
+      description: '',
+      paidBy: boardMembers[0]?.user_id || '',
+      isRecurring: false,
+    };
+    handleAddExpense(expenseData);
+    setIsAmountModalVisible(false);
   };
 
   const renderExpenseItem = ({ item }: { item: Expense }) => (
     <ExpenseCard
       expense={item}
       onEdit={() => handleEditExpense(item)}
-      onDelete={() => handleDeleteExpense(item.id)}
+      onDelete={() => handleDeleteExpense(item)}
     />
   );
+
+  const emptyMessage = getPersonalizedEmptyMessage();
 
   return (
     <SafeAreaView style={styles.container}>
       <ThemedView style={styles.container}>
-        <View style={styles.header}>
-          <ThemedText type="title" style={styles.headerTitle}>
-            {getPersonalizedTitle()}
-          </ThemedText>
-        </View>
+        <ThemedText style={styles.header}>{getPersonalizedTitle()}</ThemedText>
 
         <FlatList
-          data={currentMonthExpenses}
+          data={getCurrentMonthExpenses()} // Use getCurrentMonthExpenses()
           renderItem={renderExpenseItem}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
           ListHeaderComponent={
             <>
               <MonthlyBalance
-                totalExpenses={totalExpenses}
-                month={month}
-                year={year}
-                expenseCount={currentMonthExpenses.length}
+                totalExpenses={getTotalExpenses()}
+                month={(currentMonth + 1).toString()}
+                year={currentYear}
+                expenseCount={getCurrentMonthExpenses().length} // Use getCurrentMonthExpenses()
                 onMonthPress={handleMonthPress}
               />
+
               <QuickCategoryButtons onCategoryPress={handleCategoryPress} />
             </>
           }
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <ThemedText style={styles.emptyText}>
-                {getPersonalizedEmptyMessage().title}
-              </ThemedText>
-              <ThemedText style={styles.emptySubtext}>
-                {getPersonalizedEmptyMessage().subtitle}
-              </ThemedText>
-            </View>
+            <ThemedView style={styles.emptyState}>
+              <ThemedText style={styles.emptyStateTitle}>{emptyMessage.title}</ThemedText>
+              <ThemedText style={styles.emptyStateSubtitle}>{emptyMessage.subtitle}</ThemedText>
+            </ThemedView>
           }
+          contentContainerStyle={getCurrentMonthExpenses().length === 0 ? styles.emptyContainer : undefined} // Use getCurrentMonthExpenses()
         />
 
         <QuickAmountModal
           visible={isAmountModalVisible}
-          onClose={handleCloseAmountModal}
-          onSave={handleAddExpense}
-          selectedCategory={selectedCategory}
-          availableUsers={users}
+          onClose={() => setIsAmountModalVisible(false)}
+          onSave={handleAmountModalSave}
+          category={selectedCategory}
         />
 
         <AddExpenseModal
           visible={isAddModalVisible}
-          onClose={handleCloseModal}
-          onSave={handleUpdateExpense}
-          expense={editingExpense}
-          isEditing={!!editingExpense}
+          onClose={() => {
+            setIsAddModalVisible(false);
+            setEditingExpense(undefined);
+          }}
+          onSave={editingExpense ? handleUpdateExpense : handleAddExpense}
+          selectedCategory={selectedCategory}
+          availableUsers={boardMembers.map(member => `${member.user.first_name} ${member.user.last_name}`)}
+          editingExpense={editingExpense}
         />
 
         <MonthPickerModal
           visible={isMonthPickerVisible}
           onClose={() => setIsMonthPickerVisible(false)}
-          currentMonth={parseInt(month) - 1}
-          currentYear={year}
-        />
-
-        <OnboardingModal
-          visible={!isOnboardingComplete}
-          onComplete={handleOnboardingComplete}
+          currentMonth={currentMonth}
+          currentYear={currentYear}
+          onMonthSelect={(month, year) => {
+            setCurrentMonth(month);
+            setCurrentYear(year);
+            setIsMonthPickerVisible(false);
+          }}
+          onPreviousMonth={goToPreviousMonth}
+          onNextMonth={goToNextMonth}
+          onCurrentMonth={goToCurrentMonth}
         />
       </ThemedView>
     </SafeAreaView>
@@ -258,6 +428,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  emptyStateSubtitle: {
     fontSize: 14,
     color: '#999',
     textAlign: 'center',

@@ -1,17 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
+import { uploadExpenseImage } from '../config/api';
+import { apiService } from '../services/api';
 import { Expense } from './ExpenseCard';
 import { ThemedText } from './ThemedText';
 
@@ -42,6 +46,22 @@ export function AddExpenseModal({
   const [startDate, setStartDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedCategoryType, setSelectedCategoryType] = useState<'predefined' | 'custom'>('predefined');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Use centralized upload function
+  const uploadImage = async (imageUri: string): Promise<string | null> => {
+    try {
+      setIsUploading(true);
+      const token = apiService.getAccessToken();
+      return await uploadExpenseImage(imageUri, token || undefined);
+    } catch (error) {
+      Alert.alert('שגיאה', error instanceof Error ? error.message : 'שגיאה בהעלאת התמונה');
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (expense && isEditing) {
@@ -51,6 +71,7 @@ export function AddExpenseModal({
       setIsRecurring(expense.isRecurring);
       setFrequency(expense.frequency || 'monthly');
       setStartDate(expense.startDate || new Date());
+      setSelectedImage(expense.imageUri || null);
       
       if (PREDEFINED_CATEGORIES.includes(expense.category)) {
         setCategory(expense.category);
@@ -74,9 +95,10 @@ export function AddExpenseModal({
     setFrequency('monthly');
     setStartDate(new Date());
     setSelectedCategoryType('predefined');
+    setSelectedImage(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!amount || parseFloat(amount) <= 0) {
       Alert.alert('שגיאה', 'אנא הכנס סכום תקין');
       return;
@@ -88,6 +110,15 @@ export function AddExpenseModal({
       return;
     }
 
+    let imageUrl = null;
+    if (selectedImage) {
+      imageUrl = await uploadImage(selectedImage);
+      if (selectedImage && !imageUrl) {
+        // Upload failed, but user can choose to continue without image
+        return;
+      }
+    }
+
     const expenseData: Omit<Expense, 'id' | 'date'> = {
       amount: parseFloat(amount),
       category: finalCategory,
@@ -96,6 +127,7 @@ export function AddExpenseModal({
       isRecurring,
       frequency: isRecurring ? frequency : undefined,
       startDate: isRecurring ? startDate : undefined,
+      imageUri: imageUrl || undefined,
     };
 
     onSave(expenseData);
@@ -145,6 +177,65 @@ export function AddExpenseModal({
       // For Android, show the picker immediately
       setShowDatePicker(true);
     }
+  };
+
+  const pickImage = async () => {
+    // Request permission
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (permissionResult.granted === false) {
+      Alert.alert('הרשאה נדרשת', 'אנא אפשר גישה לגלריה כדי לבחור תמונה');
+      return;
+    }
+
+    // Pick image
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    // Request permission
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (permissionResult.granted === false) {
+      Alert.alert('הרשאה נדרשת', 'אנא אפשר גישה למצלמה כדי לצלם תמונה');
+      return;
+    }
+
+    // Take photo
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const showImageOptions = () => {
+    Alert.alert(
+      'הוסף תמונה',
+      'בחר אופציה',
+      [
+        { text: 'מצלמה', onPress: takePhoto },
+        { text: 'גלריה', onPress: pickImage },
+        { text: 'בטל', style: 'cancel' },
+      ]
+    );
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
   };
 
   return (
@@ -289,6 +380,30 @@ export function AddExpenseModal({
               placeholderTextColor="#999"
               textAlign="right"
             />
+          </View>
+
+          {/* Image Upload Section */}
+          <View style={styles.inputGroup}>
+            <ThemedText style={styles.label}>תמונה (אופציונלי)</ThemedText>
+            {selectedImage ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
+                  <Ionicons name="close-circle" size={24} color="#FF3B30" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity 
+                style={styles.imageUploadButton} 
+                onPress={showImageOptions}
+                disabled={isUploading}
+              >
+                <Ionicons name="camera" size={24} color="#007AFF" />
+                <ThemedText style={styles.imageUploadText}>
+                  {isUploading ? 'מעלה...' : 'הוסף תמונה'}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Recurring Toggle */}
@@ -542,7 +657,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   toggleKnobActive: {
-    transform: [{ translateX: 20 }],
+    transform: [{ translateX: 22 }],
+    backgroundColor: '#007AFF',
   },
   frequencyGrid: {
     flexDirection: 'row',
@@ -583,5 +699,46 @@ const styles = StyleSheet.create({
   dateButtonText: {
     fontSize: 16,
     color: '#333',
+  },
+  // Image upload styles
+  imagePreviewContainer: {
+    position: 'relative',
+    alignSelf: 'center',
+    marginVertical: 8,
+  },
+  imagePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 8,
+    resizeMode: 'cover',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 2,
+    borderColor: '#E9ECEF',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 16,
+    gap: 8,
+  },
+  imageUploadText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '500',
   },
 }); 

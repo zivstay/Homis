@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    Alert,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -12,14 +13,12 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 
 const LoginScreen: React.FC = () => {
-  const { login, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
-  // Login form
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [error, setError] = useState('');
+  const { login, register, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData } = useAuth();
 
   // Register form
   const [registerEmail, setRegisterEmail] = useState('');
@@ -30,52 +29,165 @@ const LoginScreen: React.FC = () => {
   const [registerLastName, setRegisterLastName] = useState('');
   const [registerError, setRegisterError] = useState('');
 
-  const clearErrors = () => {
-    setLoginError('');
+  // Email verification
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+  // Remove local pendingUserData - using the one from AuthContext
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
+
+  useEffect(() => {
+    setError('');
     setRegisterError('');
+    setVerificationError('');
+    // Don't reset showVerification here - it should persist
+    console.log('🔍 LoginScreen: useEffect triggered by isLogin change, isLogin:', isLogin);
+  }, [isLogin]);
+
+  // Add effect to monitor showVerification changes
+  useEffect(() => {
+    console.log('🔍 LoginScreen: showVerification changed to:', showVerification);
+  }, [showVerification]);
+
+  // Add effect to monitor isLogin changes
+  useEffect(() => {
+    console.log('🔍 LoginScreen: isLogin changed to:', isLogin);
+  }, [isLogin]);
+
+  // Timer for verification code expiry
+  useEffect(() => {
+    let interval: number;
+    if (showVerification && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prevTime) => {
+          if (prevTime <= 1) {
+            setShowVerification(false);
+            setVerificationError('קוד האימות פג תוקף. אנא נסה שוב.');
+            return 0;
+          }
+          return prevTime - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showVerification, timeLeft]);
+
+  const startTimer = () => {
+    setTimeLeft(300); // 5 minutes
+  };
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleVerifyCode = async () => {
+    console.log('🔍 LoginScreen: handleVerifyCode called');
+    console.log('🔍 LoginScreen: verificationCode:', verificationCode);
+    console.log('🔍 LoginScreen: pendingUserData:', pendingUserData);
+    console.log('🔍 LoginScreen: isLoading:', isLoading);
+    
+    if (!verificationCode || verificationCode.length !== 5) {
+      console.log('🔍 LoginScreen: Invalid verification code length');
+      setVerificationError('נא להזין קוד בן 5 ספרות');
+      return;
+    }
+
+    if (!pendingUserData) {
+      console.log('🔍 LoginScreen: No pending user data');
+      setVerificationError('שגיאה במערכת. אנא נסה שוב.');
+      return;
+    }
+
+    console.log('🔍 LoginScreen: Starting verification process...');
+    setIsLoading(true);
+    const result = await verifyCodeAndRegister(pendingUserData.email, verificationCode);
+    console.log('🔍 LoginScreen: Verification result:', result);
+    setIsLoading(false);
+
+    if (result.success) {
+      console.log('🔍 LoginScreen: Verification successful');
+      // Registration successful, user is now logged in
+      setShowVerification(false);
+      setVerificationCode('');
+      // setPendingUserData(null); // This is now handled by AuthContext
+    } else {
+      console.log('🔍 LoginScreen: Verification failed:', result.error);
+      let errorMessage = result.error || 'קוד אימות שגוי';
+      
+      if (errorMessage.includes('expired')) {
+        errorMessage = 'קוד האימות פג תוקף. אנא נסה שוב.';
+        setShowVerification(false);
+      } else if (errorMessage.includes('invalid') || errorMessage.includes('incorrect')) {
+        errorMessage = 'קוד אימות שגוי. אנא נסה שוב.';
+      }
+      
+      setVerificationError(errorMessage);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!pendingUserData) return;
+
+    setIsLoading(true);
+    const result = await sendVerificationCode(pendingUserData);
+    setIsLoading(false);
+
+    if (result.success) {
+      setTimeLeft(300); // Reset timer
+      setVerificationError('');
+      Alert.alert('הצלחה', 'קוד אימות חדש נשלח לאימייל שלך');
+    } else {
+      setVerificationError(result.error || 'שגיאה בשליחת קוד אימות');
+    }
+  };
+
+  const clearErrors = () => {
+    setError('');
+    setRegisterError('');
+    setVerificationError('');
   };
 
   const handleLogin = async () => {
     clearErrors();
     
-    if (!loginEmail || !loginPassword) {
-      setLoginError('נא למלא את כל השדות');
+    if (!email || !password) {
+      setError('נא למלא את כל השדות');
       return;
     }
 
     // Basic email validation for login
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(loginEmail)) {
-      setLoginError('כתובת האימייל אינה תקינה');
+    if (!emailRegex.test(email)) {
+      setError('כתובת האימייל אינה תקינה');
       return;
     }
 
     setIsLoading(true);
-    const result = await login(loginEmail, loginPassword);
+    const result = await login({ email, password });
     setIsLoading(false);
 
     if (!result.success) {
-      // Map common backend errors to Hebrew
+      // Handle specific error messages
       let errorMessage = result.error || 'שגיאה בהתחברות';
       
-      // Translate common error messages
-      if (errorMessage.includes('Invalid credentials') || errorMessage.includes('incorrect')) {
-        errorMessage = 'אימייל או סיסמה שגויים';
-      } else if (errorMessage.includes('User not found')) {
-        errorMessage = 'משתמש לא נמצא';
-      } else if (errorMessage.includes('Connection failed')) {
-        errorMessage = 'בעיית חיבור לשרת';
+      if (errorMessage.includes('User not found') || errorMessage.includes('Invalid credentials')) {
+        errorMessage = 'שם משתמש או סיסמה שגויים';
+      } else if (errorMessage.includes('Network error') || errorMessage.includes('Connection failed')) {
+        errorMessage = 'שגיאת חיבור - בדוק את החיבור לאינטרנט';
       }
       
-      setLoginError(errorMessage);
+      setError(errorMessage);
     }
   };
 
   const handleRegister = async () => {
     clearErrors();
     
-    // Client-side validation
-    if (!registerEmail || !registerUsername || !registerPassword || 
+    console.log('🔍 LoginScreen: Starting registration process...');
+    console.log('🔍 LoginScreen: Current isLogin state:', isLogin);
+    
+    if (!registerEmail || !registerUsername || !registerPassword ||
         !registerConfirmPassword || !registerFirstName || !registerLastName) {
       setRegisterError('נא למלא את כל השדות');
       return;
@@ -91,44 +203,60 @@ const LoginScreen: React.FC = () => {
       return;
     }
 
-    // Email validation
+    // Email validation for registration
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(registerEmail)) {
       setRegisterError('כתובת האימייל אינה תקינה');
       return;
     }
 
-    // Username validation
     if (registerUsername.length < 3) {
       setRegisterError('שם המשתמש חייב להיות לפחות 3 תווים');
       return;
     }
 
-    setIsLoading(true);
-    const result = await register({
+    const userData = {
       email: registerEmail,
       username: registerUsername,
       password: registerPassword,
       first_name: registerFirstName,
       last_name: registerLastName,
-    });
+    };
+
+    console.log('🔍 LoginScreen: Sending verification code for:', userData.email);
+    setIsLoading(true);
+    const result = await sendVerificationCode(userData);
     setIsLoading(false);
 
-    if (!result.success) {
-      // Map common backend errors to Hebrew
-      let errorMessage = result.error || 'שגיאה בהרשמה';
+    console.log('🔍 LoginScreen: Verification code result:', result);
+
+    if (result.success) {
+      console.log('🔍 LoginScreen: Verification code sent successfully, showing verification screen');
+      console.log('🔍 LoginScreen: Setting showVerification to true');
+      // Store user data and show verification screen - now handled by AuthContext
+      // setShowVerification(true); // This is now handled in AuthContext
+      setTimeLeft(300); // Reset timer to 5 minutes
+      startTimer();
+      console.log('🔍 LoginScreen: State updated - showVerification should be true now');
+    } else {
+      console.log('🔍 LoginScreen: Verification code failed:', result.error);
+      // Handle specific error messages
+      let errorMessage = result.error || 'שגיאה ברישום';
       
-      // Translate common error messages
-      if (errorMessage.includes('already exists') || errorMessage.includes('already registered')) {
-        errorMessage = 'משתמש זה כבר קיים במערכת';
-      } else if (errorMessage.includes('Invalid email')) {
-        errorMessage = 'כתובת האימייל אינה תקינה';
-      } else if (errorMessage.includes('Password too short')) {
-        errorMessage = 'הסיסמה חייבת להיות לפחות 8 תווים';
-      } else if (errorMessage.includes('Username too short')) {
-        errorMessage = 'שם המשתמש חייב להיות לפחות 3 תווים';
+      if (errorMessage.includes('Email already exists')) {
+        errorMessage = 'כתובת האימייל כבר קיימת במערכת';
+      } else if (errorMessage.includes('Username already exists')) {
+        errorMessage = 'שם המשתמש כבר קיים במערכת';
+      } else if (errorMessage.includes('already exists') || errorMessage.includes('already registered')) {
+        if (errorMessage.includes('email')) {
+          errorMessage = 'כתובת האימייל כבר קיימת במערכת';
+        } else if (errorMessage.includes('username')) {
+          errorMessage = 'שם המשתמש כבר קיים במערכת';
+        } else {
+          errorMessage = 'המשתמש כבר קיים במערכת';
+        }
       } else if (errorMessage.includes('Connection failed')) {
-        errorMessage = 'בעיית חיבור לשרת';
+        errorMessage = 'שגיאת חיבור - בדוק את החיבור לאינטרנט';
       }
       
       setRegisterError(errorMessage);
@@ -140,12 +268,12 @@ const LoginScreen: React.FC = () => {
       <Text style={styles.title}>התחברות</Text>
       
       <TextInput
-        style={[styles.input, loginError ? styles.inputError : null]}
+        style={[styles.input, error ? styles.inputError : null]}
         placeholder="אימייל"
-        value={loginEmail}
+        value={email}
         onChangeText={(text) => {
-          setLoginEmail(text);
-          if (loginError) setLoginError('');
+          setEmail(text);
+          if (error) setError('');
         }}
         keyboardType="email-address"
         autoCapitalize="none"
@@ -153,18 +281,18 @@ const LoginScreen: React.FC = () => {
       />
       
       <TextInput
-        style={[styles.input, loginError ? styles.inputError : null]}
+        style={[styles.input, error ? styles.inputError : null]}
         placeholder="סיסמה"
-        value={loginPassword}
+        value={password}
         onChangeText={(text) => {
-          setLoginPassword(text);
-          if (loginError) setLoginError('');
+          setPassword(text);
+          if (error) setError('');
         }}
         secureTextEntry
       />
       
-      {loginError ? (
-        <Text style={styles.errorText}>{loginError}</Text>
+      {error ? (
+        <Text style={styles.errorText}>{error}</Text>
       ) : null}
       
       <TouchableOpacity
@@ -286,6 +414,105 @@ const LoginScreen: React.FC = () => {
     </View>
   );
 
+  const renderVerificationScreen = () => (
+    <View style={styles.form}>
+      <Text style={styles.verificationTitle}>אימות אימייל</Text>
+      <Text style={styles.verificationSubtitle}>
+        שלחנו קוד אימות בן 5 ספרות לכתובת האימייל:
+      </Text>
+      <Text style={styles.verificationEmail}>{pendingUserData?.email}</Text>
+      
+      <Text style={[styles.verificationSubtitle, { marginBottom: 20 }]}>
+        הזן את הקוד למטה ולחץ על "אמת קוד"
+      </Text>
+      
+      <TextInput
+        style={[styles.codeInput, verificationError ? styles.inputError : null]}
+        placeholder="קוד אימות (5 ספרות)"
+        value={verificationCode}
+        onChangeText={(text) => {
+          // Only allow numbers and limit to 5 digits
+          const numericText = text.replace(/[^0-9]/g, '').substring(0, 5);
+          setVerificationCode(numericText);
+          if (verificationError) setVerificationError('');
+        }}
+        keyboardType="numeric"
+        maxLength={5}
+        textAlign="center"
+      />
+      
+      {verificationCode.length < 5 && (
+        <Text style={styles.verificationSubtitle}>
+          הזן 5 ספרות מהקוד שנשלח לאימייל שלך
+        </Text>
+      )}
+      
+      {verificationCode.length === 5 && (
+        <Text style={[styles.verificationSubtitle, { color: '#27ae60', fontWeight: 'bold' }]}>
+          ✓ הקוד מוכן לאימות - לחץ על "אמת קוד"
+        </Text>
+      )}
+      
+      <View style={styles.timerContainer}>
+        <Text style={styles.timerText}>
+          הקוד יפוג תוקף בעוד: {formatTime(timeLeft)}
+        </Text>
+      </View>
+      
+      {verificationError ? (
+        <Text style={styles.errorText}>{verificationError}</Text>
+      ) : null}
+      
+      <TouchableOpacity
+        style={[
+          styles.button, 
+          styles.primaryButton, 
+          { 
+            backgroundColor: verificationCode.length === 5 ? '#27ae60' : '#bdc3c7',
+            marginBottom: 20,
+            flex: 1,
+            minHeight: 50
+          }
+        ]}
+        onPress={() => {
+          console.log('🔍 LoginScreen: Verify button pressed');
+          console.log('🔍 LoginScreen: Button disabled:', isLoading || verificationCode.length !== 5);
+          console.log('🔍 LoginScreen: isLoading:', isLoading);
+          console.log('🔍 LoginScreen: verificationCode.length:', verificationCode.length);
+          handleVerifyCode();
+        }}
+        disabled={isLoading || verificationCode.length !== 5}
+      >
+        <Text style={[styles.buttonText, { color: 'white' }]}>
+          {isLoading ? 'מאמת...' : 'אמת קוד'}
+        </Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity
+        style={styles.resendButton}
+        onPress={handleResendCode}
+        disabled={isLoading || timeLeft > 240} // Only allow resend after 1 minute
+      >
+        <Text style={[styles.resendButtonText, (isLoading || timeLeft > 240) && styles.resendButtonTextDisabled]}>
+          שלח קוד חדש
+        </Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity
+        style={styles.linkButton}
+        onPress={() => {
+          // setShowVerification(false); // This is now handled in AuthContext
+          setVerificationCode('');
+          // setPendingUserData(null); // This is now handled by AuthContext
+          setVerificationError('');
+          resetVerification(); // Reset verification state
+        }}
+      >
+        <Text style={styles.linkText}>חזור לרישום</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -297,7 +524,7 @@ const LoginScreen: React.FC = () => {
           <Text style={styles.appSubtitle}>ניהול הוצאות משותפות</Text>
         </View>
         
-        {isLogin ? renderLoginForm() : renderRegisterForm()}
+        {showVerification ? renderVerificationScreen() : (isLogin ? renderLoginForm() : renderRegisterForm())}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -316,6 +543,19 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  form: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   appTitle: {
     fontSize: 32,
@@ -388,6 +628,61 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     paddingHorizontal: 10,
+  },
+  verificationTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  verificationSubtitle: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  verificationEmail: {
+    fontSize: 16,
+    color: '#3498db',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  codeInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  timerContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  timerText: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  resendButton: {
+    backgroundColor: '#3498db',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  resendButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  resendButtonTextDisabled: {
+    color: '#bdc3c7',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
 });
 

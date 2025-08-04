@@ -38,10 +38,10 @@ export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCard
   const isOwedToMe = debt.toUser === currentUser;
   const isOwedByMe = debt.fromUser === currentUser;
 
-  const getDebtType = () => {
-    if (isOwedToMe) return 'מגיע לי';
-    if (isOwedByMe) return 'אני חייב';
-    return 'חוב אחר';
+  const getStatusText = () => {
+    if (debt.isPaid) return 'הוחזר';
+    if (isOwedByMe) return 'אני צריך להחזיר';
+    return 'צריך להחזיר לי';
   };
 
   const getDebtTypeColor = () => {
@@ -68,7 +68,7 @@ export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCard
                 color={getDebtTypeColor()} 
               />
               <ThemedText style={[styles.debtType, { color: getDebtTypeColor() }]}>
-                {getDebtType()}
+                {getStatusText()}
               </ThemedText>
             </View>
             <ThemedText type="title" style={[styles.amount, { color: getDebtTypeColor() }]}>
@@ -86,10 +86,10 @@ export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCard
         <View style={styles.debtDetails}>
           <ThemedText style={styles.debtDescription}>
             {isOwedToMe 
-              ? `${debt.fromUser} חייב לי`
+              ? `${debt.fromUser} צריך להחזיר לי`
               : isOwedByMe 
-                ? `אני חייב ל${debt.toUser}`
-                : `${debt.fromUser} חייב ל${debt.toUser}`
+                ? `אני צריך להחזיר ל${debt.toUser}`
+                : `${debt.fromUser} צריך להחזיר ל${debt.toUser}`
             }
           </ThemedText>
           

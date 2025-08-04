@@ -1,9 +1,10 @@
-from tinydb import TinyDB, Query
-from datetime import datetime
+import json
 import uuid
-from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from enum import Enum
+from typing import Dict, List, Optional
+from tinydb import TinyDB, Query
 
 class UserRole(Enum):
     OWNER = "owner"
@@ -54,6 +55,7 @@ class BoardMember:
     joined_at: str
     invited_by: str
     is_active: bool = True
+    is_default_board: bool = False
     permissions: List[str] = None
 
 @dataclass
@@ -90,6 +92,21 @@ class Debt:
     updated_at: str = None
 
 @dataclass
+class Notification:
+    id: str
+    user_id: str
+    board_id: str
+    board_name: str
+    expense_id: str
+    expense_description: str
+    amount: float
+    created_by: str
+    created_by_name: str
+    created_at: str
+    is_read: bool = False
+    type: str = "expense_added"  # expense_added, expense_updated, expense_deleted, board_invite
+
+@dataclass
 class Category:
     id: str
     board_id: str
@@ -114,6 +131,19 @@ class Invitation:
     accepted_at: str = None
     is_expired: bool = False
 
+@dataclass
+class PendingRegistration:
+    id: str
+    email: str
+    username: str
+    password_hash: str
+    first_name: str
+    last_name: str
+    verification_code: str
+    expiry_time: str
+    created_at: str
+    attempts: int = 0
+
 class DatabaseManager:
     def __init__(self, db_path: str):
         self.db = TinyDB(db_path)
@@ -124,8 +154,10 @@ class DatabaseManager:
         self.debts_table = self.db.table('debts')
         self.categories_table = self.db.table('categories')
         self.invitations_table = self.db.table('invitations')
-        self.sessions_table = self.db.table('sessions')
+        self.notifications_table = self.db.table('notifications')
+        self.pending_registrations_table = self.db.table('pending_registrations') # Added pending registrations table
         
+        # Define query objects for reuse
         self.User = Query()
         self.Board = Query()
         self.BoardMember = Query()
@@ -133,7 +165,8 @@ class DatabaseManager:
         self.Debt = Query()
         self.Category = Query()
         self.Invitation = Query()
-        self.Session = Query()
+        self.Notification = Query()
+        self.PendingRegistration = Query() # Added pending registration query object
 
     def initialize_default_data(self):
         """Initialize default categories and admin user"""
@@ -281,7 +314,21 @@ class DatabaseManager:
         
         board_ids = [member['board_id'] for member in member_boards]
         boards_data = self.boards_table.search(self.Board.id.one_of(board_ids))
-        return [Board(**board_data) for board_data in boards_data]
+        
+        boards = []
+        for board_data in boards_data:
+            board = Board(**board_data)
+            
+            # Find the corresponding member record to get is_default_board flag
+            member_record = next((m for m in member_boards if m['board_id'] == board.id), None)
+            if member_record:
+                # Add is_default_board as an attribute to the board object
+                board.is_default_board = member_record.get('is_default_board', False)
+                board.user_role = member_record.get('role')
+            
+            boards.append(board)
+            
+        return boards
 
     def update_board(self, board_id: str, update_data: Dict) -> bool:
         update_data['updated_at'] = datetime.now().isoformat()
@@ -307,6 +354,7 @@ class DatabaseManager:
             joined_at=datetime.now().isoformat(),
             invited_by=invited_by,
             is_active=True,
+            is_default_board=False, # Default to False
             permissions=self._get_permissions_for_role(role)
         )
         self.board_members_table.insert(asdict(member))
@@ -338,6 +386,41 @@ class DatabaseManager:
         return len(self.board_members_table.update(
             {'is_active': False}, 
             (self.BoardMember.board_id == board_id) & (self.BoardMember.user_id == user_id)
+        )) > 0
+
+    def set_default_board(self, user_id: str, board_id: str) -> bool:
+        """Set a board as the default board for a user"""
+        # First, remove default flag from all user's boards
+        self.board_members_table.update(
+            {'is_default_board': False},
+            self.BoardMember.user_id == user_id
+        )
+        
+        # Then set the specified board as default
+        return len(self.board_members_table.update(
+            {'is_default_board': True},
+            (self.BoardMember.user_id == user_id) & (self.BoardMember.board_id == board_id)
+        )) > 0
+
+    def get_user_default_board(self, user_id: str) -> Optional[Board]:
+        """Get the user's default board"""
+        member_data = self.board_members_table.get(
+            (self.BoardMember.user_id == user_id) & 
+            (self.BoardMember.is_default_board == True) &
+            (self.BoardMember.is_active == True)
+        )
+        
+        if not member_data:
+            return None
+            
+        board_data = self.boards_table.get(self.Board.id == member_data['board_id'])
+        return Board(**board_data) if board_data else None
+
+    def clear_default_board(self, user_id: str) -> bool:
+        """Clear default board for a user"""
+        return len(self.board_members_table.update(
+            {'is_default_board': False},
+            self.BoardMember.user_id == user_id
         )) > 0
 
     # Expense methods
@@ -377,15 +460,32 @@ class DatabaseManager:
             query = query & (self.Expense.date >= start_date) & (self.Expense.date < end_date)
         
         expenses_data = self.expenses_table.search(query)
-        return [Expense(**expense_data) for expense_data in expenses_data]
+        expenses = [Expense(**expense_data) for expense_data in expenses_data]
+        
+        # Sort by created_at descending (newest first)
+        expenses.sort(key=lambda x: x.created_at, reverse=True)
+        
+        return expenses
 
     def update_expense(self, expense_id: str, update_data: Dict) -> bool:
         update_data['updated_at'] = datetime.now().isoformat()
         return len(self.expenses_table.update(update_data, self.Expense.id == expense_id)) > 0
 
     def delete_expense(self, expense_id: str) -> bool:
-        # Delete associated debts first
-        self.debts_table.remove(self.Debt.expense_id == expense_id)
+        # Check if there are any paid debts associated with this expense
+        paid_debts = self.debts_table.search(
+            (self.Debt.expense_id == expense_id) & (self.Debt.is_paid == True)
+        )
+        
+        if paid_debts:
+            # Cannot delete expense if there are paid debts
+            print(f"❌ Cannot delete expense {expense_id}: has {len(paid_debts)} paid debt(s)")
+            return False
+        
+        # Delete associated unpaid debts first
+        self.debts_table.remove((self.Debt.expense_id == expense_id) & (self.Debt.is_paid == False))
+        
+        # Delete the expense
         return len(self.expenses_table.remove(self.Expense.id == expense_id)) > 0
 
     # Debt methods
@@ -410,7 +510,12 @@ class DatabaseManager:
             query = query & (self.Debt.board_id == board_id)
         
         debts_data = self.debts_table.search(query)
-        return [Debt(**debt_data) for debt_data in debts_data]
+        debts = [Debt(**debt_data) for debt_data in debts_data]
+        
+        # Sort by created_at descending (newest first)
+        debts.sort(key=lambda x: x.created_at, reverse=True)
+        
+        return debts
 
     def mark_debt_as_paid(self, debt_id: str) -> bool:
         update_data = {
@@ -436,16 +541,13 @@ class DatabaseManager:
         return category
 
     def get_board_categories(self, board_id: str) -> List[Category]:
-        # Get board-specific categories and global default categories
+        # Get only board-specific categories, not global defaults
+        # This ensures each board has its own custom categories
         board_categories = self.categories_table.search(
             (self.Category.board_id == board_id) & (self.Category.is_active == True)
         )
-        global_categories = self.categories_table.search(
-            (self.Category.board_id == "") & (self.Category.is_default == True)
-        )
         
-        all_categories = board_categories + global_categories
-        return [Category(**category_data) for category_data in all_categories]
+        return [Category(**category_data) for category_data in board_categories]
 
     # Invitation methods
     def create_invitation(self, invitation_data: Dict) -> Invitation:
@@ -484,6 +586,145 @@ class DatabaseManager:
             'accepted_at': datetime.now().isoformat()
         }
         return len(self.invitations_table.update(update_data, self.Invitation.id == invitation_id)) > 0
+
+    # Notification methods
+    def create_notification(self, notification_data: Dict) -> Notification:
+        notification = Notification(
+            id=str(uuid.uuid4()),
+            user_id=notification_data['user_id'],
+            board_id=notification_data['board_id'],
+            board_name=notification_data['board_name'],
+            expense_id=notification_data.get('expense_id', ''),
+            expense_description=notification_data.get('expense_description', ''),
+            amount=notification_data.get('amount', 0),
+            created_by=notification_data['created_by'],
+            created_by_name=notification_data['created_by_name'],
+            created_at=datetime.now().isoformat(),
+            is_read=False,
+            type=notification_data.get('type', 'expense_added')
+        )
+        self.notifications_table.insert(asdict(notification))
+        return notification
+
+    def get_user_notifications(self, user_id: str) -> List[Notification]:
+        notifications_data = self.notifications_table.search(self.Notification.user_id == user_id)
+        # Sort by created_at descending (newest first)
+        notifications_data.sort(key=lambda x: x['created_at'], reverse=True)
+        return [Notification(**notification_data) for notification_data in notifications_data]
+
+    def mark_notification_as_read(self, notification_id: str) -> bool:
+        return len(self.notifications_table.update(
+            {'is_read': True}, 
+            self.Notification.id == notification_id
+        )) > 0
+
+    def mark_all_user_notifications_as_read(self, user_id: str) -> bool:
+        return len(self.notifications_table.update(
+            {'is_read': True}, 
+            self.Notification.user_id == user_id
+        )) > 0
+
+    def delete_notification(self, notification_id: str) -> bool:
+        return len(self.notifications_table.remove(self.Notification.id == notification_id)) > 0
+
+    def create_expense_notification(self, expense: Expense, board_members: List[BoardMember], notification_type: str = 'expense_added'):
+        """Create notifications for all board members except the creator"""
+        # Get board info
+        board_data = self.boards_table.search(self.Board.id == expense.board_id)
+        if not board_data:
+            return
+        
+        board = board_data[0]
+        
+        # Get creator info
+        creator_data = self.users_table.search(self.User.id == expense.created_by)
+        if not creator_data:
+            return
+        
+        creator = creator_data[0]
+        creator_name = f"{creator.get('first_name', '')} {creator.get('last_name', '')}".strip()
+        if not creator_name:
+            creator_name = creator.get('username', 'משתמש')
+
+        # Create notification for each member except the creator
+        for member in board_members:
+            if member.user_id != expense.created_by:
+                notification_data = {
+                    'user_id': member.user_id,
+                    'board_id': expense.board_id,
+                    'board_name': board['name'],
+                    'expense_id': expense.id,
+                    'expense_description': expense.description,
+                    'amount': expense.amount,
+                    'created_by': expense.created_by,
+                    'created_by_name': creator_name,
+                    'type': notification_type
+                }
+                self.create_notification(notification_data)
+
+    # Pending Registration methods
+    def create_pending_registration(self, registration_data: Dict) -> PendingRegistration:
+        """Create a pending registration for email verification"""
+        pending_reg = PendingRegistration(
+            id=str(uuid.uuid4()),
+            email=registration_data['email'],
+            username=registration_data['username'],
+            password_hash=registration_data['password_hash'],
+            first_name=registration_data['first_name'],
+            last_name=registration_data['last_name'],
+            verification_code=registration_data['verification_code'],
+            expiry_time=registration_data['expiry_time'],
+            attempts=registration_data.get('attempts', 0),
+            created_at=datetime.now().isoformat()
+        )
+        self.pending_registrations_table.insert(asdict(pending_reg))
+        return pending_reg
+
+    def get_pending_registration(self, email: str) -> Optional[PendingRegistration]:
+        """Get pending registration by email"""
+        registration_data = self.pending_registrations_table.get(self.PendingRegistration.email == email)
+        if registration_data:
+            return PendingRegistration(**registration_data)
+        return None
+
+    def get_pending_registration_by_username(self, username: str) -> Optional[PendingRegistration]:
+        """Get pending registration by username"""
+        registration_data = self.pending_registrations_table.get(self.PendingRegistration.username == username)
+        if registration_data:
+            return PendingRegistration(**registration_data)
+        return None
+
+    def update_pending_registration_attempts(self, email: str, attempts: int) -> bool:
+        """Update the number of attempts for a pending registration"""
+        return len(self.pending_registrations_table.update(
+            {'attempts': attempts}, 
+            self.PendingRegistration.email == email
+        )) > 0
+
+    def delete_pending_registration(self, email: str) -> bool:
+        """Delete a pending registration"""
+        return len(self.pending_registrations_table.remove(self.PendingRegistration.email == email)) > 0
+
+    def cleanup_expired_pending_registrations(self):
+        """Remove expired pending registrations"""
+        current_time = datetime.now()
+        expired_registrations = []
+        
+        # Get all pending registrations and check expiry manually
+        all_registrations = self.pending_registrations_table.all()
+        for registration in all_registrations:
+            try:
+                expiry_time = datetime.fromisoformat(registration['expiry_time'])
+                if current_time > expiry_time:
+                    expired_registrations.append(registration)
+            except (ValueError, KeyError):
+                # Invalid date format, consider expired
+                expired_registrations.append(registration)
+        
+        # Remove expired registrations
+        for registration in expired_registrations:
+            self.pending_registrations_table.remove(self.PendingRegistration.id == registration['id'])
+            print(f"🗑️ Cleaned up expired registration for {registration.get('email', 'unknown')}")
 
     # Helper methods
     def _get_permissions_for_role(self, role: str) -> List[str]:

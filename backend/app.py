@@ -1,10 +1,12 @@
-from flask import Flask, request, jsonify, current_app
+from flask import Flask, request, jsonify, current_app, send_from_directory
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from datetime import datetime, timedelta
 import os
+import uuid
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 from config import config
@@ -13,6 +15,24 @@ from auth import AuthManager, require_auth, require_board_access, require_board_
 
 # Load environment variables
 load_dotenv()
+
+# File upload configuration
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def create_upload_folders():
+    """Create upload directories if they don't exist"""
+    upload_dir = os.path.join(os.getcwd(), UPLOAD_FOLDER)
+    expense_images_dir = os.path.join(upload_dir, 'expense_images')
+    
+    os.makedirs(upload_dir, exist_ok=True)
+    os.makedirs(expense_images_dir, exist_ok=True)
+    
+    return upload_dir, expense_images_dir
 
 def create_app(config_name='default'):
     """Application factory pattern"""
@@ -42,11 +62,36 @@ def create_app(config_name='default'):
     # Initialize database
     db_manager = DatabaseManager(app.config['DATABASE_PATH'])
     db_manager.initialize_default_data()
+    
+    # Clean up expired pending registrations on startup
+    db_manager.cleanup_expired_pending_registrations()
+    
     app.db_manager = db_manager
     
     # Initialize auth
     auth_manager = AuthManager(db_manager)
     app.auth_manager = auth_manager
+    
+    # Create upload directories
+    upload_dir, expense_images_dir = create_upload_folders()
+    app.config['UPLOAD_FOLDER'] = upload_dir
+    app.config['EXPENSE_IMAGES_FOLDER'] = expense_images_dir
+    
+    # File upload function
+    def upload_expense_image(file, user_id):
+        """Upload expense image and return the file URL"""
+        if file and allowed_file(file.filename):
+            # Generate unique filename
+            file_extension = file.filename.rsplit('.', 1)[1].lower()
+            unique_filename = f"{user_id}_{uuid.uuid4().hex}.{file_extension}"
+            
+            # Save file
+            file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], unique_filename)
+            file.save(file_path)
+            
+            # Return URL path for accessing the image
+            return f"/api/uploads/expense_images/{unique_filename}"
+        return None
     
     # Error handlers
     @app.errorhandler(404)
@@ -100,7 +145,7 @@ def create_app(config_name='default'):
             return jsonify({'error': result['error']}), result.get('code', 400)
 
     @app.route('/api/auth/refresh', methods=['POST'])
-    @require_auth
+    @jwt_required(refresh=True)
     def refresh():
         """Refresh access token"""
         result = auth_manager.refresh_token()
@@ -137,7 +182,42 @@ def create_app(config_name='default'):
         )
         
         if result['valid']:
-            return jsonify(result), 200
+            return jsonify({'message': 'Password changed successfully'}), 200
+        else:
+            return jsonify({'error': result['error']}), result.get('code', 400)
+
+    # Email verification endpoints
+    @app.route('/api/auth/send-verification', methods=['POST'])
+    def send_verification():
+        """Send verification code for registration"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        result = auth_manager.send_verification_code(data)
+        
+        if result['valid']:
+            return jsonify({'message': result['message']}), 200
+        else:
+            return jsonify({'error': result['error']}), result.get('code', 400)
+
+    @app.route('/api/auth/verify-and-register', methods=['POST'])
+    def verify_and_register():
+        """Verify code and complete registration"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        email = data.get('email')
+        code = data.get('code')
+        
+        if not email or not code:
+            return jsonify({'error': 'Email and verification code are required'}), 400
+        
+        result = auth_manager.verify_code_and_register(email, code)
+        
+        if result['valid']:
+            return jsonify(result), 201
         else:
             return jsonify({'error': result['error']}), result.get('code', 400)
 
@@ -145,24 +225,14 @@ def create_app(config_name='default'):
     @app.route('/api/boards', methods=['GET', 'OPTIONS'])
     @require_auth
     def get_user_boards():
-        """Get all boards for current user"""
-        if request.method == 'OPTIONS':
-            return '', 200
-            
-        print("🔍 Backend: /api/boards GET request received")
-        print("🔍 Backend: Request headers:", dict(request.headers))
-        
+        """Get all boards for the current user"""
         try:
             current_user_id = auth_manager.get_current_user()['user']['id']
-            print("🔍 Backend: Current user ID:", current_user_id)
-            
             boards = db_manager.get_user_boards(current_user_id)
-            print("🔍 Backend: Found boards:", len(boards))
             
             board_list = []
             for board in boards:
-                members = db_manager.get_board_members(board.id)
-                board_list.append({
+                board_dict = {
                     'id': board.id,
                     'name': board.name,
                     'description': board.description,
@@ -172,15 +242,20 @@ def create_app(config_name='default'):
                     'currency': board.currency,
                     'timezone': board.timezone,
                     'board_type': board.board_type,
-                    'member_count': len(members),
-                    'user_role': db_manager.get_user_role_in_board(current_user_id, board.id)
-                })
+                    'is_default_board': getattr(board, 'is_default_board', False),
+                    'user_role': getattr(board, 'user_role', 'member')
+                }
+                
+                # Get member count for each board
+                members = db_manager.get_board_members(board.id)
+                board_dict['member_count'] = len(members)
+                
+                board_list.append(board_dict)
             
-            print("🔍 Backend: Returning boards:", board_list)
             return jsonify({'boards': board_list}), 200
         except Exception as e:
-            print("🔍 Backend: Error in get_user_boards:", str(e))
-            return jsonify({'error': 'Internal server error'}), 500
+            print(f"Error getting boards: {e}")
+            return jsonify({'error': 'Failed to get boards'}), 500
 
     @app.route('/api/boards', methods=['POST'])
     @require_auth
@@ -315,6 +390,11 @@ def create_app(config_name='default'):
     def get_board_members(board_id):
         """Get board members"""
         members = db_manager.get_board_members(board_id)
+        print(f"🔍 Board {board_id} has {len(members)} members:")
+        for member in members:
+            user = db_manager.get_user_by_id(member.user_id)
+            if user:
+                print(f"🔍 Member: {user.first_name} {user.last_name} (ID: {user.id}, Role: {member.role})")
         
         member_list = []
         for member in members:
@@ -393,16 +473,40 @@ def create_app(config_name='default'):
         """Remove a member from the board"""
         current_user_id = auth_manager.get_current_user()['user']['id']
         
-        # Prevent removing yourself if you're the owner
-        board = db_manager.get_board_by_id(board_id)
-        if board.owner_id == user_id and current_user_id == user_id:
-            return jsonify({'error': 'Cannot remove yourself as board owner'}), 400
+        if user_id == current_user_id:
+            return jsonify({'error': 'Cannot remove yourself from the board'}), 400
         
-        success = db_manager.remove_board_member(board_id, user_id)
-        if success:
+        if db_manager.remove_board_member(board_id, user_id):
             return jsonify({'message': 'Member removed successfully'}), 200
         else:
             return jsonify({'error': 'Failed to remove member'}), 500
+
+    @app.route('/api/boards/<board_id>/set-default', methods=['PUT'])
+    @require_auth
+    @require_board_access(BoardPermission.READ.value)
+    def set_default_board(board_id):
+        """Set a board as the user's default board"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        success = db_manager.set_default_board(current_user_id, board_id)
+        
+        if success:
+            return jsonify({'message': 'Default board set successfully'}), 200
+        else:
+            return jsonify({'error': 'Failed to set default board'}), 500
+
+    @app.route('/api/boards/clear-default', methods=['PUT'])
+    @require_auth
+    def clear_default_board():
+        """Clear the user's default board"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        success = db_manager.clear_default_board(current_user_id)
+        
+        if success:
+            return jsonify({'message': 'Default board cleared successfully'}), 200
+        else:
+            return jsonify({'error': 'Failed to clear default board'}), 500
 
     # Expense routes
     @app.route('/api/boards/<board_id>/expenses', methods=['GET'])
@@ -432,7 +536,7 @@ def create_app(config_name='default'):
                 'frequency': expense.frequency,
                 'start_date': expense.start_date,
                 'end_date': expense.end_date,
-                'receipt_url': expense.receipt_url,
+                'image_url': expense.receipt_url,  # Return as image_url for frontend
                 'tags': expense.tags or []
             })
         
@@ -448,6 +552,7 @@ def create_app(config_name='default'):
             return jsonify({'error': 'Amount and category are required'}), 400
         
         current_user_id = auth_manager.get_current_user()['user']['id']
+        print(f"🔍 Creating expense - User: {current_user_id}, Board: {board_id}, Amount: {data['amount']}")
         
         expense_data = {
             'board_id': board_id,
@@ -461,16 +566,30 @@ def create_app(config_name='default'):
             'frequency': data.get('frequency', 'monthly'),
             'start_date': data.get('start_date'),
             'end_date': data.get('end_date'),
-            'receipt_url': data.get('receipt_url'),
+            'receipt_url': data.get('image_url'),  # Use image_url from frontend
             'tags': data.get('tags', [])
         }
         
+        print(f"🔍 Expense data - Paid by: {expense_data['paid_by']}")
+        
         expense = db_manager.create_expense(expense_data)
+        print(f"🔍 Expense created with ID: {expense.id}")
         
         # Create debts if there are multiple members
         members = db_manager.get_board_members(board_id)
+        print(f"🔍 Board has {len(members)} members")
+        for member in members:
+            user = db_manager.get_user_by_id(member.user_id)
+            print(f"🔍 Member: {user.first_name} {user.last_name} (ID: {member.user_id})")
+        
         if len(members) > 1:
+            print(f"🔍 Creating debts for expense...")
             create_debts_for_expense(expense, members)
+        else:
+            print(f"🔍 Only one member - no debts to create")
+        
+        # Create notifications for all board members except the creator
+        db_manager.create_expense_notification(expense, members, 'expense_added')
         
         return jsonify({
             'id': expense.id,
@@ -484,6 +603,7 @@ def create_app(config_name='default'):
             'created_at': expense.created_at,
             'is_recurring': expense.is_recurring,
             'frequency': expense.frequency,
+            'image_url': expense.receipt_url,  # Return as image_url for frontend
             'tags': expense.tags or []
         }), 201
 
@@ -503,26 +623,54 @@ def create_app(config_name='default'):
         if not expense:
             return jsonify({'error': 'Expense not found'}), 404
         
+        # Check if there are critical updates that would affect paid debts
+        if 'amount' in data or 'paid_by' in data:
+            # Check if there are any paid debts associated with this expense
+            paid_debts = db_manager.debts_table.search(
+                (db_manager.Debt.expense_id == expense_id) & 
+                (db_manager.Debt.is_paid == True)
+            )
+            
+            if paid_debts:
+                return jsonify({'error': 'Cannot modify amount or payer - some payments have already been made. Contact support if you need to modify this expense.'}), 400
+        
         update_data = {}
-        allowed_fields = ['amount', 'category', 'description', 'paid_by', 'date', 'is_recurring', 'frequency', 'start_date', 'end_date', 'receipt_url', 'tags']
+        allowed_fields = ['amount', 'category', 'description', 'paid_by', 'date', 'is_recurring', 'frequency', 'start_date', 'end_date', 'tags']
         
         for field in allowed_fields:
             if field in data:
                 update_data[field] = data[field]
         
+        # Handle image_url from frontend, map to receipt_url in database
+        if 'image_url' in data:
+            update_data['receipt_url'] = data['image_url']
+        
         if update_data:
             success = db_manager.update_expense(expense_id, update_data)
             if success:
-                # Update debts if amount or paid_by changed
+                # Update debts only if amount or paid_by changed AND there are no paid debts
                 if 'amount' in update_data or 'paid_by' in update_data:
+                    print(f"🔍 Updating debts for expense {expense_id} - amount or payer changed")
                     members = db_manager.get_board_members(board_id)
                     if len(members) > 1:
-                        # Remove old debts and create new ones
-                        db_manager.debts_table.remove(db_manager.Debt.expense_id == expense_id)
+                        # Remove only UNPAID debts and create new ones
+                        print(f"🔍 Removing old UNPAID debts for expense {expense_id}")
+                        db_manager.debts_table.remove(
+                            (db_manager.Debt.expense_id == expense_id) & 
+                            (db_manager.Debt.is_paid == False)
+                        )
                         updated_expense = db_manager.get_board_expenses(board_id)
                         updated_expense = next((e for e in updated_expense if e.id == expense_id), None)
                         if updated_expense:
+                            print(f"🔍 Creating new debts for updated expense")
                             create_debts_for_expense(updated_expense, members)
+                
+                # Create notifications for expense update
+                members = db_manager.get_board_members(board_id)
+                updated_expense = db_manager.get_board_expenses(board_id)
+                updated_expense = next((e for e in updated_expense if e.id == expense_id), None)
+                if updated_expense:
+                    db_manager.create_expense_notification(updated_expense, members, 'expense_updated')
                 
                 return jsonify({'message': 'Expense updated successfully'}), 200
         
@@ -533,18 +681,63 @@ def create_app(config_name='default'):
     @require_board_access(BoardPermission.WRITE.value)
     def delete_expense(board_id, expense_id):
         """Delete an expense"""
-        # Get the expense to check if it exists and belongs to the board
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        # Get the expense before deleting for notifications
         expenses = db_manager.get_board_expenses(board_id)
         expense = next((e for e in expenses if e.id == expense_id), None)
         
         if not expense:
             return jsonify({'error': 'Expense not found'}), 404
         
-        success = db_manager.delete_expense(expense_id)
-        if success:
+        # Check if user is the creator of the expense
+        if expense.created_by != current_user_id:
+            return jsonify({'error': 'You can only delete expenses you created'}), 403
+        
+        # Check if there are any PAID debts associated with this expense
+        # Only paid debts prevent deletion - unpaid debts can be deleted
+        paid_debts = db_manager.debts_table.search(
+            (db_manager.Debt.expense_id == expense_id) & 
+            (db_manager.Debt.is_paid == True)
+        )
+        
+        if paid_debts:
+            return jsonify({'error': 'Cannot delete expense - some payments have already been made. Contact support if you need to modify this expense.'}), 400
+        
+        # Get board members for notifications
+        members = db_manager.get_board_members(board_id)
+        
+        # Create notifications before deleting
+        db_manager.create_expense_notification(expense, members, 'expense_deleted')
+        
+        if db_manager.delete_expense(expense_id):
             return jsonify({'message': 'Expense deleted successfully'}), 200
+        return jsonify({'error': 'Failed to delete expense'}), 500
+
+    # File upload endpoints
+    @app.route('/api/upload/expense-image', methods=['POST'])
+    @require_auth
+    def upload_expense_image_endpoint():
+        """Upload an image for an expense"""
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image file provided'}), 400
+        
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        image_url = upload_expense_image(file, current_user_id)
+        if image_url:
+            return jsonify({'image_url': image_url}), 200
         else:
-            return jsonify({'error': 'Failed to delete expense'}), 500
+            return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
+
+    @app.route('/api/uploads/expense_images/<filename>')
+    def serve_expense_image(filename):
+        """Serve uploaded expense images"""
+        return send_from_directory(app.config['EXPENSE_IMAGES_FOLDER'], filename)
 
     # Debt routes
     @app.route('/api/boards/<board_id>/debts', methods=['GET'])
@@ -670,17 +863,14 @@ def create_app(config_name='default'):
     def get_all_debts():
         """Get all debts for the current user across all boards"""
         current_user_id = auth_manager.get_current_user()['user']['id']
-        
-        # Get query parameters
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        board_ids = request.args.getlist('board_ids')
-        is_paid = request.args.get('is_paid')
+        print(f"🔍 === Loading debts for user: {current_user_id} ===")
         
         # Get user's boards
         user_boards = db_manager.get_user_boards(current_user_id)
-        if board_ids:
-            user_boards = [board for board in user_boards if board.id in board_ids]
+        
+        print(f"🔍 User has access to {len(user_boards)} boards")
+        for board in user_boards:
+            print(f"🔍 Board: {board.name} (ID: {board.id})")
         
         all_debts = []
         total_owed = 0
@@ -689,25 +879,19 @@ def create_app(config_name='default'):
         total_paid = 0
         
         for board in user_boards:
+            print(f"🔍 Checking debts in board: {board.name} (ID: {board.id})")
             board_debts = db_manager.get_user_debts(current_user_id, board.id)
+            print(f"🔍 Found {len(board_debts)} debts in this board")
             
             for debt in board_debts:
-                # Filter by date if provided
-                if start_date or end_date:
-                    debt_date = datetime.fromisoformat(debt.created_at.replace('Z', '+00:00'))
-                    if start_date:
-                        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                        if debt_date < start_dt:
-                            continue
-                    if end_date:
-                        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                        if debt_date > end_dt:
-                            continue
+                print(f"🔍 Processing debt: {debt.from_user_id} -> {debt.to_user_id}, amount: {debt.amount}, paid: {debt.is_paid}")
                 
-                # Filter by paid status if provided
-                if is_paid is not None:
-                    if debt.is_paid != (is_paid.lower() == 'true'):
-                        continue
+                # Get user names for display
+                from_user = db_manager.get_user_by_id(debt.from_user_id)
+                to_user = db_manager.get_user_by_id(debt.to_user_id)
+                
+                from_user_name = f"{from_user.first_name} {from_user.last_name}" if from_user else "משתמש לא ידוע"
+                to_user_name = f"{to_user.first_name} {to_user.last_name}" if to_user else "משתמש לא ידוע"
                 
                 all_debts.append({
                     'id': debt.id,
@@ -715,6 +899,8 @@ def create_app(config_name='default'):
                     'expense_id': debt.expense_id,
                     'from_user_id': debt.from_user_id,
                     'to_user_id': debt.to_user_id,
+                    'from_user_name': from_user_name,
+                    'to_user_name': to_user_name,
                     'amount': debt.amount,
                     'description': debt.description,
                     'is_paid': debt.is_paid,
@@ -725,13 +911,19 @@ def create_app(config_name='default'):
                 
                 # Calculate summary
                 if debt.from_user_id == current_user_id:
-                    total_owed += debt.amount
+                    print(f"🔍 Current user owes {debt.amount} to {to_user_name}")
                     if not debt.is_paid:
+                        total_owed += debt.amount
                         total_unpaid += debt.amount
                     else:
                         total_paid += debt.amount
                 else:
-                    total_owed_to_me += debt.amount
+                    print(f"🔍 {from_user_name} owes {debt.amount} to current user")
+                    if not debt.is_paid:
+                        total_owed_to_me += debt.amount
+        
+        print(f"🔍 Final summary - Total owed: {total_owed}, Total owed to me: {total_owed_to_me}")
+        print(f"🔍 Total debts found: {len(all_debts)}")
         
         return jsonify({
             'debts': all_debts,
@@ -865,14 +1057,37 @@ def create_app(config_name='default'):
     # Helper function to create debts for an expense
     def create_debts_for_expense(expense, members):
         """Create debts for all members except the payer"""
+        print(f"🔍 === Creating debts for expense ===")
+        print(f"🔍 Expense ID: {expense.id}")
+        print(f"🔍 Expense amount: {expense.amount}")
+        print(f"🔍 Total members: {len(members)}")
+        print(f"🔍 Paid by: {expense.paid_by}")
+        
+        # Debug: Print all members
+        for i, member in enumerate(members):
+            user = db_manager.get_user_by_id(member.user_id)
+            print(f"🔍 Member {i+1}: {user.first_name} {user.last_name} (ID: {member.user_id})")
+        
         other_members = [member for member in members if member.user_id != expense.paid_by]
+        print(f"🔍 Other members (who owe money): {len(other_members)}")
+        
+        # Debug: Print other members
+        for i, member in enumerate(other_members):
+            user = db_manager.get_user_by_id(member.user_id)
+            print(f"🔍 Debtor {i+1}: {user.first_name} {user.last_name} (ID: {member.user_id})")
         
         if not other_members:
+            print("🔍 No other members - no debts to create")
             return
         
         total_people = len(members)
         amount_per_person = expense.amount / total_people
         
+        print(f"🔍 Total people: {total_people}")
+        print(f"🔍 Amount per person: {amount_per_person}")
+        print(f"🔍 Each person owes to payer: {amount_per_person}")
+        
+        debts_created = 0
         for member in other_members:
             debt_data = {
                 'board_id': expense.board_id,
@@ -882,7 +1097,102 @@ def create_app(config_name='default'):
                 'amount': amount_per_person,
                 'description': f"{expense.category} - {expense.description or 'Shared expense'}"
             }
-            db_manager.create_debt(debt_data)
+            print(f"🔍 Creating debt: {member.user_id} owes {amount_per_person} to {expense.paid_by}")
+            debt = db_manager.create_debt(debt_data)
+            print(f"🔍 Debt created with ID: {debt.id}")
+            debts_created += 1
+        
+        print(f"🔍 Total debts created: {debts_created}")
+        print(f"🔍 === Finished creating debts ===")
+        
+        # Let's verify the debts were actually saved
+        print(f"🔍 === Verifying debts in database ===")
+        all_debts = db_manager.get_user_debts(expense.paid_by, expense.board_id)
+        print(f"🔍 Total debts for payer in this board: {len(all_debts)}")
+        for debt in all_debts:
+            if debt.expense_id == expense.id:
+                print(f"🔍 Found debt for this expense: {debt.from_user_id} -> {debt.to_user_id}, amount: {debt.amount}")
+
+    # Notification endpoints
+    @app.route('/api/notifications', methods=['GET'])
+    @require_auth
+    def get_notifications():
+        """Get notifications for the current user"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        notifications = db_manager.get_user_notifications(current_user_id)
+        
+        notification_list = []
+        for notification in notifications:
+            notification_list.append({
+                'id': notification.id,
+                'user_id': notification.user_id,
+                'board_id': notification.board_id,
+                'board_name': notification.board_name,
+                'expense_id': notification.expense_id,
+                'expense_description': notification.expense_description,
+                'amount': notification.amount,
+                'created_by': notification.created_by,
+                'created_by_name': notification.created_by_name,
+                'created_at': notification.created_at,
+                'is_read': notification.is_read,
+                'type': notification.type
+            })
+        
+        return jsonify({'notifications': notification_list}), 200
+
+    @app.route('/api/notifications/<notification_id>/read', methods=['PUT'])
+    @require_auth
+    def mark_notification_as_read(notification_id):
+        """Mark a specific notification as read"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        # Check if notification belongs to current user
+        notifications = db_manager.get_user_notifications(current_user_id)
+        notification = next((n for n in notifications if n.id == notification_id), None)
+        
+        if not notification:
+            return jsonify({'error': 'Notification not found'}), 404
+        
+        success = db_manager.mark_notification_as_read(notification_id)
+        
+        if success:
+            return jsonify({'message': 'Notification marked as read'}), 200
+        else:
+            return jsonify({'error': 'Failed to mark notification as read'}), 500
+
+    @app.route('/api/notifications/mark-all-read', methods=['PUT'])
+    @require_auth
+    def mark_all_notifications_as_read():
+        """Mark all notifications as read for the current user"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        success = db_manager.mark_all_user_notifications_as_read(current_user_id)
+        
+        if success:
+            return jsonify({'message': 'All notifications marked as read'}), 200
+        else:
+            return jsonify({'error': 'Failed to mark notifications as read'}), 500
+
+    @app.route('/api/notifications/<notification_id>', methods=['DELETE'])
+    @require_auth
+    def delete_notification(notification_id):
+        """Delete a specific notification"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        
+        # Check if notification belongs to current user
+        notifications = db_manager.get_user_notifications(current_user_id)
+        notification = next((n for n in notifications if n.id == notification_id), None)
+        
+        if not notification:
+            return jsonify({'error': 'Notification not found'}), 404
+        
+        success = db_manager.delete_notification(notification_id)
+        
+        if success:
+            return jsonify({'message': 'Notification deleted'}), 200
+        else:
+            return jsonify({'error': 'Failed to delete notification'}), 500
 
     return app
 
