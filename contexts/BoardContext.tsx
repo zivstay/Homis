@@ -22,6 +22,7 @@ interface BoardContextType {
   refreshBoards: () => Promise<void>;
   refreshBoardMembers: () => Promise<void>;
   refreshBoardExpenses: () => Promise<void>;
+  refreshBoardData: () => Promise<void>;
   inviteMember: (email: string, role: string) => Promise<{ success: boolean; error?: string }>;
   removeMember: (userId: string) => Promise<{ success: boolean; error?: string }>;
   setDefaultBoard: (boardId: string) => Promise<{ success: boolean; error?: string }>;
@@ -255,14 +256,9 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
         const newBoard = result.data;
         console.log('✅ Board created successfully:', newBoard.id);
         
-        // If custom categories were provided, save them to the board
-        if (boardData.custom_categories && boardData.custom_categories.length > 0) {
-          console.log('📋 Saving custom categories for board:', newBoard.id);
-          const categoriesResult = await saveBoardCategories(newBoard.id, boardData.custom_categories);
-          if (!categoriesResult.success) {
-            console.error('⚠️ Failed to save custom categories:', categoriesResult.error);
-          }
-        }
+        // השרת כבר מטפל ביצירת הקטגוריות המותאמות אישית
+        // אין צורך לשמור אותן שוב כאן כדי למנוע כפילות
+        console.log('📋 Categories handled by server, no need to save separately');
         
         // Refresh boards to get the updated list
         await refreshBoards();
@@ -394,6 +390,20 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     }
   };
 
+  const refreshBoardData = async () => {
+    console.log('🔄 BoardContext: Refreshing all board data...');
+    try {
+      await Promise.all([
+        refreshBoards(),
+        refreshBoardMembers(),
+        refreshBoardExpenses()
+      ]);
+      console.log('✅ BoardContext: All board data refreshed successfully');
+    } catch (error) {
+      console.error('❌ BoardContext: Error refreshing board data:', error);
+    }
+  };
+
   const value: BoardContextType = {
     boards,
     selectedBoard,
@@ -406,6 +416,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     refreshBoards,
     refreshBoardMembers,
     refreshBoardExpenses,
+    refreshBoardData,
     inviteMember,
     removeMember,
     setDefaultBoard,

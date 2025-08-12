@@ -1,6 +1,6 @@
 declare module 'react-native-svg-charts' {
   import { ComponentType } from 'react';
-    import { ViewStyle } from 'react-native';
+  import { ViewStyle } from 'react-native';
 
   interface PieChartProps {
     data: any[];

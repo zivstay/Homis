@@ -28,6 +28,16 @@ class Config:
     MAX_BOARDS_PER_USER = 10
     MAX_USERS_PER_BOARD = 20
     MAX_EXPENSES_PER_BOARD = 1000
+    
+    # Backblaze B2 settings
+    B2_APPLICATION_KEY_ID = os.environ.get('B2_APPLICATION_KEY_ID','005debd563442b50000000001')
+    B2_APPLICATION_KEY = os.environ.get('B2_APPLICATION_KEY','K005jbusmrfZgO7YMli+WPP8GTOqAsc')
+    B2_BUCKET_NAME = os.environ.get('B2_BUCKET_NAME','homis-bucket')
+    B2_BUCKET_ID = os.environ.get('B2_BUCKET_ID','9dceebed1546730494820b15')
+    B2_ENDPOINT_URL = os.environ.get('B2_ENDPOINT_URL','s3.us-east-005.backblazeb2.com')  # Optional: Custom endpoint
+    
+    # File upload settings
+    UPLOAD_METHOD = os.environ.get('UPLOAD_METHOD', 'b2')  # 'local' or 'b2'
 
 class DevelopmentConfig(Config):
     """Development configuration"""

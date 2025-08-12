@@ -13,6 +13,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import CategoryManager from '../components/CategoryManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useTutorial } from '../contexts/TutorialContext';
@@ -26,6 +27,7 @@ const SettingsScreen: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [isInviting, setIsInviting] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   // Update tutorial context when this screen is focused
   useFocusEffect(
@@ -358,6 +360,19 @@ const SettingsScreen: React.FC = () => {
         />
       </View>
 
+      {/* Board Settings */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>הגדרות לוח</Text>
+        
+        <TouchableOpacity
+          style={styles.settingButton}
+          onPress={() => setShowCategoryManager(true)}
+        >
+          <Text style={styles.settingButtonText}>🏷️ נהל קטגוריות</Text>
+          <Text style={styles.settingButtonSubtext}>ערוך את הקטגוריות הזמינות בלוח</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Tutorial Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>מדריך ועזרה</Text>
@@ -382,6 +397,11 @@ const SettingsScreen: React.FC = () => {
       </View>
 
       {renderInviteModal()}
+      
+      <CategoryManager
+        visible={showCategoryManager}
+        onClose={() => setShowCategoryManager(false)}
+      />
     </ScrollView>
   );
 };
@@ -601,6 +621,25 @@ const styles = StyleSheet.create({
   },
   clearSpecificButton: {
     backgroundColor: '#e74c3c',
+  },
+  settingButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  settingButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  settingButtonSubtext: {
+    fontSize: 12,
+    color: 'white',
+    opacity: 0.9,
   },
 });
 

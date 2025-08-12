@@ -1,15 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
-    Image,
     Modal,
     ScrollView,
     StyleSheet,
     TouchableOpacity,
     View,
 } from 'react-native';
-import { getImageUrl } from '../config/api';
 import { Expense } from '../services/api';
+import { ExpenseImage } from './ExpenseImage';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
@@ -77,12 +76,11 @@ export function ExpenseDetailsModal({
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* תמונה */}
-          {expense.image_url && (
+          {expense.has_image && (
             <View style={styles.imageSection}>
-              <Image 
-                source={{ uri: getImageUrl(expense.image_url) || expense.image_url }} 
+              <ExpenseImage 
+                expenseId={expense.id}
                 style={styles.expenseImage}
-                resizeMode="cover"
               />
             </View>
           )}

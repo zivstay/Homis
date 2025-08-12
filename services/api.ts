@@ -5,7 +5,7 @@ import { QuickCategory } from '../constants/boardTypes';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-const API_BASE_URL = 'http://192.168.7.11:5000/api';   // <-- your IP
+const API_BASE_URL = 'http://192.168.7.4:5000/api';   // <-- your IP
 
 // Types
 export interface User {
@@ -60,8 +60,7 @@ export interface Expense {
   frequency: string;
   start_date?: string;
   end_date?: string;
-  receipt_url?: string;
-  image_url?: string; // Add this field to match server response
+  has_image: boolean; // Boolean flag instead of image URL
   tags: string[];
 }
 
@@ -278,6 +277,26 @@ class ApiService {
     }
 
     return headers;
+  }
+
+  // Public method to get auth headers for external use (like AuthenticatedImage)
+  public async getAuthHeaders(): Promise<HeadersInit> {
+    // Ensure we have a valid token
+    const hasValidToken = await this.ensureValidToken();
+    if (!hasValidToken) {
+      return {};
+    }
+
+    const headers: HeadersInit = {};
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+    return headers;
+  }
+
+  // Public method to get base URL
+  public getBaseUrl(): string {
+    return API_BASE_URL.replace('/api', ''); // Remove /api suffix to get base URL
   }
 
   // Generic method for making authenticated requests
@@ -807,6 +826,16 @@ class ApiService {
     );
   }
 
+  async getExpenseImage(expenseId: string): Promise<ApiResponse<{ image: string }>> {
+    console.log('🔵 API: Getting expense image for:', expenseId);
+    return this.makeAuthenticatedRequest<{ image: string }>(
+      `${API_BASE_URL}/expenses/${expenseId}/image`,
+      {
+        method: 'POST',
+      }
+    );
+  }
+
   // Categories
   async getBoardCategories(boardId: string): Promise<ApiResponse<{ categories: Category[] }>> {
     return this.makeAuthenticatedRequest<{ categories: Category[] }>(
@@ -825,6 +854,16 @@ class ApiService {
       {
         method: 'POST',
         body: JSON.stringify(categoryData),
+      }
+    );
+  }
+
+  async updateBoardCategories(boardId: string, categories: QuickCategory[]): Promise<ApiResponse<{ message: string }>> {
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/boards/${boardId}/categories/update`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ categories }),
       }
     );
   }

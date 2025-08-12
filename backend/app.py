@@ -1,4 +1,7 @@
-from flask import Flask, request, jsonify, current_app, send_from_directory
+import logging as logger
+import traceback
+
+from flask import Flask, request, jsonify, current_app, send_from_directory, Response
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required
 from flask_limiter import Limiter
@@ -6,12 +9,14 @@ from flask_limiter.util import get_remote_address
 from datetime import datetime, timedelta
 import os
 import uuid
+import logging
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 from config import config
 from models import DatabaseManager, UserRole, BoardPermission
 from auth import AuthManager, require_auth, require_board_access, require_board_owner, require_board_admin
+from b2_storage import create_b2_service
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +38,8 @@ def create_upload_folders():
     os.makedirs(expense_images_dir, exist_ok=True)
     
     return upload_dir, expense_images_dir
+
+
 
 def create_app(config_name='default'):
     """Application factory pattern"""
@@ -72,26 +79,50 @@ def create_app(config_name='default'):
     auth_manager = AuthManager(db_manager)
     app.auth_manager = auth_manager
     
-    # Create upload directories
+    # Initialize storage services
     upload_dir, expense_images_dir = create_upload_folders()
     app.config['UPLOAD_FOLDER'] = upload_dir
     app.config['EXPENSE_IMAGES_FOLDER'] = expense_images_dir
     
+    # Initialize B2 storage service if configured
+    b2_service = None
+    if app.config.get('UPLOAD_METHOD') == 'b2':
+        b2_service = create_b2_service(app.config)
+        if b2_service:
+            print("🚀 B2 Storage Service initialized successfully")
+        else:
+            print("⚠️  B2 Storage Service failed to initialize, falling back to local storage")
+    
+    app.b2_service = b2_service
+    
     # File upload function
     def upload_expense_image(file, user_id):
         """Upload expense image and return the file URL"""
-        if file and allowed_file(file.filename):
-            # Generate unique filename
-            file_extension = file.filename.rsplit('.', 1)[1].lower()
-            unique_filename = f"{user_id}_{uuid.uuid4().hex}.{file_extension}"
-            
-            # Save file
-            file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], unique_filename)
-            file.save(file_path)
-            
-            # Return URL path for accessing the image
-            return f"/api/uploads/expense_images/{unique_filename}"
-        return None
+        if not file or not allowed_file(file.filename):
+            return None
+        
+        # Try B2 storage first if available and configured
+        if app.config.get('UPLOAD_METHOD') == 'b2' and app.b2_service:
+            try:
+                success, file_url, error = app.b2_service.upload_file(file, 'expense_images', user_id)
+                if success:
+                    print(f"✅ Successfully uploaded to B2: {file_url}")
+                    return file_url
+                else:
+                    print(f"❌ B2 upload failed: {error}, falling back to local storage")
+            except Exception as e:
+                print(f"❌ B2 upload exception: {e}, falling back to local storage")
+        
+        # Fallback to local storage
+        file_extension = file.filename.rsplit('.', 1)[1].lower()
+        unique_filename = f"{user_id}_{uuid.uuid4().hex}.{file_extension}"
+        
+        # Save file locally
+        file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], unique_filename)
+        file.save(file_path)
+        
+        # Return URL path for accessing the image
+        return f"/api/uploads/expense_images/{unique_filename}"
     
     # Error handlers
     @app.errorhandler(404)
@@ -112,6 +143,34 @@ def create_app(config_name='default'):
         return jsonify({
             'status': 'healthy',
             'message': 'Expense Manager API is running',
+            'timestamp': datetime.now().isoformat()
+        })
+
+    # Test endpoint for debugging image issues
+    @app.route('/api/test-image', methods=['GET'])
+    @require_auth
+    def test_image_endpoint():
+        """Test endpoint to verify connectivity"""
+        print(f"🔍 === TEST IMAGE ENDPOINT CALLED ===")
+        print(f"🔍 Request URL: {request.url}")
+        print(f"🔍 Request method: {request.method}")
+        print(f"🔍 Request headers: {dict(request.headers)}")
+        return jsonify({
+            'message': 'Test endpoint working',
+            'timestamp': datetime.now().isoformat(),
+            'user': auth_manager.get_current_user()['user']['id']
+        })
+
+    # Test endpoint to check route pattern
+    @app.route('/api/expenses/<expense_id>/test', methods=['GET'])
+    def test_expense_route(expense_id):
+        """Test expense route pattern"""
+        print(f"🔍 === EXPENSE ROUTE TEST CALLED ===")
+        print(f"🔍 Expense ID: {expense_id}")
+        print(f"🔍 Request URL: {request.url}")
+        return jsonify({
+            'message': 'Expense route test working',
+            'expense_id': expense_id,
             'timestamp': datetime.now().isoformat()
         })
 
@@ -255,6 +314,7 @@ def create_app(config_name='default'):
             return jsonify({'boards': board_list}), 200
         except Exception as e:
             print(f"Error getting boards: {e}")
+            logger.error(traceback.format_exc())
             return jsonify({'error': 'Failed to get boards'}), 500
 
     @app.route('/api/boards', methods=['POST'])
@@ -540,7 +600,7 @@ def create_app(config_name='default'):
         
         expense_list = []
         for expense in expenses:
-            expense_list.append({
+            expense_dict = {
                 'id': expense.id,
                 'board_id': expense.board_id,
                 'amount': expense.amount,
@@ -555,9 +615,10 @@ def create_app(config_name='default'):
                 'frequency': expense.frequency,
                 'start_date': expense.start_date,
                 'end_date': expense.end_date,
-                'image_url': expense.receipt_url,  # Return as image_url for frontend
-                'tags': expense.tags or []
-            })
+                'tags': expense.tags or [],
+                'has_image': bool(expense.receipt_url)  # Boolean flag instead of URL
+            }
+            expense_list.append(expense_dict)
         
         return jsonify({'expenses': expense_list}), 200
 
@@ -622,8 +683,8 @@ def create_app(config_name='default'):
             'created_at': expense.created_at,
             'is_recurring': expense.is_recurring,
             'frequency': expense.frequency,
-            'image_url': expense.receipt_url,  # Return as image_url for frontend
-            'tags': expense.tags or []
+            'tags': expense.tags or [],
+            'has_image': bool(expense.receipt_url)  # Boolean flag instead of URL
         }), 201
 
     @app.route('/api/boards/<board_id>/expenses/<expense_id>', methods=['PUT'])
@@ -753,10 +814,184 @@ def create_app(config_name='default'):
         else:
             return jsonify({'error': 'Invalid file type. Allowed types: png, jpg, jpeg, gif, webp'}), 400
 
-    @app.route('/api/uploads/expense_images/<filename>')
-    def serve_expense_image(filename):
-        """Serve uploaded expense images"""
-        return send_from_directory(app.config['EXPENSE_IMAGES_FOLDER'], filename)
+    @app.route('/api/expenses/<expense_id>/image', methods=['POST'])
+    @require_auth
+    def get_expense_image(expense_id):
+        """Get image for a specific expense with proper authorization checks"""
+        print(f"🔍 === IMAGE ENDPOINT CALLED ===")
+        print(f"🔍 Request URL: {request.url}")
+        print(f"🔍 Request method: {request.method}")
+        print(f"🔍 Expense ID: {expense_id}")
+        print(f"🔍 Request headers: {dict(request.headers)}")
+        
+        # Get current user ID here where auth context is available
+        try:
+            current_user_result = auth_manager.get_current_user()
+            print(f"🔍 Auth result: {current_user_result}")
+            
+            if not current_user_result.get('valid'):
+                return jsonify({'error': 'Authentication failed'}), 401
+            
+            current_user_id = current_user_result['user']['id']
+            print(f"🔍 Current user ID: {current_user_id}")
+            
+            return get_expense_image_actual(expense_id, current_user_id)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"🔍 Auth error: {e}")
+            return jsonify({'error': 'Authentication failed'}), 401
+    
+    def get_expense_image_actual(expense_id, current_user_id):
+        """Get image for a specific expense with proper authorization checks"""
+        print(f"🔍 === IMAGE ENDPOINT ACTUAL CALLED ===")
+        
+        try:
+            print(f"🔍 Image endpoint called for expense_id: {expense_id}")
+            print(f"🔍 Current user ID: {current_user_id}")
+            
+            # Always return base64 data for React Native (since we're using POST)
+            return_base64 = True
+            print(f"🔍 Return base64: {return_base64}")
+            
+            # Find the expense and check if user has access
+            expense = None
+            user_boards = db_manager.get_user_boards(current_user_id)
+            print(f"🔍 User has access to {len(user_boards)} boards")
+            
+            for board in user_boards:
+                board_expenses = db_manager.get_board_expenses(board.id)
+                print(f"🔍 Board {board.name} has {len(board_expenses)} expenses")
+                expense = next((e for e in board_expenses if e.id == expense_id), None)
+                if expense:
+                    print(f"🔍 Found expense in board {board.name}")
+                    break
+            
+            if not expense:
+                print(f"🔍 Expense {expense_id} not found or access denied")
+                return jsonify({'error': 'Expense not found or access denied'}), 404
+            
+            print(f"🔍 Expense receipt_url: {expense.receipt_url}")
+            if not expense.receipt_url:
+                print(f"🔍 No image found for expense {expense_id}")
+                return jsonify({'error': 'No image found for this expense'}), 404
+            
+            # Extract filename from the receipt_url
+            # Format: /api/uploads/expense_images/filename.jpg
+            if expense.receipt_url.startswith('/api/uploads/expense_images/'):
+                filename = expense.receipt_url.split('/')[-1]
+            else:
+                return jsonify({'error': 'Invalid image URL format'}), 400
+            
+            # Get file content from storage
+            file_content = None
+            
+            # Serve the image based on storage method
+            if app.config.get('UPLOAD_METHOD') == 'b2' and app.b2_service:
+                # Get from B2
+                file_path = f'expense_images/{filename}'
+                try:
+                    logger.info(f'Getting image from B2: {file_path}')
+                    success, file_content, error = app.b2_service.download_file(file_path)
+                    
+                    if not success:
+                        current_app.logger.error(f"Failed to download B2 file {file_path}: {error}")
+                        return jsonify({'error': 'Image not found'}), 404
+                        
+                except Exception as e:
+                    current_app.logger.error(f"Error getting B2 image {filename}: {str(e)}")
+                    return jsonify({'error': 'Error loading image'}), 500
+            else:
+                # Get from local storage
+                try:
+                    file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], filename)
+                    
+                    if not os.path.exists(file_path):
+                        return jsonify({'error': 'Image not found'}), 404
+                    
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                        
+                except Exception as e:
+                    current_app.logger.error(f"Error reading local image {filename}: {str(e)}")
+                    return jsonify({'error': 'Image not found'}), 404
+            
+            # Check if we got file content
+            if not file_content:
+                return jsonify({'error': 'Image not found'}), 404
+            
+            # Always return as base64 JSON for React Native
+            import base64
+            base64_data = base64.b64encode(file_content).decode('utf-8')
+            
+            return jsonify({
+                'image': base64_data
+            }), 200
+                    
+        except Exception as e:
+            traceback.print_exc()
+            current_app.logger.error(f"Error in get_expense_image: {str(e)}")
+            return jsonify({'error': 'Internal server error'}), 500
+
+
+
+    @app.route('/api/admin/storage-info', methods=['GET'])
+    @require_auth
+    def get_storage_info():
+        """Get information about the current storage configuration (admin only)"""
+        # Note: You might want to add admin role checking here
+        current_user = auth_manager.get_current_user()['user']
+        
+        storage_info = {
+            'upload_method': app.config.get('UPLOAD_METHOD', 'local'),
+            'b2_configured': app.b2_service is not None,
+            'local_upload_folder': app.config.get('UPLOAD_FOLDER'),
+        }
+        
+        if app.b2_service:
+            try:
+                success, message = app.b2_service.test_connection()
+                storage_info['b2_connection_test'] = {
+                    'success': success,
+                    'message': message
+                }
+            except Exception as e:
+                storage_info['b2_connection_test'] = {
+                    'success': False,
+                    'message': f"Connection test failed: {str(e)}"
+                }
+        
+        return jsonify(storage_info), 200
+
+    @app.route('/api/admin/b2-files', methods=['GET'])
+    @require_auth
+    def list_b2_files():
+        """List recent files in B2 bucket (admin only)"""
+        if not app.b2_service:
+            return jsonify({'error': 'B2 service not configured'}), 400
+        
+        folder = request.args.get('folder', 'expense_images')
+        limit = int(request.args.get('limit', 10))
+        
+        try:
+            success, files, error = app.b2_service.list_recent_files(folder, limit)
+            if success:
+                return jsonify({
+                    'success': True,
+                    'files': files,
+                    'count': len(files)
+                }), 200
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': error,
+                    'files': []
+                }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f"Failed to list files: {str(e)}",
+                'files': []
+            }), 500
 
     # Debt routes
     @app.route('/api/boards/<board_id>/debts', methods=['GET'])
@@ -1073,6 +1308,47 @@ def create_app(config_name='default'):
             'is_default': category.is_default
         }), 201
 
+    @app.route('/api/boards/<board_id>/categories/update', methods=['PUT'])
+    @require_auth
+    @require_board_admin
+    def update_board_categories(board_id):
+        """Update all categories for a board"""
+        data = request.get_json()
+        if not data or 'categories' not in data:
+            return jsonify({'error': 'Categories data is required'}), 400
+        
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        categories = data['categories']
+        
+        try:
+            # First, delete all existing custom categories for this board (keep default ones)
+            db_manager.categories_table.remove(
+                (db_manager.Category.board_id == board_id) & 
+                (db_manager.Category.is_default == False)
+            )
+            
+            # Create new categories
+            for category_data in categories:
+                category_info = {
+                    'board_id': board_id,
+                    'name': category_data.get('name'),
+                    'icon': category_data.get('icon', 'ellipsis-horizontal'),
+                    'color': category_data.get('color', '#9370DB'),
+                    'created_by': current_user_id,
+                    'is_default': False
+                }
+                try:
+                    db_manager.create_category(category_info)
+                    print(f"✅ Updated category: {category_info['name']}")
+                except Exception as e:
+                    print(f"❌ Failed to create category {category_info['name']}: {str(e)}")
+            
+            return jsonify({'message': 'Categories updated successfully'}), 200
+            
+        except Exception as e:
+            print(f"❌ Error updating board categories: {str(e)}")
+            return jsonify({'error': 'Failed to update categories'}), 500
+
     # Helper function to create debts for an expense
     def create_debts_for_expense(expense, members):
         """Create debts for all members except the payer"""
@@ -1217,4 +1493,4 @@ def create_app(config_name='default'):
 
 if __name__ == '__main__':
     app = create_app(os.getenv('FLASK_ENV', 'development'))
-    app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=5000) 
+    app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=5000,use_reloader=False)

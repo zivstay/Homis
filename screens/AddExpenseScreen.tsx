@@ -3,23 +3,24 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    Linking,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
 import { getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Category } from '../services/api';
 
@@ -28,13 +29,14 @@ const AddExpenseScreen: React.FC = () => {
   const route = useRoute();
   const { selectedBoard, boardMembers, refreshBoardExpenses } = useBoard();
   const { user } = useAuth();
+  const { refreshBoardCategories } = useExpenses();
   const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
   
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedPaidBy, setSelectedPaidBy] = useState('');
-  const [tags, setTags] = useState('');
+
   const [isRecurring, setIsRecurring] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,6 +55,12 @@ const AddExpenseScreen: React.FC = () => {
     React.useCallback(() => {
       console.log('🎓 AddExpenseScreen: Setting tutorial screen to AddExpense');
       setCurrentScreen('AddExpense');
+      
+      // Refresh categories when screen is focused (in case they were updated in settings)
+      if (selectedBoard) {
+        loadCategories();
+        refreshBoardCategories();
+      }
       
       // Check if we should show tutorial for this screen
       const checkAndStartTutorial = async () => {
@@ -76,7 +84,7 @@ const AddExpenseScreen: React.FC = () => {
       setTimeout(() => {
         checkAndStartTutorial();
       }, 500);
-    }, [setCurrentScreen, checkScreenTutorial, startTutorial])
+    }, [setCurrentScreen, checkScreenTutorial, startTutorial, selectedBoard, refreshBoardCategories])
   );
 
   useEffect(() => {
@@ -157,7 +165,7 @@ const AddExpenseScreen: React.FC = () => {
         date: new Date().toISOString(),
         is_recurring: isRecurring,
         frequency: 'monthly',
-        tags: tags.trim() ? tags.split(',').map(tag => tag.trim()) : [],
+        tags: [],
         image_url: imageUrl, // Add image URL to the expense data
       };
 
@@ -300,27 +308,30 @@ const AddExpenseScreen: React.FC = () => {
   };
 
   const renderCategoryButtons = () => {
-    // Combine quickCategories from board type with categories from server
-    const allCategories: Array<{ name: string; icon: string; color: string }> = [];
+    // Only use categories from server (selected in settings)
+    let displayCategories: Array<{ name: string; icon: string; color: string }> = [];
     
-    // Add categories from server (these include custom categories)
+    // Add categories from server (these are the ones selected in settings)
     categories.forEach(category => {
-      allCategories.push({
+      displayCategories.push({
         name: category.name,
         icon: category.icon,
         color: category.color
       });
     });
     
-    // Add quickCategories from board type that aren't already in server categories
-    quickCategories.forEach(quickCategory => {
-      if (!allCategories.find(cat => cat.name === quickCategory.name)) {
-        allCategories.push(quickCategory);
-      }
-    });
+    // Limit to max 7 categories (keeping space for "אחר")
+    const maxCategories = 7;
+    if (displayCategories.length > maxCategories) {
+      displayCategories = displayCategories.slice(0, maxCategories);
+    }
     
-    // If no categories at all, use quickCategories as fallback
-    const displayCategories = allCategories.length > 0 ? allCategories : quickCategories;
+    // Always add "אחר" as the last option
+    displayCategories.push({
+      name: 'אחר',
+      icon: '📝',
+      color: '#95A5A6'
+    });
     
     if (displayCategories.length === 0) return null;
 
@@ -383,6 +394,8 @@ const AddExpenseScreen: React.FC = () => {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.form}>
+          {renderCategoryButtons()}
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>סכום</Text>
             <TextInput
@@ -398,8 +411,7 @@ const AddExpenseScreen: React.FC = () => {
             />
           </View>
 
-          {renderCategoryButtons()}
-          {renderPaidBySelector()}
+
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>תיאור (אופציונלי)</Text>
@@ -417,19 +429,7 @@ const AddExpenseScreen: React.FC = () => {
             />
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>תגיות (אופציונלי)</Text>
-            <TextInput
-              style={styles.tagsInput}
-              value={tags}
-              onChangeText={setTags}
-              placeholder="תגיות מופרדות בפסיקים..."
-              textAlign="right"
-              returnKeyType="done"
-              onSubmitEditing={() => Keyboard.dismiss()}
-              blurOnSubmit={true}
-            />
-          </View>
+
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
@@ -496,12 +496,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   scrollContainer: {
-    padding: 20,
+    padding: 16,
   },
   form: {
     backgroundColor: 'white',
     borderRadius: 12,
-    padding: 20,
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -512,13 +512,13 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#2c3e50',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   amountInput: {
     borderWidth: 1,
@@ -537,13 +537,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlignVertical: 'top',
   },
-  tagsInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
+
   quickButtonsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -551,10 +545,10 @@ const styles = StyleSheet.create({
   },
   quickButton: {
     width: '48%',
-    padding: 16,
+    padding: 12,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -569,12 +563,12 @@ const styles = StyleSheet.create({
     borderColor: '#2c3e50',
   },
   quickButtonIcon: {
-    fontSize: 24,
-    marginBottom: 8,
+    fontSize: 20,
+    marginBottom: 4,
   },
   quickButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
     textAlign: 'center',
   },
@@ -684,7 +678,7 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: 16,
   },
   cancelButton: {
     backgroundColor: '#e0e0e0',

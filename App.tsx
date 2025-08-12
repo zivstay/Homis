@@ -5,9 +5,10 @@ import React, { useState } from 'react';
 import { Alert, FlatList, Keyboard, Modal, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AppTutorial from './components/AppTutorial';
 import NotificationModal from './components/NotificationModal';
-import { BOARD_TYPES, BoardType, getAllAvailableCategories, QuickCategory } from './constants/boardTypes';
+import { BOARD_TYPES, BoardType, QuickCategory } from './constants/boardTypes';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { BoardProvider, useBoard } from './contexts/BoardContext';
+import { ExpenseProvider, useExpenses } from './contexts/ExpenseContext';
 import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { TutorialProvider, useTutorial } from './contexts/TutorialContext';
 import AddExpenseScreen from './screens/AddExpenseScreen';
@@ -22,8 +23,9 @@ const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function BoardSwitcherHeader() {
-  const { boards, selectedBoard, selectBoard, createBoard, setDefaultBoard, clearDefaultBoard, deleteBoard } = useBoard();
+  const { boards, selectedBoard, selectBoard, createBoard, setDefaultBoard, clearDefaultBoard, deleteBoard, refreshBoardData } = useBoard();
   const { unreadCount } = useNotifications();
+  const { refreshBoardCategories } = useExpenses();
   const [showBoardModal, setShowBoardModal] = useState(false);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -158,6 +160,25 @@ function BoardSwitcherHeader() {
       setShowCreateWizard(false);
       setShowBoardModal(false);
       resetWizard();
+      
+      // Wait 300ms and then refresh board data to ensure categories are updated
+      setTimeout(async () => {
+        try {
+          console.log('🔄 App: Refreshing board data after board creation...');
+          if (refreshBoardData) {
+            await refreshBoardData();
+            console.log('✅ App: Board data refreshed successfully');
+          }
+          
+          // Also refresh the expense context categories (for quick categories)
+          if (refreshBoardCategories) {
+            await refreshBoardCategories();
+            console.log('✅ App: Expense categories refreshed successfully');
+          }
+        } catch (error) {
+          console.error('❌ App: Error refreshing board data:', error);
+        }
+      }, 300);
     } else {
       Alert.alert('שגיאה', result.error || 'שגיאה ביצירת לוח');
     }
@@ -311,31 +332,98 @@ function BoardSwitcherHeader() {
     </View>
   );
 
-  const renderWizardStep3 = () => (
-    <View style={styles.wizardContent}>
-      <Text style={styles.wizardTitle}>שלב 3: ערוך קטגוריות</Text>
+  const renderWizardStep3 = () => {
+    // Get all available categories (current board type first, then all others)
+    const getAllAvailableCategories = () => {
+      if (!selectedBoardType) return [];
       
-      {selectedBoardType && (
-        <Text style={styles.wizardSubtitle}>
-          קטגוריות עבור לוח "{selectedBoardType.name}"
+      const allCategories: QuickCategory[] = [];
+      const addedNames = new Set<string>();
+      
+      // First: Add categories from selected board type (priority)
+      selectedBoardType.quickCategories.forEach(category => {
+        if (!addedNames.has(category.name)) {
+          allCategories.push(category);
+          addedNames.add(category.name);
+        }
+      });
+      
+      // Second: Add categories from all other board types
+      BOARD_TYPES.forEach(boardType => {
+        if (boardType.id !== selectedBoardType.id) {
+          boardType.quickCategories.forEach(category => {
+            if (!addedNames.has(category.name)) {
+              allCategories.push(category);
+              addedNames.add(category.name);
+            }
+          });
+        }
+      });
+      
+      // Third: Add additional common/useful categories
+      const additionalCategories = [
+        { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
+        { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
+        { name: 'מיסים', icon: '📋', color: '#95A5A6' },
+        { name: 'תרומות', icon: '💝', color: '#FF69B4' },
+        { name: 'חיות מחמד', icon: '🐕', color: '#98D8C8' },
+        { name: 'טכנולוגיה', icon: '📱', color: '#4ECDC4' },
+        { name: 'ספרים', icon: '📚', color: '#E74C3C' },
+        { name: 'מתנות', icon: '🎁', color: '#9B59B6' },
+        { name: 'עבודה', icon: '💼', color: '#3498DB' },
+        { name: 'חינוך', icon: '🎓', color: '#E67E22' },
+        { name: 'בריאות', icon: '🏥', color: '#E74C3C' },
+        { name: 'ספורט', icon: '⚽', color: '#2ECC71' },
+        { name: 'נסיעות', icon: '✈️', color: '#9B59B6' },
+        { name: 'תחביבים', icon: '🎨', color: '#F39C12' },
+        { name: 'קניות', icon: '🛒', color: '#8E44AD' },
+        { name: 'תקשורת', icon: '📞', color: '#34495E' },
+        { name: 'משפט', icon: '⚖️', color: '#2C3E50' },
+        { name: 'יופי', icon: '💄', color: '#EC7063' },
+        { name: 'משחקים', icon: '🎮', color: '#AF7AC5' },
+        { name: 'אירועים', icon: '🎉', color: '#F1C40F' },
+      ];
+      
+      additionalCategories.forEach(category => {
+        if (!addedNames.has(category.name)) {
+          allCategories.push(category);
+          addedNames.add(category.name);
+        }
+      });
+      
+      return allCategories;
+    };
+
+    return (
+      <View style={styles.wizardContent}>
+        <Text style={styles.wizardTitle}>שלב 3: בחר קטגוריות</Text>
+        
+        {selectedBoardType && (
+          <Text style={styles.wizardSubtitle}>
+            קטגוריות עבור לוח "{selectedBoardType.name}"
+          </Text>
+        )}
+        
+        <Text style={styles.selectedCountText}>
+          נבחרו: {selectedCategories.length} קטגוריות
         </Text>
-      )}
-      
-      <Text style={styles.selectedCountText}>
-        נבחרו: {selectedCategories.length} קטגוריות
-      </Text>
-      
-      <FlatList
-        data={getAllAvailableCategories()}
-        renderItem={renderCategoryItem}
-        keyExtractor={(item) => item.name}
-        style={styles.categoriesList}
-        numColumns={2}
-        columnWrapperStyle={styles.categoriesRow}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
-  );
+        
+        <Text style={styles.wizardHelpText}>
+          הקטגוריות של סוג הלוח נבחרו אוטומטיית. למעלה: קטגוריות מתאימות לסוג הלוח. למטה: כל הקטגוריות הזמינות.
+        </Text>
+        
+        <FlatList
+          data={getAllAvailableCategories()}
+          renderItem={renderCategoryItem}
+          keyExtractor={(item) => item.name}
+          style={styles.categoriesList}
+          numColumns={2}
+          columnWrapperStyle={styles.categoriesRow}
+          showsVerticalScrollIndicator={false}
+        />
+      </View>
+    );
+  };
 
   const renderCreateWizard = () => (
     <Modal
@@ -1029,19 +1117,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  wizardHelpText: {
+    fontSize: 12,
+    color: '#777',
+    marginBottom: 15,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
 });
 
 export default function App() {
   return (
     <AuthProvider>
       <BoardProvider>
-        <NotificationProvider>
-          <TutorialProvider>
-            <NavigationContainer>
-              <AppContent />
-            </NavigationContainer>
-          </TutorialProvider>
-        </NotificationProvider>
+        <ExpenseProvider>
+          <NotificationProvider>
+            <TutorialProvider>
+              <NavigationContainer>
+                <AppContent />
+              </NavigationContainer>
+            </TutorialProvider>
+          </NotificationProvider>
+        </ExpenseProvider>
       </BoardProvider>
     </AuthProvider>
   );

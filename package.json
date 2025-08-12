@@ -46,7 +46,8 @@
     "react-native-svg": "^7.2.1",
     "react-native-svg-charts": "^5.4.0",
     "react-native-web": "~0.20.0",
-    "react-native-webview": "13.13.5"
+    "react-native-webview": "13.13.5",
+    "expo-dev-client": "~5.2.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

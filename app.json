@@ -13,8 +13,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "אפליקציה זו זקוקה לגישה לגלריה כדי להוסיף תמונות להוצאות",
-        "NSCameraUsageDescription": "אפליקציה זו זקוקה לגישה למצלמה כדי לצלם תמונות להוצאות"
-      }
+        "NSCameraUsageDescription": "אפליקציה זו זקוקה לגישה למצלמה כדי לצלם תמונות להוצאות",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.sarusiziv96.homeexpensemanager"
     },
     "android": {
       "adaptiveIcon": {
@@ -51,6 +53,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "9fc51341-7952-470b-8341-39d792d970b5"
+      }
     }
   }
 }

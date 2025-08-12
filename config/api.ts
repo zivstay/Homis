@@ -2,7 +2,7 @@
 const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV === 'development';
 
 export const API_CONFIG = {
-  BASE_URL: isDev ? 'http://192.168.7.11:5000' : 'https://your-production-domain.com',
+  BASE_URL: isDev ? 'http://192.168.7.4:5000' : 'https://your-production-domain.com',
   UPLOAD_ENDPOINT: '/api/upload/expense-image',
   EXPENSES_ENDPOINT: '/api/boards',
 };
@@ -52,15 +52,4 @@ export const uploadExpenseImage = async (imageUri: string, authToken?: string): 
   }
 };
 
-// Helper function to get full image URL
-export const getImageUrl = (imagePath: string | null | undefined): string | null => {
-  if (!imagePath) return null;
-  
-  // If it's already a full URL, return as is
-  if (imagePath.startsWith('http')) {
-    return imagePath;
-  }
-  
-  // If it's a relative path, prepend base URL
-  return `${API_CONFIG.BASE_URL}${imagePath}`;
-}; 
+ 

@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Image,
   RefreshControl,
   StyleSheet,
   Text,
@@ -11,10 +10,10 @@ import {
   View,
 } from 'react-native';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
-import { getImageUrl } from '../config/api';
-import { getBoardTypeById } from '../constants/boardTypes';
+import { ExpenseImage } from '../components/ExpenseImage';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
+import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Category, Expense } from '../services/api';
 
@@ -22,6 +21,7 @@ const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses } = useBoard();
   const { user } = useAuth();
+  const { refreshBoardCategories } = useExpenses();
   const { setCurrentScreen, checkScreenTutorial, startTutorial, forceStartTutorial } = useTutorial();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +33,13 @@ const HomeScreen: React.FC = () => {
     React.useCallback(() => {
       console.log('🎓 HomeScreen: Setting tutorial screen to Home');
       setCurrentScreen('Home');
+      
+      // Refresh categories when screen is focused (in case they were updated in settings)
+      if (selectedBoard) {
+        console.log('🔄 HomeScreen: Refreshing categories on focus...');
+        loadCategories();
+        refreshBoardCategories();
+      }
       
       // Check if we should show tutorial for this screen
       const checkAndStartTutorial = async () => {
@@ -56,14 +63,25 @@ const HomeScreen: React.FC = () => {
       setTimeout(() => {
         checkAndStartTutorial();
       }, 500);
-    }, [setCurrentScreen, checkScreenTutorial, startTutorial])
+    }, [setCurrentScreen, checkScreenTutorial, startTutorial, selectedBoard, refreshBoardCategories])
   );
 
   useEffect(() => {
     if (selectedBoard) {
+      console.log('🔄 HomeScreen: Board changed, loading categories...');
+      loadCategories();
+      // Also refresh ExpenseContext categories when board changes
+      refreshBoardCategories();
+    }
+  }, [selectedBoard, refreshBoardCategories]);
+
+  // Additional effect to listen for board data changes (e.g., after category updates)
+  useEffect(() => {
+    if (selectedBoard) {
+      console.log('🔄 HomeScreen: Board data may have changed, reloading categories...');
       loadCategories();
     }
-  }, [selectedBoard]);
+  }, [selectedBoard?.updated_at]); // This will trigger when board data is updated
 
   const loadCategories = async () => {
     if (!selectedBoard) return;
@@ -87,7 +105,8 @@ const HomeScreen: React.FC = () => {
     setRefreshing(true);
     await Promise.all([
       refreshBoardExpenses(),
-      loadCategories()
+      loadCategories(),
+      refreshBoardCategories() // Also refresh ExpenseContext categories
     ]);
     setRefreshing(false);
   };
@@ -102,89 +121,22 @@ const HomeScreen: React.FC = () => {
     return member ? `${member.user.first_name} ${member.user.last_name}` : 'לא ידוע';
   };
 
-  // Calculate top 7 most frequent categories
-  const getTopCategories = () => {
-    if (boardExpenses.length === 0) {
-      // If no expenses, prioritize categories from server (custom categories) first
-      if (categories.length > 0) {
-        return categories.slice(0, 7).map(cat => ({
-          name: cat.name,
-          icon: cat.icon,
-          color: cat.color
-        }));
-      }
-      
-      // Fallback to board type quick categories
-      const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
-      const quickCategories = boardType?.quickCategories || [];
-      return quickCategories.slice(0, 7);
+  // Get categories selected in board settings (max 7)
+  const getSelectedCategories = () => {
+    // Only show categories that are configured for this board
+    if (categories.length === 0) {
+      return [];
     }
 
-    // Count frequency of each category
-    const categoryCount: Record<string, { count: number; icon?: string; color?: string }> = {};
-    
-    boardExpenses.forEach(expense => {
-      if (categoryCount[expense.category]) {
-        categoryCount[expense.category].count++;
-      } else {
-        // Get icon and color from server categories first (custom categories)
-        const category = categories.find(c => c.name === expense.category);
-        if (category) {
-          categoryCount[expense.category] = {
-            count: 1,
-            icon: category.icon,
-            color: category.color
-          };
-        } else {
-          // Fallback to board type quick categories
-          const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
-          const quickCategory = boardType?.quickCategories.find(q => q.name === expense.category);
-          
-          categoryCount[expense.category] = {
-            count: 1,
-            icon: quickCategory?.icon || '📋',
-            color: quickCategory?.color || '#3498db'
-          };
-        }
-      }
-    });
+    // Limit to max 7 categories (keeping space for "אחר" button)
+    const maxCategories = 7;
+    const selectedCategories = categories.slice(0, maxCategories).map(cat => ({
+      name: cat.name,
+      icon: cat.icon,
+      color: cat.color
+    }));
 
-    // Sort by frequency and take top 7
-    const sortedCategories = Object.entries(categoryCount)
-      .sort(([,a], [,b]) => b.count - a.count)
-      .slice(0, 7)
-      .map(([name, data]) => ({
-        name,
-        icon: data.icon || '📋',
-        color: data.color || '#3498db'
-      }));
-
-    // If we have less than 7, fill with remaining server categories first
-    if (sortedCategories.length < 7) {
-      categories.forEach(category => {
-        if (sortedCategories.length < 7 && !sortedCategories.find(c => c.name === category.name)) {
-          sortedCategories.push({
-            name: category.name,
-            icon: category.icon,
-            color: category.color
-          });
-        }
-      });
-    }
-
-    // If still less than 7, fill with board type quick categories
-    if (sortedCategories.length < 7) {
-      const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
-      const quickCategories = boardType?.quickCategories || [];
-      
-      quickCategories.forEach(category => {
-        if (sortedCategories.length < 7 && !sortedCategories.find(c => c.name === category.name)) {
-          sortedCategories.push(category);
-        }
-      });
-    }
-
-    return sortedCategories;
+    return selectedCategories;
   };
 
   const handleQuickAddExpense = (categoryName: string) => {
@@ -290,9 +242,10 @@ const HomeScreen: React.FC = () => {
         )}
       </View>
       
-      {item.image_url && (
+      {item.has_image && (
         <View style={styles.imageContainer}>
-          <Image source={{ uri: getImageUrl(item.image_url) || item.image_url }} style={styles.expenseImage} />
+          <Text>asds</Text>
+          <ExpenseImage expenseId={item.id} style={styles.expenseImage} />
         </View>
       )}
     </TouchableOpacity>
@@ -315,11 +268,11 @@ const HomeScreen: React.FC = () => {
   );
 
   const renderQuickCategories = () => {
-    const topCategories = getTopCategories();
+    const selectedCategories = getSelectedCategories();
     
     return (
       <View style={styles.quickCategoriesContainer}>
-        {topCategories.map((category, index) => (
+        {selectedCategories.map((category, index) => (
           <TouchableOpacity
             key={index}
             style={[styles.quickCategoryButton, { backgroundColor: category.color }]}
@@ -330,6 +283,7 @@ const HomeScreen: React.FC = () => {
           </TouchableOpacity>
         ))}
         
+        {/* Always show "אחר" as the last option */}
         <TouchableOpacity
           style={[styles.quickCategoryButton, { backgroundColor: '#95a5a6' }]}
           onPress={() => navigation.navigate('AddExpense' as never)}

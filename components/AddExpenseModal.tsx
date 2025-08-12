@@ -3,20 +3,22 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
-import { apiService } from '../services/api';
+import { useBoard } from '../contexts/BoardContext';
+import { useExpenses } from '../contexts/ExpenseContext';
+import { apiService, Category } from '../services/api';
 import { Expense } from './ExpenseCard';
 import { ThemedText } from './ThemedText';
 
@@ -28,8 +30,6 @@ interface AddExpenseModalProps {
   isEditing?: boolean;
 }
 
-const PREDEFINED_CATEGORIES = ['חשמל', 'מים', 'ארנונה', 'סופר'];
-
 export function AddExpenseModal({
   visible,
   onClose,
@@ -37,6 +37,8 @@ export function AddExpenseModal({
   expense,
   isEditing = false,
 }: AddExpenseModalProps) {
+  const { selectedBoard } = useBoard();
+  const { refreshBoardCategories } = useExpenses();
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
@@ -49,6 +51,49 @@ export function AddExpenseModal({
   const [selectedCategoryType, setSelectedCategoryType] = useState<'predefined' | 'custom'>('predefined');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  // Load categories from server
+  const loadCategories = async () => {
+    if (!selectedBoard) return;
+
+    try {
+      const result = await apiService.getBoardCategories(selectedBoard.id);
+      if (result.success && result.data) {
+        setCategories(result.data.categories);
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      // Set fallback categories if loading fails
+      setCategories([]);
+    }
+  };
+
+  // Get display categories (max 7 selected + "אחר" = 8 total)
+  const getDisplayCategories = () => {
+    const maxCategories = 7; // Reserve space for "אחר"
+    let displayCategories = [...categories];
+    
+    // Limit to max 7 categories (keeping space for "אחר")
+    if (displayCategories.length > maxCategories) {
+      displayCategories = displayCategories.slice(0, maxCategories);
+    }
+    
+    // Always add "אחר" as the last option
+    displayCategories.push({
+      id: 'other',
+      name: 'אחר',
+      icon: '📝',
+      color: '#95A5A6',
+      board_id: selectedBoard?.id || '',
+      created_by: '',
+      created_at: '',
+      is_default: false,
+      is_active: true
+    });
+    
+    return displayCategories;
+  };
 
   // Use centralized upload function
   const uploadImage = async (imageUri: string): Promise<string | null> => {
@@ -65,6 +110,14 @@ export function AddExpenseModal({
   };
 
   useEffect(() => {
+    if (visible && selectedBoard) {
+      loadCategories();
+      // Also refresh ExpenseContext categories
+      refreshBoardCategories();
+    }
+  }, [visible, selectedBoard, refreshBoardCategories]);
+
+  useEffect(() => {
     if (expense && isEditing) {
       setAmount(expense.amount.toString());
       setDescription(expense.description || '');
@@ -72,9 +125,11 @@ export function AddExpenseModal({
       setIsRecurring(expense.isRecurring);
       setFrequency(expense.frequency || 'monthly');
       setStartDate(expense.startDate || new Date());
-      setSelectedImage(expense.imageUri || null);
+      setSelectedImage(expense.has_image ? 'existing' : null);
       
-      if (PREDEFINED_CATEGORIES.includes(expense.category)) {
+      // Check if category exists in loaded categories
+      const categoryExists = categories.some(cat => cat.name === expense.category);
+      if (categoryExists || expense.category === 'אחר') {
         setCategory(expense.category);
         setSelectedCategoryType('predefined');
       } else {
@@ -84,7 +139,7 @@ export function AddExpenseModal({
     } else {
       resetForm();
     }
-  }, [expense, isEditing, visible]);
+  }, [expense, isEditing, visible, categories]);
 
   const resetForm = () => {
     setAmount('');
@@ -128,7 +183,7 @@ export function AddExpenseModal({
       isRecurring,
       frequency: isRecurring ? frequency : undefined,
       startDate: isRecurring ? startDate : undefined,
-      imageUri: imageUrl || undefined,
+      has_image: Boolean(imageUrl),
     };
 
     onSave(expenseData);
@@ -270,6 +325,7 @@ export function AddExpenseModal({
         >
           {/* Amount Input */}
           <View style={styles.inputGroup}>
+            
             <ThemedText style={styles.label}>סכום (₪)</ThemedText>
             <TextInput
               style={styles.amountInput}
@@ -326,22 +382,31 @@ export function AddExpenseModal({
 
             {selectedCategoryType === 'predefined' ? (
               <View style={styles.categoryGrid}>
-                {PREDEFINED_CATEGORIES.map((cat) => (
+                {getDisplayCategories().map((cat) => (
                   <TouchableOpacity
-                    key={cat}
+                    key={cat.name}
                     style={[
                       styles.categoryButton,
-                      category === cat && styles.categoryButtonActive,
+                      { backgroundColor: cat.color },
+                      category === cat.name && styles.categoryButtonActive,
                     ]}
-                    onPress={() => setCategory(cat)}
+                    onPress={() => {
+                      if (cat.name === 'אחר') {
+                        setSelectedCategoryType('custom');
+                        setCategory('');
+                      } else {
+                        setCategory(cat.name);
+                      }
+                    }}
                   >
+                    <ThemedText style={styles.categoryIcon}>{cat.icon}</ThemedText>
                     <ThemedText
                       style={[
                         styles.categoryButtonText,
-                        category === cat && styles.categoryButtonTextActive,
+                        category === cat.name && styles.categoryButtonTextActive,
                       ]}
                     >
-                      {cat}
+                      {cat.name}
                     </ThemedText>
                   </TouchableOpacity>
                 ))}
@@ -605,19 +670,23 @@ const styles = StyleSheet.create({
     minWidth: '45%',
     backgroundColor: '#FFFFFF',
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E1E5E9',
     alignItems: 'center',
+    justifyContent: 'center',
+    height: 70,
   },
   categoryButtonActive: {
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
   },
   categoryButtonText: {
-    fontSize: 16,
-    color: '#333',
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   categoryButtonTextActive: {
     color: '#FFFFFF',
@@ -753,5 +822,9 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 16,
     fontWeight: '500',
+  },
+  categoryIcon: {
+    fontSize: 18,
+    marginBottom: 4,
   },
 }); 

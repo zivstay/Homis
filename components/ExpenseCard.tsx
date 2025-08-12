@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { getImageUrl } from '../config/api';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ExpenseImage } from './ExpenseImage';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
@@ -10,7 +10,7 @@ export interface Expense {
   amount: number;
   category: string;
   description?: string;
-  imageUri?: string;
+  has_image?: boolean;
   paidBy: string;
   date: Date;
   isRecurring: boolean;
@@ -100,9 +100,9 @@ export function ExpenseCard({ expense, onPress, onEdit, onDelete }: ExpenseCardP
           )}
         </View>
 
-        {expense.imageUri && (
+        {expense.has_image && (
           <View style={styles.imageContainer}>
-            <Image source={{ uri: getImageUrl(expense.imageUri) || expense.imageUri }} style={styles.image} />
+            <ExpenseImage expenseId={expense.id} style={styles.image} />
           </View>
         )}
 
