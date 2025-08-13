@@ -275,6 +275,14 @@ class DatabaseManager:
         update_data['updated_at'] = datetime.now().isoformat()
         return len(self.users_table.update(update_data, self.User.id == user_id)) > 0
 
+    def update_user_password(self, user_id: str, password_hash: str) -> bool:
+        """Update user password"""
+        update_data = {
+            'password_hash': password_hash,
+            'updated_at': datetime.now().isoformat()
+        }
+        return len(self.users_table.update(update_data, self.User.id == user_id)) > 0
+
     # Board methods
     def create_board(self, board_data: Dict) -> Board:
         board = Board(
@@ -679,6 +687,25 @@ class DatabaseManager:
         )
         self.pending_registrations_table.insert(asdict(pending_reg))
         return pending_reg
+
+    def store_pending_registration(self, key: str, registration_data: Dict) -> bool:
+        """Store a pending registration with custom key (used for password reset)"""
+        # For password reset, we don't need all the user registration fields
+        # Create a simplified record that fits the PendingRegistration structure
+        pending_reg = PendingRegistration(
+            id=str(uuid.uuid4()),
+            email=key,  # Use the key as email for identification
+            username="",  # Not needed for password reset
+            password_hash="",  # Not needed for password reset
+            first_name="",  # Not needed for password reset  
+            last_name="",  # Not needed for password reset
+            verification_code=registration_data['verification_code'],
+            expiry_time=registration_data['expiry_time'],
+            attempts=registration_data.get('attempts', 0),
+            created_at=datetime.now().isoformat()
+        )
+        self.pending_registrations_table.insert(asdict(pending_reg))
+        return True
 
     def get_pending_registration(self, email: str) -> Optional[PendingRegistration]:
         """Get pending registration by email"""

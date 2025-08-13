@@ -11,6 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import PasswordResetModal from '../components/PasswordResetModal';
 import { useAuth } from '../contexts/AuthContext';
 
 const LoginScreen: React.FC = () => {
@@ -35,6 +36,9 @@ const LoginScreen: React.FC = () => {
   const [verificationError, setVerificationError] = useState('');
   // Remove local pendingUserData - using the one from AuthContext
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
+
+  // Password reset modal
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
 
   useEffect(() => {
     setError('');
@@ -314,6 +318,13 @@ const LoginScreen: React.FC = () => {
       
       <TouchableOpacity
         style={styles.linkButton}
+        onPress={() => setShowPasswordResetModal(true)}
+      >
+        <Text style={styles.linkText}>שכחת סיסמה?</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity
+        style={styles.linkButton}
         onPress={() => {
           setIsLogin(false);
           clearErrors();
@@ -554,6 +565,11 @@ const LoginScreen: React.FC = () => {
         
         {showVerification ? renderVerificationScreen() : (isLogin ? renderLoginForm() : renderRegisterForm())}
       </ScrollView>
+      
+      <PasswordResetModal
+        visible={showPasswordResetModal}
+        onClose={() => setShowPasswordResetModal(false)}
+      />
     </KeyboardAvoidingView>
   );
 };

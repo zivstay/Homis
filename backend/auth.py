@@ -528,6 +528,230 @@ class AuthManager:
             'access_token': access_token,
             'refresh_token': refresh_token
         }
+    
+    def _send_password_reset_email(self, email: str, code: str, first_name: str) -> bool:
+        """Send password reset email via Brevo"""
+        if not self.brevo_client:
+            print("❌ Brevo client not initialized")
+            return False
+            
+        try:
+            send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+                to=[{"email": email, "name": first_name}],
+                sender={"name": "Homis Team", "email": "sarusiziv96@gmail.com"},
+                subject="איפוס סיסמה - Homis",
+                html_content=f"""
+                <div dir="rtl" style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+                    <h2 style="color: #2c3e50;">איפוס סיסמה - Homis</h2>
+                    <p>שלום {first_name},</p>
+                    <p>קיבלנו בקשה לאיפוס סיסמה עבור החשבון שלך באפליקציית Homis.</p>
+                    <p>הקוד שלך לאיפוס הסיסמה הוא:</p>
+                    <div style="background-color: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px;">
+                        <h1 style="color: #e74c3c; font-size: 48px; margin: 0; letter-spacing: 8px;">{code}</h1>
+                    </div>
+                    <p style="color: #7f8c8d; font-size: 14px;">הקוד תקף למשך 10 דקות בלבד</p>
+                    <p style="color: #e74c3c; font-size: 12px;">אם לא ביקשת איפוס סיסמה, אנא התעלם מהודעה זו</p>
+                </div>
+                """,
+                text_content=f"""
+                איפוס סיסמה - Homis
+                
+                שלום {first_name},
+                
+                קיבלנו בקשה לאיפוס סיסמה עבור החשבון שלך באפליקציית Homis.
+                
+                הקוד שלך לאיפוס הסיסמה הוא: {code}
+                
+                הקוד תקף למשך 10 דקות בלבד.
+                
+                אם לא ביקשת איפוס סיסמה, אנא התעלם מהודעה זו.
+                """
+            )
+            
+            api_response = self.brevo_client.send_transac_email(send_smtp_email)
+            print(f"✅ Password reset email sent successfully to {email}")
+            return True
+            
+        except ApiException as e:
+            print(f"❌ Failed to send password reset email: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error sending password reset email: {e}")
+            return False
+    
+    def request_password_reset(self, email: str) -> dict:
+        """Request password reset by sending verification code"""
+        try:
+            # Validate email
+            try:
+                validate_email(email)
+            except EmailNotValidError:
+                return {
+                    'valid': False,
+                    'error': 'Invalid email format',
+                    'code': 400
+                }
+
+            # Check if user exists
+            user = self.db.get_user_by_email(email)
+            if not user:
+                return {
+                    'valid': False,
+                    'error': 'User not found',
+                    'code': 404
+                }
+
+            # Generate reset code
+            reset_code = self._generate_verification_code()
+
+            # Store reset request in database (using pending registrations table for simplicity)
+            # We'll store password reset requests with a special prefix
+            reset_data = {
+                'email': email,
+                'verification_code': reset_code,
+                'expiry_time': (datetime.now() + timedelta(minutes=10)).isoformat(),  # 10 minutes
+                'attempts': 0,
+                'is_password_reset': True  # Flag to differentiate from registration
+            }
+
+            # Clean up any existing reset requests for this email
+            self.db.delete_pending_registration(f"reset_{email}")
+            
+            # Store the reset request
+            self.db.store_pending_registration(f"reset_{email}", reset_data)
+
+            # Send reset email
+            email_sent = self._send_password_reset_email(email, reset_code, user.first_name)
+
+            if not email_sent:
+                # Clean up if email failed
+                self.db.delete_pending_registration(f"reset_{email}")
+                return {
+                    'valid': False,
+                    'error': 'Failed to send reset email',
+                    'code': 500
+                }
+
+            return {
+                'valid': True,
+                'message': 'Password reset code sent to your email'
+            }
+
+        except Exception as e:
+            print(f"❌ Error in request_password_reset: {e}")
+            return {
+                'valid': False,
+                'error': 'Server error',
+                'code': 500
+            }
+
+    def verify_reset_code(self, email: str, code: str) -> dict:
+        """Verify password reset code"""
+        try:
+            # Get reset request
+            reset_request = self.db.get_pending_registration(f"reset_{email}")
+            if not reset_request:
+                return {
+                    'valid': False,
+                    'error': 'No reset request found',
+                    'code': 404
+                }
+
+            # Check if code expired
+            expiry_time = datetime.fromisoformat(reset_request.expiry_time)
+            if datetime.now() > expiry_time:
+                self.db.delete_pending_registration(f"reset_{email}")
+                return {
+                    'valid': False,
+                    'error': 'Reset code has expired',
+                    'code': 400
+                }
+
+            # Check verification code
+            if reset_request.verification_code != code:
+                reset_request.attempts += 1
+                self.db.update_pending_registration_attempts(f"reset_{email}", reset_request.attempts)
+                
+                # Block after 3 failed attempts
+                if reset_request.attempts >= 3:
+                    self.db.delete_pending_registration(f"reset_{email}")
+                    return {
+                        'valid': False,
+                        'error': 'Too many failed attempts. Please request a new reset code.',
+                        'code': 400
+                    }
+                
+                return {
+                    'valid': False,
+                    'error': 'Invalid reset code',
+                    'code': 400
+                }
+
+            return {
+                'valid': True,
+                'message': 'Reset code verified successfully'
+            }
+
+        except Exception as e:
+            print(f"❌ Error in verify_reset_code: {e}")
+            return {
+                'valid': False,
+                'error': 'Server error',
+                'code': 500
+            }
+
+    def reset_password(self, email: str, code: str, new_password: str) -> dict:
+        """Reset password after verifying code"""
+        try:
+            # First verify the code again
+            verification_result = self.verify_reset_code(email, code)
+            if not verification_result['valid']:
+                return verification_result
+
+            # Validate new password
+            if len(new_password) < 6:
+                return {
+                    'valid': False,
+                    'error': 'Password must be at least 6 characters long',
+                    'code': 400
+                }
+
+            # Get user
+            user = self.db.get_user_by_email(email)
+            if not user:
+                return {
+                    'valid': False,
+                    'error': 'User not found',
+                    'code': 404
+                }
+
+            # Hash new password
+            new_password_hash = bcrypt.generate_password_hash(new_password).decode('utf-8')
+
+            # Update password in database
+            success = self.db.update_user_password(user.id, new_password_hash)
+            if not success:
+                return {
+                    'valid': False,
+                    'error': 'Failed to update password',
+                    'code': 500
+                }
+
+            # Clean up reset request
+            self.db.delete_pending_registration(f"reset_{email}")
+
+            return {
+                'valid': True,
+                'message': 'Password reset successfully'
+            }
+
+        except Exception as e:
+            print(f"❌ Error in reset_password: {e}")
+            return {
+                'valid': False,
+                'error': 'Server error',
+                'code': 500
+            }
 
 # Decorators for route protection
 def require_auth(f):

@@ -27,6 +27,9 @@ interface AuthContextType {
   }) => Promise<{ success: boolean; error?: string }>;
   verifyCodeAndRegister: (email: string, code: string) => Promise<{ success: boolean; error?: string }>;
   resetVerification: () => void;
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>;
+  verifyResetCode: (email: string, code: string) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -243,6 +246,60 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setPendingUserData(null); // Clear pending data when resetting verification
   };
 
+  const requestPasswordReset = async (email: string) => {
+    try {
+      console.log('🔐 AuthContext: Requesting password reset for:', email);
+      const result = await apiService.requestPasswordReset(email);
+      
+      if (result.success) {
+        console.log('🔐 AuthContext: Password reset request successful');
+        return { success: true };
+      } else {
+        console.log('🔐 AuthContext: Password reset request failed:', result.error);
+        return { success: false, error: result.error || 'Failed to request password reset' };
+      }
+    } catch (error) {
+      console.error('🔐 AuthContext: Password reset request error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  };
+
+  const verifyResetCode = async (email: string, code: string) => {
+    try {
+      console.log('🔐 AuthContext: Verifying reset code for:', email);
+      const result = await apiService.verifyResetCode(email, code);
+      
+      if (result.success) {
+        console.log('🔐 AuthContext: Reset code verification successful');
+        return { success: true };
+      } else {
+        console.log('🔐 AuthContext: Reset code verification failed:', result.error);
+        return { success: false, error: result.error || 'Invalid reset code' };
+      }
+    } catch (error) {
+      console.error('🔐 AuthContext: Reset code verification error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  };
+
+  const resetPassword = async (email: string, code: string, newPassword: string) => {
+    try {
+      console.log('🔐 AuthContext: Resetting password for:', email);
+      const result = await apiService.resetPassword(email, code, newPassword);
+      
+      if (result.success) {
+        console.log('🔐 AuthContext: Password reset successful');
+        return { success: true };
+      } else {
+        console.log('🔐 AuthContext: Password reset failed:', result.error);
+        return { success: false, error: result.error || 'Failed to reset password' };
+      }
+    } catch (error) {
+      console.error('🔐 AuthContext: Password reset error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  };
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -256,6 +313,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     sendVerificationCode,
     verifyCodeAndRegister,
     resetVerification,
+    requestPasswordReset,
+    verifyResetCode,
+    resetPassword,
   };
 
   return (

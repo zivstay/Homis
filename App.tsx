@@ -122,6 +122,11 @@ function BoardSwitcherHeader() {
       if (isSelected) {
         return prev.filter(cat => cat.name !== category.name);
       } else {
+        // Check if we're at the limit of 7 categories
+        if (prev.length >= 7) {
+          Alert.alert('הגבלה', 'ניתן לבחור עד 7 קטגוריות בלבד. בטל בחירה של קטגוריה אחרת כדי להוסיף חדשה.');
+          return prev;
+        }
         return [...prev, category];
       }
     });
@@ -270,20 +275,48 @@ function BoardSwitcherHeader() {
 
   const renderCategoryItem = ({ item }: { item: QuickCategory }) => {
     const isSelected = selectedCategories.some(cat => cat.name === item.name);
+    const isDisabled = !isSelected && selectedCategories.length >= 7;
+    
     return (
       <TouchableOpacity
         style={[
           styles.categoryItem,
           isSelected && styles.selectedCategoryItem,
+          isDisabled && styles.disabledCategoryItem,
         ]}
-        onPress={() => handleCategoryToggle(item)}
+        onPress={() => {
+          if (!isDisabled) {
+            handleCategoryToggle(item);
+          }
+        }}
+        disabled={isDisabled}
       >
-        <Text style={styles.categoryIcon}>{item.icon}</Text>
         <Text style={[
-          styles.categoryName,
-          isSelected && styles.selectedCategoryName
-        ]}>{item.name}</Text>
-        {isSelected && <Text style={styles.checkmark}>✓</Text>}
+          styles.categoryIcon,
+          isDisabled && styles.disabledCategoryIcon
+        ]}>
+          {item.icon}
+        </Text>
+        <Text 
+          style={[
+            styles.categoryName,
+            isSelected && styles.selectedCategoryName,
+            isDisabled && styles.disabledCategoryName
+          ]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+        >
+          {item.name}
+        </Text>
+        
+        {isSelected && (
+          <Text style={styles.checkmark}>✓</Text>
+        )}
+        
+        {isDisabled && (
+          <Text style={styles.disabledIndicator}>🔒</Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -360,7 +393,7 @@ function BoardSwitcherHeader() {
         }
       });
       
-      // Third: Add additional common/useful categories
+      // Third: Add additional common/useful categories (excluding "אחר")
       const additionalCategories = [
         { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
         { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
@@ -385,7 +418,7 @@ function BoardSwitcherHeader() {
       ];
       
       additionalCategories.forEach(category => {
-        if (!addedNames.has(category.name)) {
+        if (!addedNames.has(category.name) && category.name !== 'אחר') {
           allCategories.push(category);
           addedNames.add(category.name);
         }
@@ -405,11 +438,11 @@ function BoardSwitcherHeader() {
         )}
         
         <Text style={styles.selectedCountText}>
-          נבחרו: {selectedCategories.length} קטגוריות
+          נבחרו: {selectedCategories.length}/7 קטגוריות
         </Text>
         
         <Text style={styles.wizardHelpText}>
-          הקטגוריות של סוג הלוח נבחרו אוטומטיית. למעלה: קטגוריות מתאימות לסוג הלוח. למטה: כל הקטגוריות הזמינות.
+          הקטגוריות של סוג הלוח נבחרו אוטומטיית. בחר עד 7 קטגוריות נוספות.
         </Text>
         
         <FlatList
@@ -464,15 +497,27 @@ function BoardSwitcherHeader() {
           {wizardStep === 3 && renderWizardStep3()}
           
           <View style={styles.wizardButtons}>
-            {wizardStep > 1 && (
+            {/* Left button - Back or Cancel */}
+            {wizardStep > 1 ? (
               <TouchableOpacity
                 style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
                 onPress={previousStep}
               >
                 <Text style={styles.boardSwitcherCancelText}>חזור</Text>
               </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
+                onPress={() => {
+                  setShowCreateWizard(false);
+                  resetWizard();
+                }}
+              >
+                <Text style={styles.boardSwitcherCancelText}>ביטול</Text>
+              </TouchableOpacity>
             )}
             
+            {/* Right button - Next or Create */}
             {wizardStep < 3 ? (
               <TouchableOpacity
                 style={[styles.boardSwitcherModalButton, styles.boardSwitcherCreateButton]}
@@ -482,25 +527,17 @@ function BoardSwitcherHeader() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCreateButton]}
+                style={[
+                  styles.boardSwitcherModalButton, 
+                  styles.boardSwitcherCreateButton,
+                  (isCreating || selectedCategories.length === 0) && styles.disabledWizardButton
+                ]}
                 onPress={handleCreateBoard}
                 disabled={isCreating || selectedCategories.length === 0}
               >
                 <Text style={styles.boardSwitcherCreateText}>
                   {isCreating ? 'יוצר...' : 'צור לוח'}
                 </Text>
-              </TouchableOpacity>
-            )}
-            
-            {wizardStep === 1 && (
-              <TouchableOpacity
-                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
-                onPress={() => {
-                  setShowCreateWizard(false);
-                  resetWizard();
-                }}
-              >
-                <Text style={styles.boardSwitcherCancelText}>ביטול</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -838,11 +875,11 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   boardSwitcherModalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#2c3e50',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   boardSwitcherList: {
     maxHeight: 300,
@@ -912,10 +949,6 @@ const styles = StyleSheet.create({
   },
   boardSwitcherCancelButton: {
     backgroundColor: '#ecf0f1',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
   },
   boardSwitcherCancelText: {
     color: '#7f8c8d',
@@ -935,12 +968,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   boardSwitcherModalInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    fontSize: 16,
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    fontSize: 18,
+    backgroundColor: '#fafbfc',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   boardSwitcherModalButtons: {
     flexDirection: 'row',
@@ -949,10 +991,12 @@ const styles = StyleSheet.create({
   },
   boardSwitcherModalButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
   },
   boardSwitcherCreateButton: {
     backgroundColor: '#2ecc71',
@@ -961,7 +1005,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
-    height: 20
   },
   sectionTitle: {
     fontSize: 18,
@@ -970,31 +1013,49 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   boardTypeList: {
-    maxHeight: 100,
+    maxHeight: 220,
   },
   boardTypeItem: {
-    padding: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    marginRight: 8,
+    padding: 18,
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    borderRadius: 12,
+    marginBottom: 14,
+    backgroundColor: '#fafbfc',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   selectedBoardTypeItem: {
-    backgroundColor: '#ebf3fd',
+    backgroundColor: '#e3f2fd',
+    borderColor: '#2196f3',
+    shadowColor: '#2196f3',
+    shadowOpacity: 0.2,
   },
   boardTypeIcon: {
-    fontSize: 20,
+    fontSize: 32,
     color: '#2c3e50',
+    marginBottom: 10,
+    textAlign: 'center',
   },
   boardTypeName: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 6,
   },
   boardTypeDescription: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 4,
+    fontSize: 15,
+    color: '#7f8c8d',
+    marginTop: 6,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   currentBoardContainer: {
     flex: 1,
@@ -1017,57 +1078,109 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   categoriesList: {
-    maxHeight: 200,
-    marginTop: 10,
+    maxHeight: 280,
+    marginTop: 12,
   },
   categoriesRow: {
     justifyContent: 'space-around',
-    marginBottom: 10,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   categoryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    marginVertical: 5,
-    backgroundColor: '#f0f0f0',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    marginVertical: 6,
+    backgroundColor: '#fafbfc',
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    width: '48%',
+    minHeight: 70,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   selectedCategoryItem: {
-    backgroundColor: '#ebf3fd',
-    borderWidth: 1,
-    borderColor: '#2ecc71',
+    backgroundColor: '#e8f5e8',
+    borderWidth: 2,
+    borderColor: '#4caf50',
+    shadowColor: '#4caf50',
+    shadowOpacity: 0.2,
   },
   categoryIcon: {
-    fontSize: 20,
-    marginRight: 10,
+    fontSize: 18,
+    marginRight: 6,
+    minWidth: 22,
   },
   categoryName: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#2c3e50',
+    flex: 1,
+    flexWrap: 'wrap',
+    textAlign: 'center',
+    paddingHorizontal: 4,
   },
   selectedCategoryName: {
-    color: '#2ecc71',
+    color: '#4caf50',
+    fontWeight: 'bold',
+  },
+  disabledCategoryItem: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#ddd',
+    opacity: 0.6,
+  },
+  disabledCategoryIcon: {
+    opacity: 0.5,
+  },
+  disabledCategoryName: {
+    color: '#999',
   },
   checkmark: {
-    fontSize: 20,
-    marginLeft: 10,
-    color: '#2ecc71',
+    fontSize: 18,
+    color: '#4caf50',
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  disabledIndicator: {
+    fontSize: 16,
+    color: '#999',
+    marginLeft: 8,
   },
   selectedCountText: {
-    fontSize: 14,
-    color: '#555',
-    marginBottom: 10,
+    fontSize: 16,
+    color: '#4caf50',
+    marginBottom: 12,
     textAlign: 'center',
+    fontWeight: '600',
+    backgroundColor: '#e8f5e8',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    alignSelf: 'center',
   },
   wizardModalContent: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
+    borderRadius: 16,
+    padding: 28,
+    width: '95%',
+    maxWidth: 500,
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
   },
   wizardHeader: {
     alignItems: 'center',
@@ -1102,27 +1215,43 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   wizardTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#2c3e50',
-    marginBottom: 10,
+    marginBottom: 16,
+    textAlign: 'center',
   },
   wizardSubtitle: {
-    fontSize: 14,
-    color: '#777',
-    marginBottom: 10,
+    fontSize: 16,
+    color: '#7f8c8d',
+    marginBottom: 12,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   wizardButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'stretch',
     gap: 12,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   wizardHelpText: {
-    fontSize: 12,
-    color: '#777',
-    marginBottom: 15,
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginBottom: 18,
     textAlign: 'center',
-    lineHeight: 16,
+    lineHeight: 20,
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+  disabledWizardButton: {
+    backgroundColor: '#bdc3c7',
+    opacity: 0.7,
   },
 });
 

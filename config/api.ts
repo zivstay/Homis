@@ -2,7 +2,9 @@
 const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV === 'development';
 
 export const API_CONFIG = {
-  BASE_URL: isDev ? 'http://192.168.7.4:5000' : 'https://your-production-domain.com',
+  BASE_URL: isDev ? 'http://192.168.7.14:5000' : 'https://your-production-domain.com',
+  // BASE_URL: isDev ? 'https://homis-backend-06302e58f4ca.herokuapp.com' : 'https://homis-backend-06302e58f4ca.herokuapp.com',
+
   UPLOAD_ENDPOINT: '/api/upload/expense-image',
   EXPENSES_ENDPOINT: '/api/boards',
 };

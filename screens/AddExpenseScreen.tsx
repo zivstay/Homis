@@ -3,21 +3,21 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Image,
-  Keyboard,
-  KeyboardAvoidingView,
-  Linking,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Linking,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
-import { getBoardTypeById } from '../constants/boardTypes';
+import { getAllAvailableCategories, getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
@@ -36,6 +36,7 @@ const AddExpenseScreen: React.FC = () => {
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedPaidBy, setSelectedPaidBy] = useState('');
+  const [selectedOtherCategory, setSelectedOtherCategory] = useState('');
 
   const [isRecurring, setIsRecurring] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -125,8 +126,20 @@ const AddExpenseScreen: React.FC = () => {
 
   const handleCategorySelect = (categoryName: string) => {
     setSelectedCategory(categoryName);
+    // Reset other category selection when main category changes
+    if (categoryName !== 'אחר') {
+      setSelectedOtherCategory('');
+    }
     // Set description to category name if description is empty
     if (!description.trim()) {
+      setDescription(categoryName);
+    }
+  };
+
+  const handleOtherCategorySelect = (categoryName: string) => {
+    setSelectedOtherCategory(categoryName);
+    // Update description if it was set to "אחר"
+    if (description.trim() === 'אחר' || !description.trim()) {
       setDescription(categoryName);
     }
   };
@@ -157,9 +170,14 @@ const AddExpenseScreen: React.FC = () => {
         }
       }
 
+      // Determine the final category to use
+      const finalCategory = selectedCategory === 'אחר' && selectedOtherCategory 
+        ? selectedOtherCategory 
+        : selectedCategory;
+
       const expenseData = {
         amount: amountValue,
-        category: selectedCategory,
+        category: finalCategory,
         description: description.trim(),
         paid_by: selectedPaidBy,
         date: new Date().toISOString(),
@@ -307,6 +325,76 @@ const AddExpenseScreen: React.FC = () => {
     setSelectedImage(null);
   };
 
+  const renderOtherCategorySelector = () => {
+    if (selectedCategory !== 'אחר') {
+      return null;
+    }
+
+    // Get all available categories from the system
+    const allAvailableCategories = getAllAvailableCategories();
+    
+    // Filter out categories that are already in the board's main categories
+    const boardCategoryNames = new Set(categories.map(cat => cat.name));
+    const additionalCategories = allAvailableCategories.filter(cat => 
+      !boardCategoryNames.has(cat.name) && cat.name !== 'אחר'
+    );
+
+    if (additionalCategories.length === 0) {
+      return null;
+    }
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>בחר קטגוריה ספציפית (אופציונלי)</Text>
+        <Text style={styles.sectionSubtitle}>
+          אתה יכול לבחור קטגוריה ספציפית או להשאיר "אחר"
+        </Text>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.otherCategoriesScroll}
+          contentContainerStyle={styles.otherCategoriesContainer}
+        >
+          {additionalCategories.map((category, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.otherCategoryButton,
+                { backgroundColor: category.color },
+                selectedOtherCategory === category.name && styles.selectedOtherCategoryButton,
+              ]}
+              onPress={() => handleOtherCategorySelect(category.name)}
+            >
+              <Text style={styles.otherCategoryIcon}>{category.icon}</Text>
+              <Text 
+                style={styles.otherCategoryText}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {category.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        
+        {selectedOtherCategory && (
+          <TouchableOpacity
+            style={styles.clearOtherCategoryButton}
+            onPress={() => {
+              setSelectedOtherCategory('');
+              if (description.trim() === selectedOtherCategory) {
+                setDescription('אחר');
+              }
+            }}
+          >
+            <Text style={styles.clearOtherCategoryText}>נקה בחירה ותשאר עם "אחר"</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   const renderCategoryButtons = () => {
     // Only use categories from server (selected in settings)
     let displayCategories: Array<{ name: string; icon: string; color: string }> = [];
@@ -395,6 +483,7 @@ const AddExpenseScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.form}>
           {renderCategoryButtons()}
+          {renderOtherCategorySelector()}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>סכום</Text>
@@ -692,6 +781,71 @@ const styles = StyleSheet.create({
     color: '#2c3e50',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#777',
+    marginBottom: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  otherCategoriesScroll: {
+    maxHeight: 140,
+  },
+  otherCategoriesContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  otherCategoryButton: {
+    width: 100,
+    height: 90,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  selectedOtherCategoryButton: {
+    borderWidth: 3,
+    borderColor: '#2c3e50',
+    shadowColor: '#2c3e50',
+    shadowOpacity: 0.3,
+  },
+  otherCategoryIcon: {
+    fontSize: 26,
+    marginBottom: 6,
+  },
+  otherCategoryText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 16,
+    flexShrink: 1,
+    maxWidth: '100%',
+  },
+  clearOtherCategoryButton: {
+    backgroundColor: '#ecf0f1',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 12,
+    alignSelf: 'center',
+  },
+  clearOtherCategoryText: {
+    color: '#7f8c8d',
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 

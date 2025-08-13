@@ -280,6 +280,66 @@ def create_app(config_name='default'):
         else:
             return jsonify({'error': result['error']}), result.get('code', 400)
 
+    # Password reset endpoints
+    @app.route('/api/auth/request-password-reset', methods=['POST'])
+    def request_password_reset():
+        """Request password reset by sending verification code"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        email = data.get('email')
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        
+        result = auth_manager.request_password_reset(email)
+        
+        if result['valid']:
+            return jsonify({'message': result['message']}), 200
+        else:
+            return jsonify({'error': result['error']}), result.get('code', 400)
+
+    @app.route('/api/auth/verify-reset-code', methods=['POST'])
+    def verify_reset_code():
+        """Verify password reset code"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        email = data.get('email')
+        code = data.get('code')
+        
+        if not email or not code:
+            return jsonify({'error': 'Email and verification code are required'}), 400
+        
+        result = auth_manager.verify_reset_code(email, code)
+        
+        if result['valid']:
+            return jsonify({'message': result['message']}), 200
+        else:
+            return jsonify({'error': result['error']}), result.get('code', 400)
+
+    @app.route('/api/auth/reset-password', methods=['POST'])
+    def reset_password():
+        """Reset password with verified code"""
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        email = data.get('email')
+        code = data.get('code')
+        new_password = data.get('new_password')
+        
+        if not email or not code or not new_password:
+            return jsonify({'error': 'Email, code, and new password are required'}), 400
+        
+        result = auth_manager.reset_password(email, code, new_password)
+        
+        if result['valid']:
+            return jsonify({'message': result['message']}), 200
+        else:
+            return jsonify({'error': result['error']}), result.get('code', 400)
+
     # Board routes
     @app.route('/api/boards', methods=['GET', 'OPTIONS'])
     @require_auth
@@ -1494,3 +1554,4 @@ def create_app(config_name='default'):
 if __name__ == '__main__':
     app = create_app(os.getenv('FLASK_ENV', 'development'))
     app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=5000,use_reloader=False)
+

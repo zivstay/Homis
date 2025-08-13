@@ -5,7 +5,8 @@ import { QuickCategory } from '../constants/boardTypes';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-const API_BASE_URL = 'http://192.168.7.4:5000/api';   // <-- your IP
+const API_BASE_URL = 'http://192.168.7.14:5000/api';   // <-- your IP
+// const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
 
 // Types
 export interface User {
@@ -568,6 +569,78 @@ class ApiService {
 
   async logout(): Promise<void> {
     await this.clearTokens();
+  }
+
+  async requestPasswordReset(email: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Requesting password reset for:', email);
+    const url = `${API_BASE_URL}/auth/request-password-reset`;
+    console.log('🔵 API: Request password reset URL:', url);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      console.log('🔵 API: Request password reset response status:', response.status);
+      const result = await this.handleResponse<{ message: string }>(response);
+      console.log('🔵 API: Request password reset result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
+      
+      return result;
+    } catch (error) {
+      console.error('🔴 API: Request password reset network error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network error';
+      return { success: false, error: `Connection failed: ${errorMessage}` };
+    }
+  }
+
+  async verifyResetCode(email: string, code: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Verifying reset code for:', email);
+    const url = `${API_BASE_URL}/auth/verify-reset-code`;
+    console.log('🔵 API: Verify reset code URL:', url);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+
+      console.log('🔵 API: Verify reset code response status:', response.status);
+      const result = await this.handleResponse<{ message: string }>(response);
+      console.log('🔵 API: Verify reset code result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
+      
+      return result;
+    } catch (error) {
+      console.error('🔴 API: Verify reset code network error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network error';
+      return { success: false, error: `Connection failed: ${errorMessage}` };
+    }
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Resetting password for:', email);
+    const url = `${API_BASE_URL}/auth/reset-password`;
+    console.log('🔵 API: Reset password URL:', url);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, new_password: newPassword }),
+      });
+
+      console.log('🔵 API: Reset password response status:', response.status);
+      const result = await this.handleResponse<{ message: string }>(response);
+      console.log('🔵 API: Reset password result:', result.success ? 'SUCCESS' : 'FAILED', result.error);
+      
+      return result;
+    } catch (error) {
+      console.error('🔴 API: Reset password network error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Network error';
+      return { success: false, error: `Connection failed: ${errorMessage}` };
+    }
   }
 
   async getCurrentUser(): Promise<ApiResponse<{ user: User }>> {

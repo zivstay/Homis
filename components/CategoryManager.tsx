@@ -39,7 +39,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
         // First: Add categories from current board type (priority)
         if (currentBoardType) {
             currentBoardType.quickCategories.forEach(category => {
-                if (!addedNames.has(category.name)) {
+                // Skip "אחר" category as it's always available
+                if (category.name !== 'אחר' && !addedNames.has(category.name)) {
                     allCategories.push(category);
                     addedNames.add(category.name);
                 }
@@ -50,7 +51,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
         BOARD_TYPES.forEach(boardType => {
             if (boardType.id !== selectedBoard.board_type) {
                 boardType.quickCategories.forEach(category => {
-                    if (!addedNames.has(category.name)) {
+                    // Skip "אחר" category as it's always available
+                    if (category.name !== 'אחר' && !addedNames.has(category.name)) {
                         allCategories.push(category);
                         addedNames.add(category.name);
                     }
@@ -73,6 +75,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
             { name: 'בריאות', icon: '🏥', color: '#E74C3C' },
             { name: 'ספורט', icon: '⚽', color: '#2ECC71' },
             { name: 'נסיעות', icon: '✈️', color: '#9B59B6' },
+            { name: 'תחבורה', icon: '🚌', color: '#98D8C8' },
             { name: 'תחביבים', icon: '🎨', color: '#F39C12' },
             { name: 'קניות', icon: '🛒', color: '#8E44AD' },
             { name: 'תקשורת', icon: '📞', color: '#34495E' },
@@ -251,9 +254,7 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
                         <Text style={styles.selectedCount}>
                             נבחרו: {selectedCategories.length}/7 קטגוריות
                         </Text>
-                        <Text style={styles.helpText}>
-                            בחר עד 7 קטגוריות שיופיעו בלוח. למעלה: קטגוריות מתאימות לסוג הלוח. למטה: כל הקטגוריות הזמינות. "אחר" יופיע אוטומטית.
-                        </Text>
+
                     </View>
 
                     {isLoading ? (
