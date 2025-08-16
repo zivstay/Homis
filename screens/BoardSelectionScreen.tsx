@@ -1,16 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   FlatList,
-  Keyboard,
-  Modal,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { BOARD_TYPES, BoardType } from '../constants/boardTypes';
+import CreateBoardWizard from '../components/CreateBoardWizard';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useTutorial } from '../contexts/TutorialContext';
@@ -21,11 +17,7 @@ const BoardSelectionScreen: React.FC = () => {
   const { boards, selectedBoard, selectBoard, createBoard, refreshBoards, isLoading } = useBoard();
   const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
   
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newBoardName, setNewBoardName] = useState('');
-  const [newBoardDescription, setNewBoardDescription] = useState('');
-  const [selectedBoardType, setSelectedBoardType] = useState<BoardType>(BOARD_TYPES[0]);
-  const [isCreating, setIsCreating] = useState(false);
+  const [showCreateWizard, setShowCreateWizard] = useState(false);
 
   // Update tutorial context when this screen is focused
   useEffect(() => {
@@ -56,41 +48,35 @@ const BoardSelectionScreen: React.FC = () => {
     }, 500);
   }, [setCurrentScreen, checkScreenTutorial, startTutorial]);
 
-  const handleCreateBoard = async () => {
-    if (!newBoardName.trim()) {
-      Alert.alert('שגיאה', 'נא להזין שם ללוח');
-      return;
+  const [pendingBoardSelection, setPendingBoardSelection] = useState<string | null>(null);
+
+  // Effect to automatically select a board when it's added to the list
+  useEffect(() => {
+    if (pendingBoardSelection && boards.length > 0) {
+      const boardToSelect = boards.find((board: any) => board.name === pendingBoardSelection);
+      if (boardToSelect) {
+        console.log('🎯 BoardSelectionScreen: Auto-selecting newly created board:', boardToSelect.name);
+        selectBoard(boardToSelect);
+        setPendingBoardSelection(null);
+      }
     }
+  }, [boards, pendingBoardSelection, selectBoard]);
 
-    setIsCreating(true);
-    const result = await createBoard({
-      name: newBoardName.trim(),
-      description: newBoardDescription.trim(),
-      currency: 'ILS',
-      timezone: 'Asia/Jerusalem',
-      board_type: selectedBoardType.id,
-    });
-    setIsCreating(false);
-
-    if (result.success) {
-      setShowCreateModal(false);
-      setNewBoardName('');
-      setNewBoardDescription('');
-      setSelectedBoardType(BOARD_TYPES[0]);
-    } else {
-      Alert.alert('שגיאה', result.error || 'שגיאה ביצירת לוח');
+  const handleBoardCreated = async (newBoard?: any) => {
+    // Refresh boards after creation
+    if (refreshBoards) {
+      await refreshBoards();
+      
+      // If we have a new board, set it for pending selection
+      if (newBoard && newBoard.name) {
+        setPendingBoardSelection(newBoard.name);
+      }
     }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'התנתקות',
-      'האם אתה בטוח שברצונך להתנתק?',
-      [
-        { text: 'ביטול', style: 'cancel' },
-        { text: 'התנתק', style: 'destructive', onPress: logout },
-      ]
-    );
+    // Simple logout without confirmation for now
+    logout();
   };
 
   const renderBoardItem = ({ item }: { item: Board }) => (
@@ -116,95 +102,7 @@ const BoardSelectionScreen: React.FC = () => {
           {item.member_count || 0} חברים
         </Text>
       </View>
-      
-      <View style={styles.boardTypeContainer}>
-        <Text style={styles.boardTypeText}>
-          {BOARD_TYPES.find(type => type.id === item.board_type)?.name || 'כללי'}
-        </Text>
-      </View>
     </TouchableOpacity>
-  );
-
-  const renderBoardTypeItem = ({ item }: { item: BoardType }) => (
-    <TouchableOpacity
-      style={[
-        styles.boardTypeItem,
-        selectedBoardType.id === item.id && styles.selectedBoardTypeItem,
-      ]}
-      onPress={() => setSelectedBoardType(item)}
-    >
-      <Text style={styles.boardTypeIcon}>{item.icon}</Text>
-      <Text style={styles.boardTypeName}>{item.name}</Text>
-      <Text style={styles.boardTypeDescription}>{item.description}</Text>
-    </TouchableOpacity>
-  );
-
-  const renderCreateModal = () => (
-    <Modal
-      visible={showCreateModal}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setShowCreateModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>צור לוח חדש</Text>
-          
-          <TextInput
-            style={styles.modalInput}
-            placeholder="שם הלוח"
-            value={newBoardName}
-            onChangeText={setNewBoardName}
-            textAlign="right"
-            returnKeyType="done"
-            onSubmitEditing={() => Keyboard.dismiss()}
-            blurOnSubmit={true}
-          />
-          
-          <TextInput
-            style={styles.modalInput}
-            placeholder="תיאור (אופציונלי)"
-            value={newBoardDescription}
-            onChangeText={setNewBoardDescription}
-            multiline
-            numberOfLines={3}
-            textAlign="right"
-            returnKeyType="done"
-            onSubmitEditing={() => Keyboard.dismiss()}
-            blurOnSubmit={true}
-          />
-          
-          <Text style={styles.sectionTitle}>סוג הלוח</Text>
-          <FlatList
-            data={BOARD_TYPES}
-            renderItem={renderBoardTypeItem}
-            keyExtractor={(item) => item.id}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.boardTypeList}
-          />
-          
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => setShowCreateModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>ביטול</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.modalButton, styles.createButton]}
-              onPress={handleCreateBoard}
-              disabled={isCreating}
-            >
-              <Text style={styles.createButtonText}>
-                {isCreating ? 'יוצר...' : 'צור'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
   );
 
   return (
@@ -228,7 +126,7 @@ const BoardSelectionScreen: React.FC = () => {
           </Text>
           <TouchableOpacity
             style={styles.createFirstButton}
-            onPress={() => setShowCreateModal(true)}
+            onPress={() => setShowCreateWizard(true)}
           >
             <Text style={styles.createFirstButtonText}>צור לוח ראשון</Text>
           </TouchableOpacity>
@@ -245,14 +143,19 @@ const BoardSelectionScreen: React.FC = () => {
           
           <TouchableOpacity
             style={styles.createButton}
-            onPress={() => setShowCreateModal(true)}
+            onPress={() => setShowCreateWizard(true)}
           >
             <Text style={styles.createButtonText}>+ צור לוח חדש</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {renderCreateModal()}
+      <CreateBoardWizard
+        isVisible={showCreateWizard}
+        onClose={() => setShowCreateWizard(false)}
+        onBoardCreated={handleBoardCreated}
+        createBoard={createBoard}
+      />
     </View>
   );
 };
@@ -401,6 +304,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+    maxWidth: 300,
+    alignSelf: 'center',
   },
   createButtonText: {
     color: 'white',
@@ -480,11 +385,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   modalButton: {
-    flex: 1,
+    width: '48%',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
-    marginHorizontal: 8,
   },
   cancelButton: {
     backgroundColor: '#ecf0f1',

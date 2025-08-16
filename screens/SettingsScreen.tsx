@@ -543,10 +543,9 @@ const styles = StyleSheet.create({
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
   },
   modalButton: {
-    flex: 1,
+    width: '48%',
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',

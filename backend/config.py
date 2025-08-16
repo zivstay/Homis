@@ -56,6 +56,12 @@ class Config:
     
     # File upload settings
     UPLOAD_METHOD = os.environ.get('UPLOAD_METHOD', 'b2')  # 'local' or 'b2'
+    
+    # Image compression settings
+    IMAGE_MAX_WIDTH = int(os.environ.get('IMAGE_MAX_WIDTH', 1200))
+    IMAGE_MAX_HEIGHT = int(os.environ.get('IMAGE_MAX_HEIGHT', 1200))
+    IMAGE_QUALITY = int(os.environ.get('IMAGE_QUALITY', 85))
+    IMAGE_MAX_FILE_SIZE = int(os.environ.get('IMAGE_MAX_FILE_SIZE', 10 * 1024 * 1024))  # 10MB
 
 class DevelopmentConfig(Config):
     """Development configuration"""

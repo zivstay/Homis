@@ -92,7 +92,13 @@ function BoardSwitcherHeader() {
             const result = await deleteBoard(board.id);
             if (result.success) {
               setShowBoardModal(false);
-              // If the deleted board was the selected board, we need to let the context handle selection
+              
+              // Check if the deleted board was the currently selected board
+              if (selectedBoard && selectedBoard.id === board.id) {
+                console.log('🗑️ App: Deleted board was the selected board, clearing selection');
+                // Clear the selected board to trigger navigation to BoardSelectionScreen
+                // The BoardContext will handle this automatically
+              }
             } else {
               Alert.alert('שגיאה', result.error || 'שגיאה במחיקת הלוח');
             }
@@ -179,6 +185,12 @@ function BoardSwitcherHeader() {
           if (refreshBoardCategories) {
             await refreshBoardCategories();
             console.log('✅ App: Expense categories refreshed successfully');
+          }
+          
+          // Auto-select the newly created board
+          if (result.board && selectBoard) {
+            console.log('🎯 App: Auto-selecting newly created board:', result.board.name);
+            selectBoard(result.board);
           }
         } catch (error) {
           console.error('❌ App: Error refreshing board data:', error);
@@ -373,19 +385,19 @@ function BoardSwitcherHeader() {
       const allCategories: QuickCategory[] = [];
       const addedNames = new Set<string>();
       
-      // First: Add categories from selected board type (priority)
+      // First: Add categories from selected board type (priority) - excluding "אחר"
       selectedBoardType.quickCategories.forEach(category => {
-        if (!addedNames.has(category.name)) {
+        if (!addedNames.has(category.name) && category.name !== 'אחר') {
           allCategories.push(category);
           addedNames.add(category.name);
         }
       });
       
-      // Second: Add categories from all other board types
+      // Second: Add categories from all other board types - excluding "אחר"
       BOARD_TYPES.forEach(boardType => {
         if (boardType.id !== selectedBoardType.id) {
           boardType.quickCategories.forEach(category => {
-            if (!addedNames.has(category.name)) {
+            if (!addedNames.has(category.name) && category.name !== 'אחר') {
               allCategories.push(category);
               addedNames.add(category.name);
             }
@@ -607,22 +619,24 @@ function BoardSwitcherHeader() {
               </Text>
             </View>
             
-            <TouchableOpacity
-              style={styles.boardSwitcherCreateNewButton}
-              onPress={() => {
-                setShowBoardModal(false);
-                setShowCreateWizard(true);
-              }}
-            >
-              <Text style={styles.boardSwitcherCreateNewText}>+ צור לוח חדש</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.boardSwitcherCancelButton}
-              onPress={() => setShowBoardModal(false)}
-            >
-              <Text style={styles.boardSwitcherCancelText}>סגור</Text>
-            </TouchableOpacity>
+            <View style={styles.boardSwitcherModalButtons}>
+              <TouchableOpacity
+                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCreateNewButton]}
+                onPress={() => {
+                  setShowBoardModal(false);
+                  setShowCreateWizard(true);
+                }}
+              >
+                <Text style={styles.boardSwitcherCreateNewText}>+ צור לוח חדש</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
+                onPress={() => setShowBoardModal(false)}
+              >
+                <Text style={styles.boardSwitcherCancelText}>סגור</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -957,10 +971,6 @@ const styles = StyleSheet.create({
   },
   boardSwitcherCreateNewButton: {
     backgroundColor: '#2ecc71',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
   },
   boardSwitcherCreateNewText: {
     color: 'white',
@@ -987,10 +997,10 @@ const styles = StyleSheet.create({
   boardSwitcherModalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
+    marginTop: 16,
   },
   boardSwitcherModalButton: {
-    flex: 1,
+    width: '48%',
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderRadius: 12,
@@ -1232,7 +1242,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'stretch',
-    gap: 12,
     marginTop: 20,
     paddingTop: 16,
     borderTopWidth: 1,

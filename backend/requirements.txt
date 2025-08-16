@@ -12,6 +12,7 @@ Flask-Bcrypt==1.0.1
 b2sdk==1.21.0
 gunicorn==21.2.0
 psutil==5.9.6
+Pillow==10.1.0
 # PostgreSQL dependencies
 SQLAlchemy==1.4.53
 Flask-SQLAlchemy==3.0.5

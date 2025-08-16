@@ -12,6 +12,8 @@ import uuid
 import logging
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+from PIL import Image
+import io
 
 from config import config
 from models import UserRole, BoardPermission
@@ -27,8 +29,212 @@ UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 def allowed_file(filename):
+    """Check if file extension is allowed"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_image_format(filename):
+    """Get image format from filename"""
+    if not filename:
+        return None
+    
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    
+    # Map extensions to formats
+    format_map = {
+        'jpg': 'JPEG',
+        'jpeg': 'JPEG', 
+        'png': 'PNG',
+        'gif': 'GIF',
+        'webp': 'WEBP'
+    }
+    
+    return format_map.get(ext, 'JPEG')  # Default to JPEG
+
+def create_file_storage_wrapper(bytes_io_obj, filename, content_type):
+    """
+    Create a FileStorage-like wrapper around BytesIO object for B2 compatibility
+    Args:
+        bytes_io_obj: BytesIO object with compressed image
+        filename: Original filename
+        content_type: Original content type
+    Returns:
+        FileStorage-like object
+    """
+    class FileStorageWrapper:
+        def __init__(self, bytes_io, filename, content_type):
+            self.bytes_io = bytes_io
+            self.filename = filename
+            self.content_type = content_type
+            self._position = 0
+        
+        def seek(self, position):
+            self._position = position
+            self.bytes_io.seek(position)
+        
+        def read(self, size=None):
+            if size is None:
+                return self.bytes_io.read()
+            return self.bytes_io.read(size)
+        
+        def tell(self):
+            return self.bytes_io.tell()
+    
+    return FileStorageWrapper(bytes_io_obj, filename, content_type)
+
+def validate_image_file(file, max_file_size=None):
+    """
+    Validate image file size and type
+    Args:
+        file: FileStorage object from Flask
+        max_file_size: Maximum file size in bytes (optional)
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    # Check file size (max 10MB before compression by default)
+    if max_file_size is None:
+        max_file_size = 10 * 1024 * 1024  # 10MB default
+    
+    file.seek(0, 2)  # Seek to end
+    file_size = file.tell()
+    file.seek(0)  # Reset to beginning
+    
+    if file_size > max_file_size:
+        return False, f"File too large: {file_size / (1024*1024):.1f}MB. Maximum allowed: {max_file_size / (1024*1024):.1f}MB"
+    
+    # Check if it's a valid image
+    try:
+        img = Image.open(file)
+        img.verify()  # Verify it's actually an image
+        file.seek(0)  # Reset after verification
+        return True, None
+    except Exception as e:
+        return False, f"Invalid image file: {str(e)}"
+
+def compress_image(image_file, max_width=1200, max_height=1200, quality=85):
+    """
+    Compress image to reduce file size while maintaining quality
+    Args:
+        image_file: FileStorage object from Flask
+        max_width: Maximum width in pixels
+        max_height: Maximum height in pixels
+        quality: JPEG quality (1-100)
+    Returns:
+        BytesIO object with compressed image and filename attribute
+    """
+    try:
+        # Store original file position
+        original_position = image_file.tell()
+        
+        # Open image
+        img = Image.open(image_file)
+        
+        # Convert to RGB if necessary (for JPEG)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGB')
+        
+        # Get original dimensions
+        original_width, original_height = img.size
+        
+        # Calculate new dimensions maintaining aspect ratio
+        should_resize = original_width > max_width or original_height > max_height
+        
+        if should_resize:
+            ratio = min(max_width / original_width, max_height / original_height)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            print(f"📸 Resized image from {original_width}x{original_height} to {new_width}x{new_height}")
+        else:
+            print(f"📸 Image already within size limits: {original_width}x{original_height}")
+        
+        # Check if compression is worth it
+        if not should_resize and quality >= 95:
+            print(f"📸 Image already optimal - minimal compression applied")
+        
+        # Save compressed image to BytesIO
+        output = io.BytesIO()
+        
+        # Add filename attribute to BytesIO object for B2 compatibility
+        output.filename = image_file.filename
+        
+        # Determine format and save with appropriate settings
+        image_format = get_image_format(image_file.filename)
+        
+        if image_format == 'PNG':
+            # PNG with optimization
+            img.save(output, format='PNG', optimize=True, compress_level=9)
+        elif image_format == 'WEBP':
+            # WebP with quality setting
+            img.save(output, format='WEBP', quality=quality, method=6)  # method 6 = best compression
+        elif image_format == 'GIF':
+            # GIF with optimization
+            img.save(output, format='GIF', optimize=True)
+        else:
+            # JPEG with quality and optimization
+            img.save(output, format='JPEG', quality=quality, optimize=True, progressive=True)
+        
+        output.seek(0)
+        
+        # Get file size info
+        image_file.seek(0, 2)  # Seek to end to get file size
+        original_size = image_file.tell()
+        image_file.seek(original_position)  # Reset to original position
+        
+        compressed_size = len(output.getvalue())
+        compression_ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
+        
+        print(f"📸 File size: {original_size / 1024:.1f}KB -> {compressed_size / 1024:.1f}KB ({compression_ratio:.1f}% reduction)")
+        
+        # Log additional compression info
+        if compression_ratio > 0:
+            print(f"📸 ✅ Compression successful! Saved {compression_ratio:.1f}% of storage space")
+        else:
+            print(f"📸 ⚠️  No compression achieved - file size increased")
+        
+        # Log final image info
+        final_size_mb = compressed_size / (1024 * 1024)
+        if final_size_mb > 1:
+            print(f"📸 ⚠️  Final image size: {final_size_mb:.2f}MB - consider reducing quality further")
+        else:
+            print(f"📸 ✅ Final image size: {final_size_mb:.2f}MB - good compression")
+        
+        # Log compression summary
+        print(f"📸 📊 Compression Summary:")
+        print(f"   - Original: {original_width}x{original_height}, {original_size / 1024:.1f}KB")
+        print(f"   - Final: {img.size[0]}x{img.size[1]}, {compressed_size / 1024:.1f}KB")
+        print(f"   - Savings: {compression_ratio:.1f}%")
+        
+        # Log format-specific info
+        print(f"   - Format: {image_format}")
+        print(f"   - Quality: {quality}")
+        
+        # Log storage savings
+        if compression_ratio > 50:
+            print(f"   - 🎉 Excellent compression! Saved more than 50%")
+        elif compression_ratio > 25:
+            print(f"   - ✅ Good compression! Saved more than 25%")
+        elif compression_ratio > 0:
+            print(f"   - 👍 Some compression achieved")
+        else:
+            print(f"   - ⚠️  No compression - consider adjusting settings")
+        
+        # Log recommendations
+        if final_size_mb > 2:
+            print(f"   - 💡 Tip: Consider reducing quality to 75 for smaller files")
+        elif final_size_mb > 1:
+            print(f"   - 💡 Tip: Consider reducing quality to 80 for smaller files")
+        
+        # Log final status
+        print(f"📸 🚀 Image compression completed successfully!")
+        
+        return output
+        
+    except Exception as e:
+        print(f"❌ Error compressing image: {str(e)}")
+        # Return original file if compression fails
+        image_file.seek(0)
+        return image_file
 
 def create_upload_folders():
     """Create upload directories if they don't exist"""
@@ -106,25 +312,53 @@ def create_app(config_name='default'):
         if not file or not allowed_file(file.filename):
             return None
         
+        print(f"📸 Processing image upload: {file.filename}")
+        
+        # Validate image file
+        is_valid, error_message = validate_image_file(
+            file, 
+            max_file_size=app.config.get('IMAGE_MAX_FILE_SIZE', 10 * 1024 * 1024)
+        )
+        if not is_valid:
+            print(f"❌ Image validation failed: {error_message}")
+            return None
+        
+        # Compress image before upload
+        compressed_file = compress_image(
+            file, 
+            max_width=app.config.get('IMAGE_MAX_WIDTH', 1200),
+            max_height=app.config.get('IMAGE_MAX_HEIGHT', 1200),
+            quality=app.config.get('IMAGE_QUALITY', 85)
+        )
+        
         # Try B2 storage first if available and configured
         if app.config.get('UPLOAD_METHOD') == 'b2' and app.b2_service:
             try:
-                success, file_url, error = app.b2_service.upload_file(file, 'expense_images', user_id)
+                # Create a compressed file wrapper that mimics FileStorage for B2
+                compressed_file_wrapper = create_file_storage_wrapper(compressed_file, file.filename, file.content_type)
+                
+                success, file_url, error = app.b2_service.upload_file(compressed_file_wrapper, 'expense_images', user_id)
                 if success:
-                    print(f"✅ Successfully uploaded to B2: {file_url}")
+                    print(f"✅ Successfully uploaded compressed image to B2: {file_url}")
                     return file_url
                 else:
                     print(f"❌ B2 upload failed: {error}, falling back to local storage")
             except Exception as e:
                 print(f"❌ B2 upload exception: {e}, falling back to local storage")
         
-        # Fallback to local storage
+        # Fallback to local storage - use compressed version
         file_extension = file.filename.rsplit('.', 1)[1].lower()
         unique_filename = f"{user_id}_{uuid.uuid4().hex}.{file_extension}"
         
-        # Save file locally
+        # Save compressed file locally
         file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], unique_filename)
-        file.save(file_path)
+        
+        # Reset file pointer and save
+        compressed_file.seek(0)
+        with open(file_path, 'wb') as f:
+            f.write(compressed_file.getvalue())
+        
+        print(f"✅ Saved compressed image locally: {file_path}")
         
         # Return URL path for accessing the image
         return f"/api/uploads/expense_images/{unique_filename}"

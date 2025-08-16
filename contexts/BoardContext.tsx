@@ -17,7 +17,7 @@ interface BoardContextType {
     timezone?: string;
     board_type?: string;
     custom_categories?: QuickCategory[];
-  }) => Promise<{ success: boolean; error?: string }>;
+  }) => Promise<{ success: boolean; error?: string; board?: Board }>;
   saveBoardCategories: (boardId: string, categories: { name: string; icon: string; color: string }[]) => Promise<{ success: boolean; error?: string; message?: string }>;
   refreshBoards: () => Promise<void>;
   refreshBoardMembers: () => Promise<void>;
@@ -262,7 +262,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
         
         // Refresh boards to get the updated list
         await refreshBoards();
-        return { success: true };
+        return { success: true, board: newBoard };
       } else {
         return { success: false, error: result.error || 'Failed to create board' };
       }
@@ -379,6 +379,14 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     try {
       const response = await apiService.deleteBoard(boardId);
       if (response.success) {
+        // Check if the deleted board was the currently selected board
+        if (selectedBoard && selectedBoard.id === boardId) {
+          console.log('🗑️ BoardContext: Deleted board was the selected board, clearing selection');
+          setSelectedBoard(null);
+          setBoardMembers([]);
+          setBoardExpenses([]);
+        }
+        
         await refreshBoards();
         return { success: true };
       } else {
