@@ -1,17 +1,17 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    FlatList,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import BarChart from '../components/BarChart';
 import { useAuth } from '../contexts/AuthContext';
@@ -63,6 +63,10 @@ const SummaryScreen: React.FC = () => {
   const [debts, setDebts] = useState<DebtWithBoard[]>([]);
   const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [isDebtsLoading, setIsDebtsLoading] = useState(false);
+  const summaryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debtsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter | null>(null);
   const [selectedBoards, setSelectedBoards] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('expenses');
@@ -139,91 +143,142 @@ const SummaryScreen: React.FC = () => {
 
   // Only load expenses when on expenses tab and filters change
   useEffect(() => {
-    if (activeTab === 'expenses' && selectedPeriod) {
+    if (activeTab === 'expenses' && selectedPeriod && isInitialized) {
       loadSummary();
     }
-  }, [selectedPeriod, selectedBoards, customPeriod]);
+    // Don't try to load if no period is selected - this prevents unnecessary API calls
+  }, [selectedPeriod, selectedBoards, customPeriod, isInitialized]);
 
   const loadSummary = async () => {
-    setIsLoading(true);
-    try {
-      const filters: any = {};
-      
-      // Use custom period if available, otherwise use selected period
-      if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
-        filters.start_date = customPeriod.startDate;
-        filters.end_date = customPeriod.endDate;
-      } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
-        filters.start_date = selectedPeriod.startDate;
-        filters.end_date = selectedPeriod.endDate;
-      }
-      
-      if (selectedBoards.length > 0) {
-        filters.board_ids = selectedBoards;
-      }
-
-      const result = await apiService.getExpensesSummary(filters);
-      
-      if (result.success && result.data) {
-        setSummary(result.data);
-      } else {
-        console.error('Failed to load summary:', result.error);
-      }
-    } catch (error) {
-      console.error('Error loading summary:', error);
-    } finally {
-      setIsLoading(false);
+    // Don't try to load if no period is selected
+    if (!selectedPeriod) {
+      console.log('🟡 SummaryScreen: No period selected, skipping summary load');
+      return;
     }
+
+    // Prevent concurrent calls
+    if (isSummaryLoading) {
+      console.log('🟡 SummaryScreen: Summary already loading, skipping duplicate call');
+      return;
+    }
+
+    // Cancel any pending timeout
+    if (summaryTimeoutRef.current) {
+      clearTimeout(summaryTimeoutRef.current);
+    }
+
+    // Debounce the call to prevent rapid successive calls
+    summaryTimeoutRef.current = setTimeout(async () => {
+      setIsSummaryLoading(true);
+      setIsLoading(true);
+      try {
+        const filters: any = {};
+        
+        // Use custom period if available, otherwise use selected period
+        if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
+          filters.start_date = customPeriod.startDate;
+          filters.end_date = customPeriod.endDate;
+        } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
+          filters.start_date = selectedPeriod.startDate;
+          filters.end_date = selectedPeriod.endDate;
+        }
+        
+        if (selectedBoards.length > 0) {
+          filters.board_ids = selectedBoards;
+        }
+
+        console.log('🔵 SummaryScreen: Loading summary with filters:', filters);
+        const result = await apiService.getExpensesSummary(filters);
+        
+        if (result.success && result.data) {
+          setSummary(result.data);
+          console.log('✅ SummaryScreen: Summary loaded successfully');
+        } else {
+          console.error('Failed to load summary:', result.error);
+        }
+      } catch (error) {
+        console.error('Error loading summary:', error);
+      } finally {
+        setIsSummaryLoading(false);
+        setIsLoading(false);
+      }
+    }, 200); // 200ms debounce
   };
 
   const loadDebts = async () => {
-    setIsLoading(true);
-    try {
-      const filters: any = {};
-      
-      // Use custom period if available, otherwise use selected period
-      if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
-        filters.start_date = customPeriod.startDate;
-        filters.end_date = customPeriod.endDate;
-      } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
-        filters.start_date = selectedPeriod.startDate;
-        filters.end_date = selectedPeriod.endDate;
-      }
-      
-      if (selectedBoards.length > 0) {
-        filters.board_ids = selectedBoards;
-      }
-      if (paidFilter !== 'all') {
-        filters.is_paid = paidFilter === 'paid';
-      }
-
-      const result = await apiService.getAllDebts(filters);
-      if (result.success && result.data) {
-        setDebts(result.data.debts as DebtWithBoard[]);
-        setDebtSummary(result.data.summary);
-      } else {
-        console.error('Failed to load debts:', result.error);
-      }
-    } catch (error) {
-      console.error('Error loading debts:', error);
-    } finally {
-      setIsLoading(false);
+    // Don't try to load if no period is selected
+    if (!selectedPeriod) {
+      console.log('🟡 SummaryScreen: No period selected, skipping debts load');
+      return;
     }
+
+    // Prevent concurrent calls
+    if (isDebtsLoading) {
+      console.log('🟡 SummaryScreen: Debts already loading, skipping duplicate call');
+      return;
+    }
+
+    // Cancel any pending timeout
+    if (debtsTimeoutRef.current) {
+      clearTimeout(debtsTimeoutRef.current);
+    }
+
+    // Debounce the call to prevent rapid successive calls
+    debtsTimeoutRef.current = setTimeout(async () => {
+      setIsDebtsLoading(true);
+      setIsLoading(true);
+      try {
+        const filters: any = {};
+        
+        // Use custom period if available, otherwise use selected period
+        if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
+          filters.start_date = customPeriod.startDate;
+          filters.end_date = customPeriod.endDate;
+        } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
+          filters.start_date = selectedPeriod.startDate;
+          filters.end_date = selectedPeriod.endDate;
+        }
+        
+        if (selectedBoards.length > 0) {
+          filters.board_ids = selectedBoards;
+        }
+        if (paidFilter !== 'all') {
+          filters.is_paid = paidFilter === 'paid';
+        }
+
+        console.log('🔵 SummaryScreen: Loading debts with filters:', filters);
+        const result = await apiService.getAllDebts(filters);
+        if (result.success && result.data) {
+          setDebts(result.data.debts as DebtWithBoard[]);
+          setDebtSummary(result.data.summary);
+          console.log('✅ SummaryScreen: Debts loaded successfully');
+        } else {
+          console.error('Failed to load debts:', result.error);
+        }
+      } catch (error) {
+        console.error('Error loading debts:', error);
+      } finally {
+        setIsDebtsLoading(false);
+        setIsLoading(false);
+      }
+    }, 200); // 200ms debounce
   };
 
   // Handle tab switching - only load debts when clicking on debts tab
   const handleTabSwitch = (tab: 'expenses' | 'debts') => {
     setActiveTab(tab);
-    if (tab === 'debts') {
-      loadDebts(); // Only call API when switching TO debts tab
+    if (tab === 'debts' && selectedPeriod) {
+      loadDebts(); // Only call API when switching TO debts tab AND period is selected
     }
+    // Don't try to load if no period is selected - this prevents unnecessary API calls
   };
 
   // Only reload debts when filters change AND we're on debts tab
   useEffect(() => {
-    if (activeTab === 'debts') {
+    if (activeTab === 'debts' && selectedPeriod) {
       loadDebts();
     }
+    // Don't try to load if no period is selected - this prevents unnecessary API calls
   }, [paidFilter, selectedPeriod, selectedBoards, customPeriod]);
 
   // Refresh data when screen comes into focus (returning from other screens)
@@ -232,12 +287,25 @@ const SummaryScreen: React.FC = () => {
       if (isInitialized) {
         if (activeTab === 'expenses' && selectedPeriod) {
           loadSummary();
-        } else if (activeTab === 'debts') {
+        } else if (activeTab === 'debts' && selectedPeriod) {
           loadDebts();
         }
+        // Don't try to load anything if no period is selected - this prevents unnecessary API calls
       }
     }, [activeTab, selectedPeriod, isInitialized])
   );
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (summaryTimeoutRef.current) {
+        clearTimeout(summaryTimeoutRef.current);
+      }
+      if (debtsTimeoutRef.current) {
+        clearTimeout(debtsTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handlePeriodSelect = (period: PeriodFilter) => {
     if (period.label === 'טווח מותאם') {

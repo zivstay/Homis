@@ -21,7 +21,7 @@ export const ExpenseImage: React.FC<ExpenseImageProps> = ({
   useEffect(() => {
     // Validate expense ID
     if (!expenseId || typeof expenseId !== 'string' || expenseId.length === 0) {
-      console.error('Invalid expenseId provided:', expenseId);
+      console.log('🟡 ExpenseImage: Invalid expenseId provided:', expenseId);
       setError(true);
       setLoading(false);
       return;
@@ -45,11 +45,15 @@ export const ExpenseImage: React.FC<ExpenseImageProps> = ({
           const dataUrl = `data:image/jpeg;base64,${result.data.image}`;
           setImageDataUrl(dataUrl);
         } else {
-          console.error('Failed to fetch expense image:', result.error || 'Unknown error');
+          // Don't log errors for missing images - this is normal
+          if (result.error !== 'Image not found') {
+            console.log('🟡 ExpenseImage: Image not available for expense:', expenseId, '(this is normal)');
+          }
           setError(true);
         }
       } catch (err) {
-        console.error('Error fetching expense image:', err);
+        // Don't log network errors for images - they're usually temporary
+        console.log('🟡 ExpenseImage: Network error for expense:', expenseId, '(this is normal)');
         if (isMounted) {
           setError(true);
         }

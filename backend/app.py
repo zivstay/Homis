@@ -6,7 +6,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import uuid
 import logging
@@ -245,6 +245,34 @@ def create_upload_folders():
     os.makedirs(expense_images_dir, exist_ok=True)
     
     return upload_dir, expense_images_dir
+
+def normalize_expense_date(expense_date):
+    """Normalize expense date to ensure timezone-aware datetime object"""
+    try:
+        # Handle datetime objects
+        if isinstance(expense_date, datetime):
+            if expense_date.tzinfo is None:
+                return expense_date.replace(tzinfo=timezone.utc)
+            return expense_date
+        
+        # Handle string dates
+        expense_date_str = str(expense_date)
+        
+        # If already has timezone info
+        if 'Z' in expense_date_str:
+            return datetime.fromisoformat(expense_date_str.replace('Z', '+00:00'))
+        elif '+' in expense_date_str and (':' in expense_date_str.split('+')[-1]):
+            return datetime.fromisoformat(expense_date_str)
+        else:
+            # If no timezone info, treat as UTC
+            dt = datetime.fromisoformat(expense_date_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+    except Exception as e:
+        print(f"Error normalizing date {expense_date}: {e}")
+        # Return current time as fallback
+        return datetime.now(timezone.utc)
 
 
 
@@ -512,6 +540,9 @@ def create_app(config_name='default'):
         if not email or not code:
             return jsonify({'error': 'Email and verification code are required'}), 400
         
+        # Convert email to lowercase
+        email = email.lower()
+        
         result = auth_manager.verify_code_and_register(email, code)
         
         if result['valid']:
@@ -530,6 +561,9 @@ def create_app(config_name='default'):
         email = data.get('email')
         if not email:
             return jsonify({'error': 'Email is required'}), 400
+        
+        # Convert email to lowercase
+        email = email.lower()
         
         result = auth_manager.request_password_reset(email)
         
@@ -551,6 +585,9 @@ def create_app(config_name='default'):
         if not email or not code:
             return jsonify({'error': 'Email and verification code are required'}), 400
         
+        # Convert email to lowercase
+        email = email.lower()
+        
         result = auth_manager.verify_reset_code(email, code)
         
         if result['valid']:
@@ -571,6 +608,9 @@ def create_app(config_name='default'):
         
         if not email or not code or not new_password:
             return jsonify({'error': 'Email, code, and new password are required'}), 400
+        
+        # Convert email to lowercase
+        email = email.lower()
         
         result = auth_manager.reset_password(email, code, new_password)
         
@@ -804,6 +844,9 @@ def create_app(config_name='default'):
         data = request.get_json()
         if not data or not data.get('email'):
             return jsonify({'error': 'Email is required'}), 400
+        
+        # Convert email to lowercase
+        data['email'] = data['email'].lower()
         
         board = db_manager.get_board_by_id(board_id)
         if not board:
@@ -1365,7 +1408,8 @@ def create_app(config_name='default'):
             if start_date or end_date:
                 filtered_expenses = []
                 for expense in board_expenses:
-                    expense_date = datetime.fromisoformat(expense.date.replace('Z', '+00:00'))
+                    expense_date = normalize_expense_date(expense.date)
+                    
                     if start_date:
                         start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                         if expense_date < start_dt:
@@ -1392,7 +1436,7 @@ def create_app(config_name='default'):
                 expenses_by_category[expense.category] += expense.amount
                 
                 # Monthly trend
-                expense_date = datetime.fromisoformat(expense.date.replace('Z', '+00:00'))
+                expense_date = normalize_expense_date(expense.date)
                 month_key = expense_date.strftime('%Y-%m')
                 if month_key not in monthly_trend:
                     monthly_trend[month_key] = 0
@@ -1508,7 +1552,7 @@ def create_app(config_name='default'):
             board_expenses = db_manager.get_board_expenses(board.id)
             
             for expense in board_expenses:
-                expense_date = datetime.fromisoformat(expense.date.replace('Z', '+00:00'))
+                expense_date = normalize_expense_date(expense.date)
                 start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                 

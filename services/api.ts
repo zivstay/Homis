@@ -305,6 +305,24 @@ class ApiService {
     url: string, 
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
+    return this._makeAuthenticatedRequestWithRetry<T>(url, options, 0);
+  }
+
+  // Private method with retry counter to prevent infinite loops
+  private async _makeAuthenticatedRequestWithRetry<T>(
+    url: string, 
+    options: RequestInit = {},
+    retryCount: number
+  ): Promise<ApiResponse<T>> {
+    // Create a unique key for this request to prevent duplicates
+    const requestKey = `${options.method || 'GET'}:${url}:${JSON.stringify(options.body || '')}`;
+    
+    // Prevent infinite retry loops
+    if (retryCount >= 1) {  // Reduced from 2 to 1 - only retry once
+      console.log('🔴 API: Maximum retry attempts reached, returning error');
+      return { success: false, error: 'Request failed after multiple retry attempts' };
+    }
+
     // Ensure we have a valid token before making the request
     const hasValidToken = await this.ensureValidToken();
     if (!hasValidToken) {
@@ -321,17 +339,15 @@ class ApiService {
 
     const result = await this.handleResponse<T>(response);
     
-    // If token was refreshed during the request, retry once
+    // If token was refreshed during the request, retry automatically
     if (!result.success && result.needsRetry) {
-      console.log('🔄 API: Retrying request after token refresh...');
-      const retryResponse = await fetch(url, {
-        ...options,
-        headers: {
-          ...this.getHeaders(),
-          ...options.headers,
-        },
-      });
-      return this.handleResponse<T>(retryResponse);
+      console.log(`🔄 API: Retrying request after token refresh (attempt ${retryCount + 1})...`);
+      
+      // Small delay to ensure token is fully propagated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Recursive call with incremented retry count
+      return this._makeAuthenticatedRequestWithRetry<T>(url, options, retryCount + 1);
     }
 
     return result;
@@ -355,12 +371,12 @@ class ApiService {
           return { success: false, error: 'Authentication required' };
         }
         
-        // If refresh is already in progress, don't trigger another one
+        // If refresh is already in progress, wait for it to complete
         if (this.refreshPromise) {
           console.log(`🟡 API [${requestId}]: Refresh in progress, waiting for completion...`);
           await this.refreshPromise;
-          // Return error to let the calling method handle retry after refresh
-          return { success: false, error: 'Token was refreshed, please retry request', needsRetry: true };
+          // Return needsRetry flag to trigger automatic retry
+          return { success: false, error: 'Token was refreshed, retrying automatically...', needsRetry: true };
         }
         
         console.log(`🔄 API [${requestId}]: Starting token refresh...`);
@@ -368,10 +384,9 @@ class ApiService {
         // Try to refresh token
         const refreshResult = await this.refreshAccessToken();
         if (refreshResult.success) {
-          console.log(`✅ API [${requestId}]: Token refresh successful, requesting retry`);
-          // Don't automatically retry here - let the calling method handle retry
-          // This prevents the loop and malformed retry requests
-          return { success: false, error: 'Token refreshed, please retry', needsRetry: true };
+          console.log(`✅ API [${requestId}]: Token refresh successful, will retry automatically`);
+          // Return needsRetry flag to trigger automatic retry in makeAuthenticatedRequest
+          return { success: false, error: 'Token refreshed, retrying automatically...', needsRetry: true };
         } else {
           console.log(`🔴 API [${requestId}]: Token refresh failed:`, refreshResult.error);
           // Refresh failed, user needs to login again
@@ -901,12 +916,40 @@ class ApiService {
 
   async getExpenseImage(expenseId: string): Promise<ApiResponse<{ image: string }>> {
     console.log('🔵 API: Getting expense image for:', expenseId);
-    return this.makeAuthenticatedRequest<{ image: string }>(
-      `${API_BASE_URL}/expenses/${expenseId}/image`,
-      {
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/expenses/${expenseId}/image`, {
         method: 'POST',
+        headers: this.getHeaders(),
+      });
+
+      // Handle 404 errors silently for images (they're not real errors)
+      if (response.status === 404) {
+        console.log('🟡 API: Image not found for expense:', expenseId, '(this is normal)');
+        return { success: false, error: 'Image not found' };
       }
-    );
+
+      // For other errors, use the normal error handling
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || errorData.message || 'Failed to fetch image';
+        console.log('🔴 API: Image fetch failed:', errorMessage);
+        return { success: false, error: errorMessage };
+      }
+
+      // Success case
+      const data = await response.json();
+      if (data && data.image) {
+        console.log('✅ API: Image fetched successfully for expense:', expenseId);
+        return { success: true, data: { image: data.image } };
+      } else {
+        console.log('🟡 API: Image data missing for expense:', expenseId);
+        return { success: false, error: 'Image data missing' };
+      }
+    } catch (error) {
+      console.log('🟡 API: Network error fetching image for expense:', expenseId, '(this is normal)');
+      return { success: false, error: 'Network error' };
+    }
   }
 
   // Categories

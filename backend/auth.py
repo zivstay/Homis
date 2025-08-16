@@ -50,6 +50,9 @@ class AuthManager:
 
     def register_user(self, user_data: dict) -> dict:
         """Register a new user"""
+        # Convert email to lowercase
+        user_data['email'] = user_data['email'].lower()
+        
         # Validate input
         validation_result = self._validate_user_data(user_data)
         if not validation_result['valid']:
@@ -111,6 +114,9 @@ class AuthManager:
                 'error': 'Email and password are required',
                 'code': 400
             }
+
+        # Convert email to lowercase for login
+        email = email.lower()
 
         # Find user by email
         user = self.db.get_user_by_email(email)
@@ -377,6 +383,9 @@ class AuthManager:
     
     def send_verification_code(self, user_data: dict) -> dict:
         """Send verification code for registration"""
+        # Convert email to lowercase
+        user_data['email'] = user_data['email'].lower()
+        
         # Validate input
         validation_result = self._validate_user_data(user_data)
         if not validation_result['valid']:
@@ -461,6 +470,9 @@ class AuthManager:
     
     def verify_code_and_register(self, email: str, code: str) -> dict:
         """Verify code and complete registration"""
+        # Convert email to lowercase
+        email = email.lower()
+        
         # Get pending registration
         pending_reg = self.db.get_pending_registration(email)
         if not pending_reg:
@@ -583,6 +595,9 @@ class AuthManager:
     def request_password_reset(self, email: str) -> dict:
         """Request password reset by sending verification code"""
         try:
+            # Convert email to lowercase
+            email = email.lower()
+            
             # Validate email
             try:
                 validate_email(email)
@@ -649,6 +664,9 @@ class AuthManager:
     def verify_reset_code(self, email: str, code: str) -> dict:
         """Verify password reset code"""
         try:
+            # Convert email to lowercase
+            email = email.lower()
+            
             # Get reset request
             reset_request = self.db.get_pending_registration(f"reset_{email}")
             if not reset_request:
@@ -678,7 +696,7 @@ class AuthManager:
                     self.db.delete_pending_registration(f"reset_{email}")
                     return {
                         'valid': False,
-                        'error': 'Too many failed attempts. Please request a new reset code.',
+                        'error': 'Too many failed attempts. Please try again.',
                         'code': 400
                     }
                 
@@ -704,6 +722,9 @@ class AuthManager:
     def reset_password(self, email: str, code: str, new_password: str) -> dict:
         """Reset password after verifying code"""
         try:
+            # Convert email to lowercase
+            email = email.lower()
+            
             # First verify the code again
             verification_result = self.verify_reset_code(email, code)
             if not verification_result['valid']:
