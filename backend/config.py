@@ -8,8 +8,26 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=7)  # Extended from 24 hours to 7 days
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
     
-    # Database settings
-    DATABASE_PATH = os.environ.get('DATABASE_PATH') or 'expenses_db.json'
+    # Database settings - PostgreSQL only
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    
+    # Fix for Heroku DATABASE_URL (postgres:// -> postgresql://)
+    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
+    if DATABASE_URL:
+        SQLALCHEMY_DATABASE_URI = DATABASE_URL
+        # Also try alternative PostgreSQL drivers if the main one fails
+        print(f"🔧 Using database URL: {DATABASE_URL}")
+    else:
+        print("⚠️  No DATABASE_URL found!")
+    
+    # SQLAlchemy settings
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+    }
     
     # Rate limiting
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', "200 per day;50 per hour")
@@ -43,6 +61,9 @@ class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     TESTING = False
+    # Development fallback for DATABASE_URL
+    DATABASE_URL = os.environ.get('DATABASE_URL') or 'postgresql://postgres:123456@localhost:5432/homis_db'
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
 
 class ProductionConfig(Config):
     """Production configuration"""
@@ -51,12 +72,19 @@ class ProductionConfig(Config):
     # In production, these should be set via environment variables
     SECRET_KEY = os.environ.get('SECRET_KEY')
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+    # Require DATABASE_URL in production
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL environment variable is required in production.")
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
 
 class TestingConfig(Config):
     """Testing configuration"""
     DEBUG = True
     TESTING = True
-    DATABASE_PATH = 'test_expenses_db.json'
+    # Override the DATABASE_URL check for testing
+    DATABASE_URL = os.environ.get('TEST_DATABASE_URL') or 'postgresql://postgres:123456@localhost:5432/homis_test_db'
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
 
 # Configuration dictionary
 config = {

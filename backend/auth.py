@@ -13,7 +13,8 @@ import threading
 import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 from email_validator import validate_email, EmailNotValidError
-from models import DatabaseManager, UserRole, BoardPermission
+from models import UserRole, BoardPermission
+from postgres_models import PostgreSQLDatabaseManager
 
 bcrypt = Bcrypt()
 
@@ -22,7 +23,7 @@ def init_auth(app):
     bcrypt.init_app(app)
 
 class AuthManager:
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: PostgreSQLDatabaseManager):
         self.db = db_manager
         
         # Initialize email verification

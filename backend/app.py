@@ -14,7 +14,8 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 from config import config
-from models import DatabaseManager, UserRole, BoardPermission
+from models import UserRole, BoardPermission
+from postgres_models import db as postgres_db, PostgreSQLDatabaseManager
 from auth import AuthManager, require_auth, require_board_access, require_board_owner, require_board_admin
 from b2_storage import create_b2_service
 
@@ -66,12 +67,16 @@ def create_app(config_name='default'):
     #     storage_uri=app.config['RATELIMIT_STORAGE_URL']
     # )
     
-    # Initialize database
-    db_manager = DatabaseManager(app.config['DATABASE_PATH'])
-    db_manager.initialize_default_data()
+    # Initialize PostgreSQL database
+    print("🔧 Backend: Using PostgreSQL database")
+    postgres_db.init_app(app)
     
-    # Clean up expired pending registrations on startup
-    db_manager.cleanup_expired_pending_registrations()
+    # Create tables and initialize data
+    with app.app_context():
+        postgres_db.create_all()
+        db_manager = PostgreSQLDatabaseManager(app)
+        db_manager.initialize_default_data()
+        db_manager.cleanup_expired_pending_registrations()
     
     app.db_manager = db_manager
     
@@ -766,10 +771,8 @@ def create_app(config_name='default'):
         # Check if there are critical updates that would affect paid debts
         if 'amount' in data or 'paid_by' in data:
             # Check if there are any paid debts associated with this expense
-            paid_debts = db_manager.debts_table.search(
-                (db_manager.Debt.expense_id == expense_id) & 
-                (db_manager.Debt.is_paid == True)
-            )
+            from postgres_models import Debt
+            paid_debts = Debt.query.filter_by(expense_id=expense_id, is_paid=True).all()
             
             if paid_debts:
                 return jsonify({'error': 'Cannot modify amount or payer - some payments have already been made. Contact support if you need to modify this expense.'}), 400
@@ -795,10 +798,9 @@ def create_app(config_name='default'):
                     if len(members) > 1:
                         # Remove only UNPAID debts and create new ones
                         print(f"🔍 Removing old UNPAID debts for expense {expense_id}")
-                        db_manager.debts_table.remove(
-                            (db_manager.Debt.expense_id == expense_id) & 
-                            (db_manager.Debt.is_paid == False)
-                        )
+                        from postgres_models import Debt
+                        Debt.query.filter_by(expense_id=expense_id, is_paid=False).delete()
+                        postgres_db.session.commit()
                         updated_expense = db_manager.get_board_expenses(board_id)
                         updated_expense = next((e for e in updated_expense if e.id == expense_id), None)
                         if updated_expense:
@@ -836,10 +838,8 @@ def create_app(config_name='default'):
         
         # Check if there are any PAID debts associated with this expense
         # Only paid debts prevent deletion - unpaid debts can be deleted
-        paid_debts = db_manager.debts_table.search(
-            (db_manager.Debt.expense_id == expense_id) & 
-            (db_manager.Debt.is_paid == True)
-        )
+        from postgres_models import Debt
+        paid_debts = Debt.query.filter_by(expense_id=expense_id, is_paid=True).all()
         
         if paid_debts:
             return jsonify({'error': 'Cannot delete expense - some payments have already been made. Contact support if you need to modify this expense.'}), 400
@@ -1382,10 +1382,14 @@ def create_app(config_name='default'):
         
         try:
             # First, delete all existing custom categories for this board (keep default ones)
-            db_manager.categories_table.remove(
-                (db_manager.Category.board_id == board_id) & 
-                (db_manager.Category.is_default == False)
-            )
+            # Find all custom categories for this board
+            from postgres_models import Category
+            custom_categories = Category.query.filter_by(board_id=board_id, is_default=False).all()
+            
+            # Remove each custom category by ID
+            for category in custom_categories:
+                postgres_db.session.delete(category)
+            postgres_db.session.commit()
             
             # Create new categories
             for category_data in categories:
