@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
+import { adManager } from '../services/adManager';
 import { apiService, Category, Expense } from '../services/api';
 import { formatCurrency } from '../utils/currencyUtils';
 
@@ -145,7 +146,9 @@ const HomeScreen: React.FC = () => {
     return selectedCategories;
   };
 
-  const handleQuickAddExpense = (categoryName: string) => {
+  const handleQuickAddExpense = async (categoryName: string) => {
+    // הצגת פרסומת אם מותר
+    await adManager.showAdIfAllowed('quick_add_expense');
     (navigation as any).navigate('AddExpense', { preselectedCategory: categoryName });
   };
 
@@ -297,7 +300,11 @@ const HomeScreen: React.FC = () => {
         {/* Always show "אחר" as the last option */}
         <TouchableOpacity
           style={[styles.quickCategoryButton, { backgroundColor: '#95a5a6' }]}
-          onPress={() => navigation.navigate('AddExpense' as never)}
+          onPress={async () => {
+            // הצגת פרסומת אם מותר
+            await adManager.showAdIfAllowed('add_expense_other');
+            navigation.navigate('AddExpense' as never);
+          }}
         >
           <Text style={styles.quickCategoryIcon}>➕</Text>
           <Text style={styles.quickCategoryText}>אחר</Text>
@@ -316,6 +323,9 @@ const HomeScreen: React.FC = () => {
 
   const handleDateRangeExport = async (startDate?: string, endDate?: string) => {
     if (!selectedBoard) return;
+
+    // הצגת פרסומת לפני הפקת הדוח
+    await adManager.showAdIfAllowed('export_report');
 
     setIsExporting(true);
     try {

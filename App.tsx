@@ -17,6 +17,7 @@ import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SummaryScreen from './screens/SummaryScreen';
+import { adManager } from './services/adManager';
 import { Board } from './services/api';
 
 const Stack = createStackNavigator();
@@ -39,7 +40,12 @@ function BoardSwitcherHeader() {
   useEffect(() => {
     console.log('🔄 App: Selected categories:', selectedCategories);
   }, [selectedCategories]);
-  const handleBoardSelect = (board: Board) => {
+  const handleBoardSelect = async (board: Board) => {
+    // הצגת פרסומת אם מחליפים לוח אחר (לא אותו לוח)
+    if (selectedBoard && selectedBoard.id !== board.id) {
+      await adManager.showAdIfAllowed('board_switch');
+    }
+    
     selectBoard(board);
     setShowBoardModal(false);
   };
