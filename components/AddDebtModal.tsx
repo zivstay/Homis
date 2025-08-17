@@ -12,6 +12,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useBoard } from '../contexts/BoardContext';
+import { getCurrencySymbol } from '../utils/currencyUtils';
 import { Debt } from './DebtCard';
 import { ThemedText } from './ThemedText';
 
@@ -34,6 +36,7 @@ export function AddDebtModal({
   availableUsers,
   currentUser,
 }: AddDebtModalProps) {
+  const { selectedBoard } = useBoard();
   const [fromUser, setFromUser] = useState('');
   const [toUser, setToUser] = useState('');
   const [amount, setAmount] = useState('');
@@ -212,7 +215,9 @@ export function AddDebtModal({
 
           {/* Amount Input */}
           <View style={styles.inputGroup}>
-            <ThemedText style={styles.label}>סכום (₪)</ThemedText>
+            <ThemedText style={styles.label}>
+              סכום ({getCurrencySymbol(selectedBoard?.currency || 'ILS')})
+            </ThemedText>
             <TextInput
               style={styles.amountInput}
               value={amount}

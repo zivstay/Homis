@@ -1,7 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, FlatList, Keyboard, Modal, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AppTutorial from './components/AppTutorial';
 import NotificationModal from './components/NotificationModal';
@@ -32,10 +32,13 @@ function BoardSwitcherHeader() {
   const [wizardStep, setWizardStep] = useState(1); // 1: פרטים, 2: סוג לוח, 3: קטגוריות
   const [newBoardName, setNewBoardName] = useState('');
   const [newBoardDescription, setNewBoardDescription] = useState('');
+  const [newBoardCurrency, setNewBoardCurrency] = useState('ILS');
   const [selectedBoardType, setSelectedBoardType] = useState<BoardType | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<QuickCategory[]>([]);
   const [isCreating, setIsCreating] = useState(false);
-
+  useEffect(() => {
+    console.log('🔄 App: Selected categories:', selectedCategories);
+  }, [selectedCategories]);
   const handleBoardSelect = (board: Board) => {
     selectBoard(board);
     setShowBoardModal(false);
@@ -112,6 +115,7 @@ function BoardSwitcherHeader() {
     setWizardStep(1);
     setNewBoardName('');
     setNewBoardDescription('');
+    setNewBoardCurrency('ILS');
     setSelectedBoardType(null);
     setSelectedCategories([]);
   };
@@ -128,8 +132,9 @@ function BoardSwitcherHeader() {
       if (isSelected) {
         return prev.filter(cat => cat.name !== category.name);
       } else {
-        // Check if we're at the limit of 7 categories
-        if (prev.length >= 7) {
+        // Check if we're at the limit of 7 categories (excluding "אחר")
+        const nonOtherCategories = prev.filter(cat => cat.name !== 'אחר');
+        if (nonOtherCategories.length >= 7) {
           Alert.alert('הגבלה', 'ניתן לבחור עד 7 קטגוריות בלבד. בטל בחירה של קטגוריה אחרת כדי להוסיף חדשה.');
           return prev;
         }
@@ -149,7 +154,7 @@ function BoardSwitcherHeader() {
       return;
     }
 
-    if (selectedCategories.length === 0) {
+    if (selectedCategories.filter(cat => cat.name !== 'אחר').length === 0) {
       Alert.alert('שגיאה', 'נא לבחור לפחות קטגוריה אחת');
       return;
     }
@@ -158,7 +163,7 @@ function BoardSwitcherHeader() {
     const boardData = {
       name: newBoardName.trim(),
       description: newBoardDescription.trim(),
-      currency: 'ILS',
+      currency: newBoardCurrency,
       timezone: 'Asia/Jerusalem',
       board_type: selectedBoardType.id,
       custom_categories: selectedCategories,
@@ -287,7 +292,8 @@ function BoardSwitcherHeader() {
 
   const renderCategoryItem = ({ item }: { item: QuickCategory }) => {
     const isSelected = selectedCategories.some(cat => cat.name === item.name);
-    const isDisabled = !isSelected && selectedCategories.length >= 7;
+    const nonOtherCategories = selectedCategories.filter(cat => cat.name !== 'אחר');
+    const isDisabled = !isSelected && nonOtherCategories.length >= 7;
     
     return (
       <TouchableOpacity
@@ -360,6 +366,37 @@ function BoardSwitcherHeader() {
         onSubmitEditing={() => Keyboard.dismiss()}
         blurOnSubmit={true}
       />
+      
+      <Text style={styles.currencyLabel}>מטבע:</Text>
+      <View style={styles.currencyContainer}>
+        {[
+          { code: 'ILS', symbol: '₪', name: 'שקל' },
+          { code: 'USD', symbol: '$', name: 'דולר' },
+          { code: 'EUR', symbol: '€', name: 'יורו' }
+        ].map((currency) => (
+          <TouchableOpacity
+            key={currency.code}
+            style={[
+              styles.currencyOption,
+              (newBoardCurrency === currency.code) && styles.selectedCurrencyOption
+            ]}
+            onPress={() => setNewBoardCurrency(currency.code)}
+          >
+            <Text style={[
+              styles.currencySymbol,
+              (newBoardCurrency === currency.code) && styles.selectedCurrencySymbol
+            ]}>
+              {currency.symbol}
+            </Text>
+            <Text style={[
+              styles.currencyName,
+              (newBoardCurrency === currency.code) && styles.selectedCurrencyName
+            ]}>
+              {currency.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 
@@ -450,7 +487,7 @@ function BoardSwitcherHeader() {
         )}
         
         <Text style={styles.selectedCountText}>
-          נבחרו: {selectedCategories.length}/7 קטגוריות
+          נבחרו: {selectedCategories.filter(cat => cat.name !== 'אחר').length}/7 קטגוריות
         </Text>
         
         <Text style={styles.wizardHelpText}>
@@ -538,19 +575,19 @@ function BoardSwitcherHeader() {
                 <Text style={styles.boardSwitcherCreateText}>המשך</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity
-                style={[
-                  styles.boardSwitcherModalButton, 
-                  styles.boardSwitcherCreateButton,
-                  (isCreating || selectedCategories.length === 0) && styles.disabledWizardButton
-                ]}
-                onPress={handleCreateBoard}
-                disabled={isCreating || selectedCategories.length === 0}
-              >
-                <Text style={styles.boardSwitcherCreateText}>
-                  {isCreating ? 'יוצר...' : 'צור לוח'}
-                </Text>
-              </TouchableOpacity>
+                              <TouchableOpacity
+                  style={[
+                    styles.boardSwitcherModalButton, 
+                    styles.boardSwitcherCreateButton,
+                    (isCreating || selectedCategories.filter(cat => cat.name !== 'אחר').length === 0) && styles.disabledWizardButton
+                  ]}
+                  onPress={handleCreateBoard}
+                  disabled={isCreating || selectedCategories.filter(cat => cat.name !== 'אחר').length === 0}
+                >
+                  <Text style={styles.boardSwitcherCreateText}>
+                    {isCreating ? 'יוצר...' : 'צור לוח'}
+                  </Text>
+                </TouchableOpacity>
             )}
           </View>
         </View>
@@ -725,6 +762,21 @@ function AppContent() {
 
   console.log('🔍 AppContent - Auth status:', { isAuthenticated, isLoading, selectedBoard });
   console.log('🔍 AppContent - User object:', user);
+
+  // Clear tutorial reset pending flag when app starts
+  React.useEffect(() => {
+    const clearTutorialResetFlag = async () => {
+      try {
+        const AsyncStorage = await import('@react-native-async-storage/async-storage');
+        await AsyncStorage.default.removeItem('tutorial_reset_pending');
+        console.log('🎓 AppContent: Cleared tutorial reset pending flag');
+      } catch (error) {
+        console.error('Error clearing tutorial reset flag:', error);
+      }
+    };
+    
+    clearTutorialResetFlag();
+  }, []);
 
   // Note: Tutorial screen setting is now handled by individual screens
   // to avoid overriding specific screen tutorial contexts
@@ -1261,6 +1313,61 @@ const styles = StyleSheet.create({
   disabledWizardButton: {
     backgroundColor: '#bdc3c7',
     opacity: 0.7,
+  },
+  currencyLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 12,
+    textAlign: 'right',
+  },
+  currencyContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  currencyOption: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#fafbfc',
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    minWidth: 80,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  selectedCurrencyOption: {
+    backgroundColor: '#e8f5e8',
+    borderColor: '#4caf50',
+    shadowColor: '#4caf50',
+    shadowOpacity: 0.2,
+  },
+  currencySymbol: {
+    fontSize: 24,
+    color: '#2c3e50',
+    marginBottom: 6,
+  },
+  selectedCurrencySymbol: {
+    color: '#4caf50',
+    fontWeight: 'bold',
+  },
+  currencyName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2c3e50',
+    textAlign: 'center',
+  },
+  selectedCurrencyName: {
+    color: '#4caf50',
+    fontWeight: 'bold',
   },
 });
 

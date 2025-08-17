@@ -2,16 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Keyboard,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Keyboard,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import CategoryManager from '../components/CategoryManager';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,6 +37,13 @@ const SettingsScreen: React.FC = () => {
       
       // Check if we should show tutorial for this screen
       const checkAndStartTutorial = async () => {
+        // Check if tutorial was just reset - if so, don't start it
+        const tutorialResetPending = await AsyncStorage.getItem('tutorial_reset_pending');
+        if (tutorialResetPending === 'true') {
+          console.log('🎓 SettingsScreen: Tutorial was reset, not starting on this screen');
+          return;
+        }
+        
         const shouldShow = await checkScreenTutorial('Settings');
         if (shouldShow) {
           console.log('🎓 SettingsScreen: Starting tutorial');
@@ -124,6 +131,8 @@ const SettingsScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             await resetTutorial();
+            // Set a flag to prevent tutorial from starting on this screen after reset
+            await AsyncStorage.setItem('tutorial_reset_pending', 'true');
             Alert.alert('הושלם', 'המדריך אופס בהצלחה. יופיע בכניסה הבאה לאפליקציה.');
           },
         },

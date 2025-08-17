@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useBoard } from '../contexts/BoardContext';
+import { formatCurrency } from '../utils/currencyUtils';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
@@ -17,8 +19,10 @@ export function DebtSummary({
   netBalance,
   unpaidDebtsCount,
 }: DebtSummaryProps) {
-  const formatCurrency = (amount: number) => {
-    return `₪${amount.toLocaleString('he-IL')}`;
+  const { selectedBoard } = useBoard();
+  
+  const formatCurrencyLocal = (amount: number) => {
+    return formatCurrency(amount, selectedBoard?.currency || 'ILS');
   };
 
   const getNetBalanceColor = () => {
@@ -55,7 +59,7 @@ export function DebtSummary({
             type="title"
             style={[styles.netBalance, { color: getNetBalanceColor() }]}
           >
-            {formatCurrency(Math.abs(netBalance))}
+            {formatCurrencyLocal(Math.abs(netBalance))}
           </ThemedText>
         </View>
         <ThemedText style={[styles.balanceText, { color: getNetBalanceColor() }]}>
@@ -70,7 +74,7 @@ export function DebtSummary({
             <ThemedText style={styles.statLabel}>מגיע לי</ThemedText>
           </View>
           <ThemedText type="title" style={[styles.statAmount, { color: '#4CAF50' }]}>
-            {formatCurrency(totalOwedToMe)}
+            {formatCurrencyLocal(totalOwedToMe)}
           </ThemedText>
         </View>
 
@@ -82,7 +86,7 @@ export function DebtSummary({
             <ThemedText style={styles.statLabel}>אני חייב</ThemedText>
           </View>
           <ThemedText type="title" style={[styles.statAmount, { color: '#FF5722' }]}>
-            {formatCurrency(totalIOwe)}
+            {formatCurrencyLocal(totalIOwe)}
           </ThemedText>
         </View>
       </View>

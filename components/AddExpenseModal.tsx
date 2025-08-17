@@ -3,22 +3,23 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Image,
-  Keyboard,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
 import { apiService, Category } from '../services/api';
+import { getCurrencySymbol } from '../utils/currencyUtils';
 import { Expense } from './ExpenseCard';
 import { ThemedText } from './ThemedText';
 
@@ -326,7 +327,9 @@ export function AddExpenseModal({
           {/* Amount Input */}
           <View style={styles.inputGroup}>
             
-            <ThemedText style={styles.label}>סכום (₪)</ThemedText>
+            <ThemedText style={styles.label}>
+              סכום ({getCurrencySymbol(selectedBoard?.currency || 'ILS')})
+            </ThemedText>
             <TextInput
               style={styles.amountInput}
               value={amount}

@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Debt } from '../services/api';
+import { formatCurrency } from '../utils/currencyUtils';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -65,8 +66,8 @@ const SummaryScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [isDebtsLoading, setIsDebtsLoading] = useState(false);
-  const summaryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const debtsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const summaryTimeoutRef = useRef<any>(null);
+  const debtsTimeoutRef = useRef<any>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter | null>(null);
   const [selectedBoards, setSelectedBoards] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('expenses');
@@ -85,7 +86,8 @@ const SummaryScreen: React.FC = () => {
   const [startDateValue, setStartDateValue] = useState(new Date());
   const [endDateValue, setEndDateValue] = useState(new Date());
 
-  const periodFilters: PeriodFilter[] = useMemo(() => [
+  // Function to get current period filters with fresh dates
+  const getCurrentPeriodFilters = (): PeriodFilter[] => [
     {
       label: 'החודש',
       startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
@@ -106,16 +108,31 @@ const SummaryScreen: React.FC = () => {
       startDate: '',
       endDate: '',
     },
-  ], []); // Empty dependency array - create once and never recreate
+  ];
+
+  const periodFilters: PeriodFilter[] = useMemo(() => getCurrentPeriodFilters(), []);
 
   // Set default filters when component mounts or when selectedBoard changes
   useEffect(() => {
     if (!isInitialized && selectedBoard) {
+      console.log('🔧 SummaryScreen: Initializing with default filters');
       setSelectedPeriod(periodFilters[0]); // Set default to "החודש" (current month)
       setSelectedBoards([selectedBoard.id]); // Set default to current selected board
       setIsInitialized(true);
     }
   }, [selectedBoard, isInitialized]); // Removed periodFilters from dependencies since it's memoized and won't change
+
+  // Force load data when component first initializes
+  useEffect(() => {
+    if (isInitialized && selectedPeriod && selectedBoards.length > 0) {
+      console.log('🔧 SummaryScreen: Component initialized, loading initial data');
+      if (activeTab === 'expenses') {
+        loadSummary();
+      } else if (activeTab === 'debts') {
+        loadDebts();
+      }
+    }
+  }, [isInitialized]); // Only run when isInitialized changes from false to true
 
   // Only update board filter when switching to a completely different board (not just deselecting)
   useEffect(() => {
@@ -141,13 +158,13 @@ const SummaryScreen: React.FC = () => {
     }
   }, [boards]);
 
-  // Only load expenses when on expenses tab and filters change
+  // Load expenses when on expenses tab and filters change
   useEffect(() => {
     if (activeTab === 'expenses' && selectedPeriod && isInitialized) {
+      console.log('🔄 SummaryScreen: Loading summary due to filter change');
       loadSummary();
     }
-    // Don't try to load if no period is selected - this prevents unnecessary API calls
-  }, [selectedPeriod, selectedBoards, customPeriod, isInitialized]);
+  }, [selectedPeriod, selectedBoards, customPeriod, isInitialized, activeTab]);
 
   const loadSummary = async () => {
     // Don't try to load if no period is selected
@@ -179,8 +196,23 @@ const SummaryScreen: React.FC = () => {
           filters.start_date = customPeriod.startDate;
           filters.end_date = customPeriod.endDate;
         } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
-          filters.start_date = selectedPeriod.startDate;
-          filters.end_date = selectedPeriod.endDate;
+          // Get fresh dates for current period filters
+          const currentFilters = getCurrentPeriodFilters();
+          const currentPeriod = currentFilters.find(p => p.label === selectedPeriod.label);
+          
+          if (currentPeriod) {
+            filters.start_date = currentPeriod.startDate;
+            filters.end_date = currentPeriod.endDate;
+            console.log('📅 SummaryScreen: Using fresh dates:', { 
+              start: currentPeriod.startDate, 
+              end: currentPeriod.endDate,
+              label: selectedPeriod.label 
+            });
+          } else {
+            // Fallback to stored dates
+            filters.start_date = selectedPeriod.startDate;
+            filters.end_date = selectedPeriod.endDate;
+          }
         }
         
         if (selectedBoards.length > 0) {
@@ -191,8 +223,9 @@ const SummaryScreen: React.FC = () => {
         const result = await apiService.getExpensesSummary(filters);
         
         if (result.success && result.data) {
+          console.log('📈 SummaryScreen: New summary data received:', result.data);
           setSummary(result.data);
-          console.log('✅ SummaryScreen: Summary loaded successfully');
+          console.log('✅ SummaryScreen: Summary state updated successfully');
         } else {
           console.error('Failed to load summary:', result.error);
         }
@@ -235,8 +268,23 @@ const SummaryScreen: React.FC = () => {
           filters.start_date = customPeriod.startDate;
           filters.end_date = customPeriod.endDate;
         } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
-          filters.start_date = selectedPeriod.startDate;
-          filters.end_date = selectedPeriod.endDate;
+          // Get fresh dates for current period filters
+          const currentFilters = getCurrentPeriodFilters();
+          const currentPeriod = currentFilters.find(p => p.label === selectedPeriod.label);
+          
+          if (currentPeriod) {
+            filters.start_date = currentPeriod.startDate;
+            filters.end_date = currentPeriod.endDate;
+            console.log('📅 SummaryScreen: Using fresh dates for debts:', { 
+              start: currentPeriod.startDate, 
+              end: currentPeriod.endDate,
+              label: selectedPeriod.label 
+            });
+          } else {
+            // Fallback to stored dates
+            filters.start_date = selectedPeriod.startDate;
+            filters.end_date = selectedPeriod.endDate;
+          }
         }
         
         if (selectedBoards.length > 0) {
@@ -264,36 +312,47 @@ const SummaryScreen: React.FC = () => {
     }, 200); // 200ms debounce
   };
 
-  // Handle tab switching - only load debts when clicking on debts tab
+  // Handle tab switching - load data when switching tabs
   const handleTabSwitch = (tab: 'expenses' | 'debts') => {
+    console.log('🔄 SummaryScreen: Tab switched to:', tab);
     setActiveTab(tab);
-    if (tab === 'debts' && selectedPeriod) {
-      loadDebts(); // Only call API when switching TO debts tab AND period is selected
+    if (selectedPeriod && isInitialized) {
+      if (tab === 'expenses') {
+        console.log('🔄 SummaryScreen: Loading expenses for new tab');
+        loadSummary();
+      } else if (tab === 'debts') {
+        console.log('🔄 SummaryScreen: Loading debts for new tab');
+        loadDebts();
+      }
     }
-    // Don't try to load if no period is selected - this prevents unnecessary API calls
   };
 
-  // Only reload debts when filters change AND we're on debts tab
+  // Reload debts when filters change AND we're on debts tab
   useEffect(() => {
-    if (activeTab === 'debts' && selectedPeriod) {
+    if (activeTab === 'debts' && selectedPeriod && isInitialized) {
+      console.log('🔄 SummaryScreen: Loading debts due to filter change');
       loadDebts();
     }
-    // Don't try to load if no period is selected - this prevents unnecessary API calls
-  }, [paidFilter, selectedPeriod, selectedBoards, customPeriod]);
+  }, [paidFilter, selectedPeriod, selectedBoards, customPeriod, activeTab, isInitialized]);
 
   // Refresh data when screen comes into focus (returning from other screens)
   useFocusEffect(
     React.useCallback(() => {
-      if (isInitialized) {
-        if (activeTab === 'expenses' && selectedPeriod) {
+      console.log('🔄 SummaryScreen: Screen focused, refreshing data');
+      if (isInitialized && selectedPeriod) {
+        if (activeTab === 'expenses') {
+          console.log('🔄 SummaryScreen: Refreshing expenses data on focus');
           loadSummary();
-        } else if (activeTab === 'debts' && selectedPeriod) {
+        } else if (activeTab === 'debts') {
+          console.log('🔄 SummaryScreen: Refreshing debts data on focus');
           loadDebts();
         }
-        // Don't try to load anything if no period is selected - this prevents unnecessary API calls
       }
-    }, [activeTab, selectedPeriod, isInitialized])
+    }, [activeTab, isInitialized]) // Removed selectedPeriod from dependencies to prevent infinite loop
   );
+
+  // Note: Removed auto-refresh interval to prevent infinite loops
+  // Dates are now updated only when loading data, which is safer
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -475,8 +534,8 @@ const SummaryScreen: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `₪${amount.toLocaleString('he-IL')}`;
+  const formatCurrencyLocal = (amount: number) => {
+    return formatCurrency(amount, selectedBoard?.currency || 'ILS');
   };
 
   const formatDate = (dateString: string) => {
@@ -508,15 +567,19 @@ const SummaryScreen: React.FC = () => {
   };
 
   // Generate bar chart data for expenses by board
-  const generateBarChartData = (): BarChartData[] => {
-    if (!summary || !summary.expenses_by_board || !boards || boards.length === 0) return [];
+  const boardChartData = useMemo((): BarChartData[] => {
+    console.log('📊 SummaryScreen: Generating board chart data:', { summary, boards });
+    if (!summary || !summary.expenses_by_board || !boards || boards.length === 0) {
+      console.log('📊 SummaryScreen: No data available for board chart');
+      return [];
+    }
     
     const colors = [
       '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
       '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
     ];
     
-    return Object.entries(summary.expenses_by_board).map(([boardId, amount], index) => {
+    const chartData = Object.entries(summary.expenses_by_board).map(([boardId, amount], index) => {
       const board = boards.find(b => b && b.id === boardId);
       
       return {
@@ -526,18 +589,25 @@ const SummaryScreen: React.FC = () => {
         label: board?.name || `לוח ${boardId}`,
       };
     });
-  };
+    
+    console.log('📊 SummaryScreen: Generated board chart data:', chartData);
+    return chartData;
+  }, [summary, boards]);
 
   // Generate bar chart data for expenses by category
-  const generateCategoryBarChartData = (): BarChartData[] => {
-    if (!summary || !summary.expenses_by_category) return [];
+  const categoryChartData = useMemo((): BarChartData[] => {
+    console.log('📊 SummaryScreen: Generating category chart data:', { summary });
+    if (!summary || !summary.expenses_by_category) {
+      console.log('📊 SummaryScreen: No data available for category chart');
+      return [];
+    }
     
     const colors = [
       '#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6',
       '#1ABC9C', '#E67E22', '#34495E', '#16A085', '#8E44AD'
     ];
     
-    return Object.entries(summary.expenses_by_category).map(([category, amount], index) => {
+    const chartData = Object.entries(summary.expenses_by_category).map(([category, amount], index) => {
       return {
         key: category,
         value: amount,
@@ -545,10 +615,17 @@ const SummaryScreen: React.FC = () => {
         label: category,
       };
     });
-  };
+    
+    console.log('📊 SummaryScreen: Generated category chart data:', chartData);
+    return chartData;
+  }, [summary]);
 
   const renderBarChart = (data: BarChartData[], title: string, colors: string[]) => {
-    if (data.length === 0) return null;
+    console.log('📊 SummaryScreen: Rendering bar chart:', { title, dataLength: data.length, data });
+    if (data.length === 0) {
+      console.log('📊 SummaryScreen: No data for chart, returning null');
+      return null;
+    }
     
     const total = data.reduce((sum, item) => sum + item.value, 0);
     
@@ -557,6 +634,7 @@ const SummaryScreen: React.FC = () => {
         <Text style={styles.chartTitle}>{title}</Text>
         <View style={styles.chartWrapper}>
           <BarChart
+            key={`${title}-${data.length}-${JSON.stringify(data.map(d => d.value))}`}
             data={data}
             width={screenWidth - 40}
             height={200}
@@ -646,7 +724,7 @@ const SummaryScreen: React.FC = () => {
         <Text style={styles.debtDescription}>{item.description}</Text>
         
         <View style={styles.debtDetails}>
-          <Text style={styles.debtAmount}>{formatCurrency(item.amount)}</Text>
+                          <Text style={styles.debtAmount}>{formatCurrencyLocal(item.amount)}</Text>
           <Text style={styles.debtDate}>{formatDate(item.created_at)}</Text>
         </View>
         
@@ -848,7 +926,7 @@ const SummaryScreen: React.FC = () => {
                 <View style={styles.summaryCard}>
                   <Text style={styles.summaryCardTitle}>סה"כ הוצאות</Text>
                   <Text style={styles.summaryCardAmount}>
-                    {formatCurrency(summary.total_amount)}
+                    {formatCurrencyLocal(summary.total_amount)}
                   </Text>
                   <Text style={styles.summaryCardSubtitle}>
                     {summary.total_expenses} הוצאות
@@ -859,8 +937,8 @@ const SummaryScreen: React.FC = () => {
                   <Text style={styles.summaryCardTitle}>ממוצע להוצאה</Text>
                   <Text style={styles.summaryCardAmount}>
                     {summary.total_expenses > 0 
-                      ? formatCurrency(summary.total_amount / summary.total_expenses)
-                      : formatCurrency(0)
+                      ? formatCurrencyLocal(summary.total_amount / summary.total_expenses)
+                      : formatCurrencyLocal(0)
                     }
                   </Text>
                   <Text style={styles.summaryCardSubtitle}>לכל הוצאה</Text>
@@ -872,7 +950,7 @@ const SummaryScreen: React.FC = () => {
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>הוצאות לפי קטגוריה</Text>
                   {showCharts ? (
-                    renderBarChart(generateCategoryBarChartData(), 'הוצאות לפי קטגוריה', ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22', '#34495E', '#16A085', '#8E44AD'])
+                    renderBarChart(categoryChartData, 'הוצאות לפי קטגוריה', ['#E74C3C', '#3498DB', '#2ECC71', '#F39C12', '#9B59B6', '#1ABC9C', '#E67E22', '#34495E', '#16A085', '#8E44AD'])
                   ) : (
                     <View style={styles.listContainer}>
                       {Object.entries(summary.expenses_by_category)
@@ -880,7 +958,7 @@ const SummaryScreen: React.FC = () => {
                         .map(([category, amount], index) => (
                           <View key={index} style={styles.categoryItem}>
                             <Text style={styles.categoryName}>{category}</Text>
-                            <Text style={styles.categoryAmount}>{formatCurrency(amount)}</Text>
+                            <Text style={styles.categoryAmount}>{formatCurrencyLocal(amount)}</Text>
                           </View>
                         ))}
                     </View>
@@ -893,7 +971,7 @@ const SummaryScreen: React.FC = () => {
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>הוצאות לפי לוח</Text>
                   {showCharts ? (
-                    renderBarChart(generateBarChartData(), 'הוצאות לפי לוח', ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'])
+                    renderBarChart(boardChartData, 'הוצאות לפי לוח', ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'])
                   ) : (
                     <View style={styles.listContainer}>
                       {Object.entries(summary.expenses_by_board)
@@ -903,7 +981,7 @@ const SummaryScreen: React.FC = () => {
                           return (
                             <View key={index} style={styles.boardItem}>
                               <Text style={styles.boardName}>{board?.name || `לוח ${boardId}`}</Text>
-                              <Text style={styles.boardAmount}>{formatCurrency(amount)}</Text>
+                              <Text style={styles.boardAmount}>{formatCurrencyLocal(amount)}</Text>
                             </View>
                           );
                         })}
@@ -922,7 +1000,7 @@ const SummaryScreen: React.FC = () => {
                       .map(([month, amount], index) => (
                         <View key={index} style={styles.monthlyItem}>
                           <Text style={styles.monthlyLabel}>{month}</Text>
-                          <Text style={styles.monthlyAmount}>{formatCurrency(amount)}</Text>
+                          <Text style={styles.monthlyAmount}>{formatCurrencyLocal(amount)}</Text>
                         </View>
                       ))}
                   </View>
@@ -942,21 +1020,21 @@ const SummaryScreen: React.FC = () => {
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryCardTitle}>אני צריך להחזיר</Text>
                 <Text style={styles.summaryCardAmount}>
-                  {formatCurrency(debtSummary.total_owed)}
+                  {formatCurrencyLocal(debtSummary.total_owed)}
                 </Text>
               </View>
               
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryCardTitle}>צריכים להחזיר לי</Text>
                 <Text style={styles.summaryCardAmount}>
-                  {formatCurrency(debtSummary.total_owed_to_me)}
+                  {formatCurrencyLocal(debtSummary.total_owed_to_me)}
                 </Text>
               </View>
               
               <View style={styles.summaryCard}>
                 <Text style={styles.summaryCardTitle}>טרם שולם</Text>
                 <Text style={styles.summaryCardAmount}>
-                  {formatCurrency(debtSummary.total_unpaid)}
+                  {formatCurrencyLocal(debtSummary.total_unpaid)}
                 </Text>
               </View>
             </View>
@@ -974,7 +1052,7 @@ const SummaryScreen: React.FC = () => {
                       <Text style={styles.personalDebtText}>
                         <Text style={styles.personalDebtName}>{debt.name}</Text>
                         <Text style={styles.personalDebtDescription}> צריך להחזיר לך סה"כ </Text>
-                        <Text style={styles.personalDebtAmount}>{formatCurrency(debt.amount)}</Text>
+                        <Text style={styles.personalDebtAmount}>{formatCurrencyLocal(debt.amount)}</Text>
                       </Text>
                     </View>
                   ))}

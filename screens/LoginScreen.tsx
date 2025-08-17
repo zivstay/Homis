@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Keyboard,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import PasswordResetModal from '../components/PasswordResetModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -559,7 +560,11 @@ const LoginScreen: React.FC = () => {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
-          <Text style={styles.appTitle}>Homis</Text>
+          <Image 
+            source={require('../assets/images/main_logo.jpeg')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.appSubtitle}>ניהול הוצאות משותפות</Text>
         </View>
         
@@ -588,6 +593,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
+  logoImage: {
+    width: 150,
+    height: 150,
+    marginBottom: 16,
+  },
   form: {
     backgroundColor: 'white',
     borderRadius: 12,
@@ -600,12 +610,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },
-  appTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 8,
   },
   appSubtitle: {
     fontSize: 16,

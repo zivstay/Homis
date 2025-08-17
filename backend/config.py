@@ -27,6 +27,9 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
         'pool_recycle': 300,
+        'connect_args': {
+            'sslmode': 'require'
+        }
     }
     
     # Rate limiting
@@ -82,7 +85,21 @@ class ProductionConfig(Config):
     DATABASE_URL = os.environ.get('DATABASE_URL')
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL environment variable is required in production.")
+    
+    # Fix for Heroku DATABASE_URL (postgres:// -> postgresql://)
+    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    
+    # Additional fix for SQLAlchemy engine options
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'connect_args': {
+            'sslmode': 'require'
+        }
+    }
 
 class TestingConfig(Config):
     """Testing configuration"""

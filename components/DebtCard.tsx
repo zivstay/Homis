@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useBoard } from '../contexts/BoardContext';
+import { formatCurrency } from '../utils/currencyUtils';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
@@ -23,8 +25,10 @@ interface DebtCardProps {
 }
 
 export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCardProps) {
-  const formatCurrency = (amount: number) => {
-    return `₪${amount.toLocaleString('he-IL')}`;
+  const { selectedBoard } = useBoard();
+  
+  const formatCurrencyLocal = (amount: number) => {
+    return formatCurrency(amount, selectedBoard?.currency || 'ILS');
   };
 
   const formatDate = (date: Date) => {
@@ -72,7 +76,7 @@ export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCard
               </ThemedText>
             </View>
             <ThemedText type="title" style={[styles.amount, { color: getDebtTypeColor() }]}>
-              {formatCurrency(debt.amount)}
+              {formatCurrencyLocal(debt.amount)}
             </ThemedText>
           </View>
           {debt.isPaid && (

@@ -303,6 +303,30 @@ def create_app(config_name='default'):
     
     # Initialize PostgreSQL database
     print("🔧 Backend: Using PostgreSQL database")
+    
+    # Additional fix for Heroku DATABASE_URL (postgres:// -> postgresql://)
+    if app.config.get('DATABASE_URL') and app.config.get('DATABASE_URL').startswith('postgres://'):
+        fixed_url = app.config.get('DATABASE_URL').replace('postgres://', 'postgresql://', 1)
+        app.config['DATABASE_URL'] = fixed_url
+        app.config['SQLALCHEMY_DATABASE_URI'] = fixed_url
+        print(f"🔧 Fixed DATABASE_URL: {fixed_url}")
+    
+    # Additional fix for SQLALCHEMY_DATABASE_URI
+    if app.config.get('SQLALCHEMY_DATABASE_URI') and app.config.get('SQLALCHEMY_DATABASE_URI').startswith('postgres://'):
+        fixed_uri = app.config.get('SQLALCHEMY_DATABASE_URI').replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = fixed_uri
+        print(f"🔧 Fixed SQLALCHEMY_DATABASE_URI: {fixed_uri}")
+    
+    # Additional fix for SQLAlchemy engine options
+    if not app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {}
+    
+    if 'connect_args' not in app.config['SQLALCHEMY_ENGINE_OPTIONS']:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {}
+    
+    if 'sslmode' not in app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args']:
+        app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args']['sslmode'] = 'require'
+    
     postgres_db.init_app(app)
     
     # Create tables and initialize data

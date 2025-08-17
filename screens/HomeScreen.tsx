@@ -16,6 +16,7 @@ import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { apiService, Category, Expense } from '../services/api';
+import { formatCurrency } from '../utils/currencyUtils';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -215,7 +216,9 @@ const HomeScreen: React.FC = () => {
             />
             <Text style={styles.categoryName}>{item.category}</Text>
           </View>
-          <Text style={styles.expenseAmount}>₪{item.amount.toFixed(2)}</Text>
+                          <Text style={styles.expenseAmount}>
+                  {formatCurrency(item.amount, selectedBoard?.currency || 'ILS')}
+                </Text>
         </View>
         
         {item.description && (
@@ -244,7 +247,6 @@ const HomeScreen: React.FC = () => {
       
       {item.has_image && (
         <View style={styles.imageContainer}>
-          <Text>asds</Text>
           <ExpenseImage expenseId={item.id} style={styles.expenseImage} />
         </View>
       )}
@@ -256,12 +258,16 @@ const HomeScreen: React.FC = () => {
       <View style={styles.summaryRow}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>סה"כ הוצאות</Text>
-          <Text style={styles.summaryValue}>₪{calculateTotalExpenses().toFixed(2)}</Text>
+                          <Text style={styles.summaryValue}>
+                  {formatCurrency(calculateTotalExpenses(), selectedBoard?.currency || 'ILS')}
+                </Text>
         </View>
         
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>ההוצאות שלי</Text>
-          <Text style={styles.summaryValue}>₪{calculateMyExpenses().toFixed(2)}</Text>
+                          <Text style={styles.summaryValue}>
+                  {formatCurrency(calculateMyExpenses(), selectedBoard?.currency || 'ILS')}
+                </Text>
         </View>
       </View>
     </View>
@@ -526,6 +532,7 @@ const styles = StyleSheet.create({
     width: '23%', // 4 buttons per row with some margin
     flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 16,
@@ -543,6 +550,7 @@ const styles = StyleSheet.create({
   quickCategoryIcon: {
     fontSize: 18,
     marginBottom: 4,
+    textAlign: 'center',
   },
   quickCategoryText: {
     fontSize: 11,

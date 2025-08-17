@@ -2,6 +2,8 @@ import { useExpenses } from '@/contexts/ExpenseContext';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useBoard } from '../contexts/BoardContext';
+import { formatCurrency } from '../utils/currencyUtils';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
@@ -21,9 +23,10 @@ export function MonthlyBalance({
   onMonthPress 
 }: MonthlyBalanceProps) {
   const { onboardingConfig } = useExpenses();
+  const { selectedBoard } = useBoard();
 
-  const formatCurrency = (amount: number) => {
-    return `₪${amount.toLocaleString('he-IL')}`;
+  const formatCurrencyLocal = (amount: number) => {
+    return formatCurrency(amount, selectedBoard?.currency || 'ILS');
   };
 
   const getMonthName = (month: string) => {
@@ -89,7 +92,7 @@ export function MonthlyBalance({
           <Ionicons name="trending-up" size={20} color="#FF3B30" />
         </View>
         <ThemedText type="title" style={styles.balanceAmount}>
-          {formatCurrency(totalExpenses)}
+          {formatCurrencyLocal(totalExpenses)}
         </ThemedText>
       </View>
 

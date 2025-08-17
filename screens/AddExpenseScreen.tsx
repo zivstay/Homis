@@ -3,18 +3,18 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    Linking,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { uploadExpenseImage } from '../config/api';
 import { getAllAvailableCategories, getBoardTypeById } from '../constants/boardTypes';
@@ -480,101 +480,106 @@ const AddExpenseScreen: React.FC = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.form}>
-          {renderCategoryButtons()}
-          {renderOtherCategorySelector()}
+      <View style={styles.mainContainer}>
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.form}>
+            {renderCategoryButtons()}
+            {renderOtherCategorySelector()}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>סכום</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              placeholder="0.00"
-              keyboardType="numeric"
-              textAlign="right"
-              returnKeyType="done"
-              onSubmitEditing={() => Keyboard.dismiss()}
-              blurOnSubmit={true}
-            />
-          </View>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>סכום</Text>
+              <TextInput
+                style={styles.amountInput}
+                value={amount}
+                onChangeText={setAmount}
+                placeholder="0.00"
+                keyboardType="numeric"
+                textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+            </View>
 
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>תיאור (אופציונלי)</Text>
+              <TextInput
+                style={styles.descriptionInput}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="תיאור ההוצאה..."
+                multiline
+                numberOfLines={3}
+                textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+            </View>
 
+            {renderPaidBySelector()}
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>תיאור (אופציונלי)</Text>
-            <TextInput
-              style={styles.descriptionInput}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="תיאור ההוצאה..."
-              multiline
-              numberOfLines={3}
-              textAlign="right"
-              returnKeyType="done"
-              onSubmitEditing={() => Keyboard.dismiss()}
-              blurOnSubmit={true}
-            />
-          </View>
-
-
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
-            {selectedImage ? (
-              <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
-                <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
-                  <Ionicons name="close-circle" size={24} color="#FF3B30" />
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
+              {selectedImage ? (
+                <View style={styles.imagePreviewContainer}>
+                  <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                  <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
+                    <Ionicons name="close-circle" size={24} color="#FF3B30" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.imageUploadButton} 
+                  onPress={showImageOptions}
+                  disabled={isUploading}
+                >
+                  <Ionicons name="camera" size={24} color="#007AFF" />
+                  <Text style={styles.imageUploadText}>
+                    {isUploading ? 'מעלה...' : 'הוסף תמונה'}
+                  </Text>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity 
-                style={styles.imageUploadButton} 
-                onPress={showImageOptions}
-                disabled={isUploading}
+              )}
+            </View>
+
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.recurringContainer}
+                onPress={() => setIsRecurring(!isRecurring)}
               >
-                <Ionicons name="camera" size={24} color="#007AFF" />
-                <Text style={styles.imageUploadText}>
-                  {isUploading ? 'מעלה...' : 'הוסף תמונה'}
-                </Text>
+                <View style={[styles.checkbox, isRecurring && styles.checkedCheckbox]}>
+                  {isRecurring && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <Text style={styles.recurringText}>הוצאה חוזרת</Text>
               </TouchableOpacity>
-            )}
+            </View>
           </View>
+        </ScrollView>
 
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.recurringContainer}
-              onPress={() => setIsRecurring(!isRecurring)}
-            >
-              <View style={[styles.checkbox, isRecurring && styles.checkedCheckbox]}>
-                {isRecurring && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.recurringText}>הוצאה חוזרת</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.cancelButtonText}>בטל</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.submitButton, isLoading && styles.disabledButton]}
-              onPress={handleSubmit}
-              disabled={isLoading}
-            >
-              <Text style={styles.submitButtonText}>
-                {isLoading ? 'מוסיף...' : 'הוסף הוצאה'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+        {/* Fixed buttons at bottom */}
+        <View style={styles.fixedButtonContainer}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.cancelButtonText}>בטל</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.submitButton, isLoading && styles.disabledButton]}
+            onPress={handleSubmit}
+            disabled={isLoading}
+          >
+            <Text style={styles.submitButtonText}>
+              {isLoading ? 'מוסיף...' : 'הוסף הוצאה'}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -584,13 +589,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  scrollContainer: {
+  mainContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
+    flexGrow: 1, // This ensures the content fills the available space
   },
   form: {
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
+    marginTop: 16, // Increased from 8 to 16
+    marginBottom: 16, // Increased from 8 to 16
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -601,7 +618,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   section: {
-    marginBottom: 16,
+    marginBottom: 16, // Reduced back from 24 to 16
   },
   sectionTitle: {
     fontSize: 16,
@@ -715,11 +732,19 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: '#3498db',
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: 30, // Increased from 25 to 30 for even more rounded appearance
+    padding: 18, // Increased padding for better touch area
     alignItems: 'center',
     flex: 1,
     marginLeft: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   disabledButton: {
     backgroundColor: '#bdc3c7',
@@ -771,11 +796,19 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     backgroundColor: '#e0e0e0',
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: 30, // Increased from 25 to 30 for even more rounded appearance
+    padding: 18, // Increased padding for better touch area
     alignItems: 'center',
     flex: 1,
     marginRight: 10,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cancelButtonText: {
     color: '#2c3e50',
@@ -846,6 +879,27 @@ const styles = StyleSheet.create({
     color: '#7f8c8d',
     fontSize: 12,
     fontWeight: '500',
+  },
+  bottomSpacing: {
+    height: 60, // Increased from 40 to 60
+  },
+  fixedButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 20, // Added vertical padding
+    paddingBottom: 24,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });
 
