@@ -2,16 +2,16 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import BarChart from '../components/BarChart';
 import { useAuth } from '../contexts/AuthContext';
@@ -134,15 +134,25 @@ const SummaryScreen: React.FC = () => {
     }
   }, [isInitialized]); // Only run when isInitialized changes from false to true
 
-  // Only update board filter when switching to a completely different board (not just deselecting)
+  // Update board filter when selectedBoard changes
   useEffect(() => {
     if (isInitialized && selectedBoard) {
-      // Only auto-select if no boards are currently selected AND we just switched boards
-      if (selectedBoards.length === 0) {
-        setSelectedBoards([selectedBoard.id]);
+      console.log('🔄 SummaryScreen: Selected board changed to:', selectedBoard.name);
+      // Always update the selected boards when the selected board changes
+      setSelectedBoards([selectedBoard.id]);
+      
+      // Clear any existing data to force reload
+      setSummary(null);
+      setDebts([]);
+      setDebtSummary(null);
+      
+      // Reset to default period filter when board changes
+      if (periodFilters.length > 0) {
+        setSelectedPeriod(periodFilters[0]); // Reset to current month
+        setCustomPeriod(null); // Clear custom period
       }
     }
-  }, [selectedBoard, isInitialized]); // Removed selectedBoards from dependencies to prevent interference
+  }, [selectedBoard, isInitialized]);
 
   // Check scrollability when boards data changes
   useEffect(() => {
@@ -165,6 +175,18 @@ const SummaryScreen: React.FC = () => {
       loadSummary();
     }
   }, [selectedPeriod, selectedBoards, customPeriod, isInitialized, activeTab]);
+
+  // Reload data when selectedBoard changes
+  useEffect(() => {
+    if (isInitialized && selectedBoard && selectedPeriod) {
+      console.log('🔄 SummaryScreen: Reloading data due to board change');
+      if (activeTab === 'expenses') {
+        loadSummary();
+      } else if (activeTab === 'debts') {
+        loadDebts();
+      }
+    }
+  }, [selectedBoard, isInitialized, activeTab]);
 
   const loadSummary = async () => {
     // Don't try to load if no period is selected
@@ -784,6 +806,7 @@ const SummaryScreen: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.title}>סיכום</Text>
         <Text style={styles.subtitle}>
+          {selectedBoard ? `${selectedBoard.name} - ` : ''}
           {selectedPeriod ? 
             (selectedPeriod.label === 'טווח מותאם' && customPeriod ? 
               `${formatDateForInput(customPeriod.startDate)} - ${formatDateForInput(customPeriod.endDate)}` : 

@@ -1110,6 +1110,53 @@ class ApiService {
     }>(response);
   }
 
+  // Export board expenses
+  async exportBoardExpenses(boardId: string, startDate?: string, endDate?: string): Promise<ApiResponse<{
+    blob: Blob;
+    filename: string;
+  }>> {
+    console.log('🔵 API: Exporting board expenses for board:', boardId, 'Date range:', startDate, 'to', endDate);
+    
+    try {
+      const requestBody: any = {};
+      if (startDate) requestBody.start_date = startDate;
+      if (endDate) requestBody.end_date = endDate;
+
+      const response = await fetch(`${API_BASE_URL}/boards/${boardId}/export-expenses`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        return { success: false, error: errorData.error || 'Export failed' };
+      }
+
+      // Get the Excel blob from response
+      const blob = await response.blob();
+      
+      // Extract filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'expenses_export.xlsx';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+
+      console.log('🔵 API: Export expenses result: SUCCESS');
+      return { 
+        success: true, 
+        data: { blob, filename }
+      };
+    } catch (error) {
+      console.error('🔴 API: Export expenses error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+    }
+  }
+
   // Health check
   async healthCheck(): Promise<ApiResponse<{ status: string; message: string; timestamp: string }>> {
     console.log('🔵 API: Health check...');

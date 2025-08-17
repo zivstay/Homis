@@ -20,4 +20,5 @@ Flask-SQLAlchemy==3.0.5
 psycopg2-binary==2.9.9
 psycopg2==2.9.9
 pg8000==1.29.8
-Flask-Migrate==4.0.5 
+Flask-Migrate==4.0.5
+openpyxl==3.1.2 

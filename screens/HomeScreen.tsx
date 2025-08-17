@@ -1,13 +1,16 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Modal,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
@@ -28,6 +31,8 @@ const HomeScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showDateModal, setShowDateModal] = useState(false);
 
   // Update tutorial context when this screen is focused
   useFocusEffect(
@@ -301,6 +306,78 @@ const HomeScreen: React.FC = () => {
     );
   };
 
+  const handleExportExpenses = () => {
+    if (!selectedBoard || boardExpenses.length === 0) {
+      Alert.alert('שגיאה', 'אין הוצאות לייצא');
+      return;
+    }
+    setShowDateModal(true);
+  };
+
+  const handleDateRangeExport = async (startDate?: string, endDate?: string) => {
+    if (!selectedBoard) return;
+
+    setIsExporting(true);
+    try {
+      const result = await apiService.exportBoardExpenses(selectedBoard.id, startDate, endDate);
+      if (result.success && result.data) {
+        const { blob, filename } = result.data;
+        
+        try {
+          // Create file path in app documents directory
+          const fileUri = FileSystem.documentDirectory + filename;
+          
+          // Convert blob to base64 and write to file system
+          const reader = new FileReader();
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const result = reader.result as string;
+              // Remove the data URL prefix to get just the base64 data
+              const base64 = result.split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          
+          // Write Excel content to file as base64
+          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
+          console.log('✅ Excel file saved to:', fileUri);
+          
+          // Check if sharing is available
+          const isAvailable = await Sharing.isAvailableAsync();
+          if (!isAvailable) {
+            Alert.alert('שגיאה', 'שיתוף לא זמין במכשיר זה');
+            return;
+          }
+          
+          // Share the saved file
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            dialogTitle: `דוח הוצאות - ${selectedBoard.name}`,
+            UTI: 'org.openxmlformats.spreadsheetml.sheet',
+          });
+          
+        } catch (fileError) {
+          console.error('Error saving/sharing file:', fileError);
+          Alert.alert('שגיאה', 'שגיאה בשמירת הקובץ');
+        }
+        
+      } else {
+        Alert.alert('שגיאה', result.error || 'שגיאה בייצוא הדוח');
+      }
+    } catch (error) {
+      console.error('Error exporting expenses:', error);
+      Alert.alert('שגיאה', 'שגיאה בייצוא הדוח');
+    } finally {
+      setIsExporting(false);
+      setShowDateModal(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {renderSummary()}
@@ -310,7 +387,20 @@ const HomeScreen: React.FC = () => {
           {renderQuickCategories()}
         </View>
         
-        <Text style={styles.sectionTitle}>הוצאות אחרונות</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>הוצאות אחרונות</Text>
+          {boardExpenses.length > 0 && (
+            <TouchableOpacity
+              style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
+              onPress={handleExportExpenses}
+              disabled={isExporting}
+            >
+              <Text style={styles.exportButtonText}>
+                {isExporting ? 'מייצא...' : '📊 אקסל'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {boardExpenses.length === 0 ? (
@@ -342,6 +432,78 @@ const HomeScreen: React.FC = () => {
           getCategoryColor={getCategoryColor}
         />
       )}
+
+      {/* Date Range Selection Modal */}
+      <Modal
+        visible={showDateModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDateModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>בחר טווח תאריכים לייצוא</Text>
+            
+            <TouchableOpacity
+              style={styles.dateOption}
+              onPress={() => {
+                const now = new Date();
+                const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                handleDateRangeExport(oneMonthAgo.toISOString(), now.toISOString());
+              }}
+              disabled={isExporting}
+            >
+              <Text style={styles.dateOptionText}>החודש האחרון</Text>
+              <Text style={styles.dateOptionSubtext}>30 ימים אחרונים</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.dateOption}
+              onPress={() => {
+                const now = new Date();
+                const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+                handleDateRangeExport(threeMonthsAgo.toISOString(), now.toISOString());
+              }}
+              disabled={isExporting}
+            >
+              <Text style={styles.dateOptionText}>3 חודשים אחרונים</Text>
+              <Text style={styles.dateOptionSubtext}>90 ימים אחרונים</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.dateOption}
+              onPress={() => {
+                const now = new Date();
+                const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+                handleDateRangeExport(oneYearAgo.toISOString(), now.toISOString());
+              }}
+              disabled={isExporting}
+            >
+              <Text style={styles.dateOptionText}>השנה האחרונה</Text>
+              <Text style={styles.dateOptionSubtext}>365 ימים אחרונים</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.dateOption}
+              onPress={() => handleDateRangeExport()}
+              disabled={isExporting}
+            >
+              <Text style={styles.dateOptionText}>כל ההוצאות</Text>
+              <Text style={styles.dateOptionSubtext}>ללא הגבלת זמן</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowDateModal(false)}
+              disabled={isExporting}
+            >
+              <Text style={styles.cancelButtonText}>
+                {isExporting ? 'מייצא...' : 'ביטול'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -565,6 +727,111 @@ const styles = StyleSheet.create({
   },
   quickCategoriesWrapper: {
     marginBottom: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  exportButton: {
+    backgroundColor: '#27ae60',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  exportButtonDisabled: {
+    backgroundColor: '#bdc3c7',
+    opacity: 0.7,
+  },
+  exportButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  dateOption: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  dateOptionText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  dateOptionSubtext: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    textAlign: 'center',
+  },
+  modalButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  cancelButton: {
+    backgroundColor: '#ecf0f1',
+  },
+  cancelButtonText: {
+    color: '#7f8c8d',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

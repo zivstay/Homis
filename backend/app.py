@@ -953,6 +953,298 @@ def create_app(config_name='default'):
         else:
             return jsonify({'error': 'Failed to clear default board'}), 500
 
+    @app.route('/api/boards/<board_id>/export-expenses', methods=['POST'])
+    @require_auth
+    @require_board_access(BoardPermission.READ.value)
+    def export_board_expenses(board_id):
+        """Export board expenses to an Excel report"""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+            import io
+            
+            current_user_id = auth_manager.get_current_user()['user']['id']
+            
+            # Get date filters from request
+            data = request.get_json() or {}
+            start_date = data.get('start_date')
+            end_date = data.get('end_date')
+            
+            # Get board details
+            board = db_manager.get_board_by_id(board_id)
+            if not board:
+                return jsonify({'error': 'Board not found'}), 404
+            
+            # Get all expenses for the board
+            expenses = db_manager.get_board_expenses(board_id)
+            if not expenses:
+                return jsonify({'error': 'No expenses found for this board'}), 404
+            
+            # Filter expenses by date range if provided
+            if start_date or end_date:
+                filtered_expenses = []
+                for expense in expenses:
+                    expense_date = normalize_expense_date(expense.date)
+                    
+                    # Check start date
+                    if start_date:
+                        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                        if expense_date < start_dt:
+                            continue
+                    
+                    # Check end date
+                    if end_date:
+                        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                        # Add one day to end_date to include the entire end day
+                        end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                        if expense_date > end_dt:
+                            continue
+                    
+                    filtered_expenses.append(expense)
+                
+                expenses = filtered_expenses
+                
+                if not expenses:
+                    return jsonify({'error': 'No expenses found for the selected date range'}), 404
+            
+            # Get board members for names
+            members = db_manager.get_board_members(board_id)
+            member_names = {}
+            for member in members:
+                user = db_manager.get_user_by_id(member.user_id)
+                if user:
+                    member_names[member.user_id] = f"{user.first_name} {user.last_name}"
+            
+            # Create Excel workbook
+            wb = Workbook()
+            
+            # Main expenses sheet
+            ws_expenses = wb.active
+            ws_expenses.title = "הוצאות"
+            
+            # Styles
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            center_alignment = Alignment(horizontal="center", vertical="center")
+            border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                          top=Side(style='thin'), bottom=Side(style='thin'))
+            
+            # Board info header
+            ws_expenses['A1'] = "שם לוח:"
+            ws_expenses['B1'] = board.name
+            ws_expenses['A2'] = "תאריך ייצוא:"
+            ws_expenses['B2'] = datetime.now().strftime('%d/%m/%Y %H:%M')
+            ws_expenses['A3'] = "סה\"כ הוצאות:"
+            ws_expenses['B3'] = len(expenses)
+            ws_expenses['A4'] = "סה\"כ סכום:"
+            ws_expenses['B4'] = sum(expense.amount for expense in expenses)
+            ws_expenses['A5'] = "מטבע:"
+            ws_expenses['B5'] = board.currency
+            
+            # Add date range info if filtering was applied
+            header_row_start = 7
+            if start_date or end_date:
+                ws_expenses['A6'] = "טווח תאריכים:"
+                date_range = ""
+                if start_date and end_date:
+                    start_formatted = datetime.fromisoformat(start_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                    end_formatted = datetime.fromisoformat(end_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                    date_range = f"{start_formatted} - {end_formatted}"
+                elif start_date:
+                    start_formatted = datetime.fromisoformat(start_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                    date_range = f"מ-{start_formatted}"
+                elif end_date:
+                    end_formatted = datetime.fromisoformat(end_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                    date_range = f"עד {end_formatted}"
+                ws_expenses['B6'] = date_range
+                ws_expenses['A6'].font = Font(bold=True)
+                header_row_start = 8
+            
+            # Style the header info
+            header_info_rows = 6 if (start_date or end_date) else 5
+            for row in range(1, header_info_rows + 1):
+                ws_expenses[f'A{row}'].font = Font(bold=True)
+            
+            # Expenses table header
+            headers = ["תיאור", "קטגוריה", "סכום", "שולם על ידי", "תאריך הוצאה", "תאריך יצירה", "תגיות", "הוצאה חוזרת", "תדירות"]
+            header_row = header_row_start
+            
+            for col, header in enumerate(headers, 1):
+                cell = ws_expenses.cell(row=header_row, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = center_alignment
+                cell.border = border
+            
+            # Add expense data
+            current_row = header_row + 1
+            for expense in expenses:
+                description = expense.description or ''
+                category = expense.category or ''
+                amount = expense.amount or 0
+                paid_by = member_names.get(expense.paid_by, 'Unknown')
+                
+                # Format expense date (when the expense happened)
+                date = datetime.fromisoformat(expense.date.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+                
+                # Format created date (when the record was added to database)
+                created_date = datetime.fromisoformat(expense.created_at.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+                
+                tags = '; '.join(expense.tags) if expense.tags else ''
+                is_recurring = 'כן' if expense.is_recurring else 'לא'
+                frequency = expense.frequency if expense.is_recurring else ''
+                
+                row_data = [description, category, amount, paid_by, date, created_date, tags, is_recurring, frequency]
+                
+                for col, value in enumerate(row_data, 1):
+                    cell = ws_expenses.cell(row=current_row, column=col, value=value)
+                    cell.border = border
+                    if col == 3:  # Amount column (סכום)
+                        cell.alignment = Alignment(horizontal="right")
+                    elif col in [5, 6]:  # Date columns (תאריך הוצאה, תאריך יצירה)
+                        cell.alignment = Alignment(horizontal="center")
+                
+                current_row += 1
+            
+            # Auto-adjust column widths
+            for column in ws_expenses.columns:
+                max_length = 0
+                column_letter = get_column_letter(column[0].column)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 30)
+                ws_expenses.column_dimensions[column_letter].width = adjusted_width
+            
+            # Category summary sheet
+            ws_category = wb.create_sheet("סיכום קטגוריות")
+            
+            # Category summary header
+            ws_category['A1'] = "קטגוריה"
+            ws_category['B1'] = "מספר הוצאות"
+            ws_category['C1'] = "סה\"כ סכום"
+            
+            for col in range(1, 4):
+                cell = ws_category.cell(row=1, column=col)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = center_alignment
+                cell.border = border
+            
+            # Calculate category summary
+            category_summary = {}
+            for expense in expenses:
+                if expense.category not in category_summary:
+                    category_summary[expense.category] = {'count': 0, 'total': 0}
+                category_summary[expense.category]['count'] += 1
+                category_summary[expense.category]['total'] += expense.amount
+            
+            # Add category data
+            row = 2
+            for category, summary in category_summary.items():
+                ws_category.cell(row=row, column=1, value=category).border = border
+                ws_category.cell(row=row, column=2, value=summary['count']).border = border
+                ws_category.cell(row=row, column=3, value=summary['total']).border = border
+                row += 1
+            
+            # Auto-adjust category sheet columns
+            for column in ws_category.columns:
+                max_length = 0
+                column_letter = get_column_letter(column[0].column)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 25)
+                ws_category.column_dimensions[column_letter].width = adjusted_width
+            
+            # Monthly summary sheet
+            ws_monthly = wb.create_sheet("סיכום חודשי")
+            
+            # Monthly summary header
+            ws_monthly['A1'] = "חודש"
+            ws_monthly['B1'] = "מספר הוצאות"
+            ws_monthly['C1'] = "סה\"כ סכום"
+            
+            for col in range(1, 4):
+                cell = ws_monthly.cell(row=1, column=col)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = center_alignment
+                cell.border = border
+            
+            # Calculate monthly summary
+            monthly_summary = {}
+            for expense in expenses:
+                expense_date = normalize_expense_date(expense.date)
+                month_key = expense_date.strftime('%Y-%m')
+                if month_key not in monthly_summary:
+                    monthly_summary[month_key] = {'count': 0, 'total': 0}
+                monthly_summary[month_key]['count'] += 1
+                monthly_summary[month_key]['total'] += expense.amount
+            
+            # Add monthly data
+            row = 2
+            for month, summary in sorted(monthly_summary.items()):
+                month_name = datetime.strptime(month + '-01', '%Y-%m-%d').strftime('%B %Y')
+                ws_monthly.cell(row=row, column=1, value=month_name).border = border
+                ws_monthly.cell(row=row, column=2, value=summary['count']).border = border
+                ws_monthly.cell(row=row, column=3, value=summary['total']).border = border
+                row += 1
+            
+            # Auto-adjust monthly sheet columns
+            for column in ws_monthly.columns:
+                max_length = 0
+                column_letter = get_column_letter(column[0].column)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 25)
+                ws_monthly.column_dimensions[column_letter].width = adjusted_width
+            
+            # Save to BytesIO
+            excel_buffer = io.BytesIO()
+            wb.save(excel_buffer)
+            excel_buffer.seek(0)
+            
+            # Create filename (English only for compatibility)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            # Use only ASCII characters in filename to avoid encoding issues
+            import re
+            board_name_ascii = re.sub(r'[^\x00-\x7F]+', '', board.name)  # Remove non-ASCII
+            board_name_clean = re.sub(r'[^\w\-_]', '_', board_name_ascii)  # Keep only word chars, hyphens, underscores
+            board_name_clean = re.sub(r'_+', '_', board_name_clean).strip('_')  # Remove multiple underscores
+            if not board_name_clean or len(board_name_clean) < 2:  # If no valid name
+                board_name_clean = "board"
+            filename = f"expenses_{board_name_clean}_{timestamp}.xlsx"
+            
+            # Return Excel file as download
+            response = Response(
+                excel_buffer.getvalue(),
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                headers={
+                    'Content-Disposition': f'attachment; filename={filename}',  # No quotes to avoid encoding issues
+                    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; charset=utf-8'
+                }
+            )
+            
+            print(f"✅ Excel export successful for board '{board.name}' - {len(expenses)} expenses")
+            return response
+            
+        except Exception as e:
+            print(f"Error exporting expenses: {e}")
+            logger.error(traceback.format_exc())
+            return jsonify({'error': 'Failed to export expenses'}), 500
+
     # Expense routes
     @app.route('/api/boards/<board_id>/expenses', methods=['GET'])
     @require_auth

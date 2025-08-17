@@ -22,6 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
+import { adMobService } from '../services/admobService';
 import { apiService, Category } from '../services/api';
 
 const AddExpenseScreen: React.FC = () => {
@@ -95,6 +96,13 @@ const AddExpenseScreen: React.FC = () => {
       if (user) {
         setSelectedPaidBy(user.id);
       }
+    }
+    
+    // Preload ad when screen loads (only if available)
+    try {
+      adMobService.preloadAd();
+    } catch (error) {
+      console.log('📺 AdMob: Preload failed, continuing without ads');
     }
   }, [selectedBoard, user, preselectedCategory]);
 
@@ -193,15 +201,30 @@ const AddExpenseScreen: React.FC = () => {
         // Refresh board expenses to get the updated list
         await refreshBoardExpenses();
         
-        Alert.alert('', 'ההוצאה נוספה בהצלחה', [
-          { 
-            text: 'אישור', 
-            onPress: () => {
-              // Simply navigate back
-              navigation.goBack();
+        // Show interstitial ad after successful expense creation (only if available)
+        let adShown = false;
+        try {
+          adShown = await adMobService.showInterstitialAd();
+        } catch (error) {
+          console.log('📺 AdMob: Error showing ad, continuing without ad');
+          adShown = false;
+        }
+        
+        if (adShown) {
+          console.log('📺 AdMob: Interstitial ad shown after expense creation');
+          // Navigate back immediately since ad will handle the delay
+          navigation.goBack();
+        } else {
+          // If ad didn't show, show success message and navigate back
+          Alert.alert('', 'ההוצאה נוספה בהצלחה', [
+            { 
+              text: 'אישור', 
+              onPress: () => {
+                navigation.goBack();
+              }
             }
-          }
-        ]);
+          ]);
+        }
       } else {
         Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
       }
@@ -546,7 +569,7 @@ const AddExpenseScreen: React.FC = () => {
               )}
             </View>
 
-            <View style={styles.section}>
+            {/* <View style={styles.section}>
               <TouchableOpacity
                 style={styles.recurringContainer}
                 onPress={() => setIsRecurring(!isRecurring)}
@@ -556,7 +579,7 @@ const AddExpenseScreen: React.FC = () => {
                 </View>
                 <Text style={styles.recurringText}>הוצאה חוזרת</Text>
               </TouchableOpacity>
-            </View>
+            </View> */}
           </View>
         </ScrollView>
 
