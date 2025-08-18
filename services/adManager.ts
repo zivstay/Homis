@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { admobService } from './admobService';
+import { adMobService } from './admobService';
 
 class AdManager {
   private static instance: AdManager;
   private readonly AD_COOLDOWN_KEY = 'ad_last_shown_time';
-  private readonly COOLDOWN_MINUTES = 5; // 5 דקות
+  private readonly COOLDOWN_MINUTES = 0.5; // 30 שניות (לבדיקה)
 
   public static getInstance(): AdManager {
     if (!AdManager.instance) {
@@ -21,19 +21,24 @@ class AdManager {
       const lastShownTime = await AsyncStorage.getItem(this.AD_COOLDOWN_KEY);
       
       if (!lastShownTime) {
+        console.log('🎯 AdManager: No previous ad shown, can show ad');
         return true; // אם לא הוצגה פרסומת מעולם
       }
 
       const lastShown = parseInt(lastShownTime, 10);
       const currentTime = Date.now();
       const timeDiff = currentTime - lastShown;
-      const cooldownMs = this.COOLDOWN_MINUTES * 60 * 1000; // 5 דקות במילישניות
+      const cooldownMs = this.COOLDOWN_MINUTES * 60 * 1000; // 30 שניות במילישניות
 
-      console.log(`🎯 AdManager: Last ad shown ${Math.round(timeDiff / 1000 / 60)} minutes ago`);
+      const secondsAgo = Math.round(timeDiff / 1000);
+      console.log(`🎯 AdManager: Last ad shown ${secondsAgo} seconds ago (need ${this.COOLDOWN_MINUTES * 60}+ seconds)`);
       
-      return timeDiff >= cooldownMs;
+      const canShow = timeDiff >= cooldownMs;
+      console.log(`🎯 AdManager: Can show ad: ${canShow}`);
+      
+      return canShow;
     } catch (error) {
-      console.error('Error checking ad cooldown:', error);
+      console.error('🎯 AdManager: Error checking ad cooldown:', error);
       return true; // במקרה של שגיאה, אפשר להציג פרסומת
     }
   }
@@ -43,10 +48,11 @@ class AdManager {
    */
   private async updateLastShownTime(): Promise<void> {
     try {
-      await AsyncStorage.setItem(this.AD_COOLDOWN_KEY, Date.now().toString());
-      console.log('🎯 AdManager: Updated last shown time');
+      const currentTime = Date.now();
+      await AsyncStorage.setItem(this.AD_COOLDOWN_KEY, currentTime.toString());
+      console.log(`🎯 AdManager: Updated last shown time to ${new Date(currentTime).toLocaleTimeString()}`);
     } catch (error) {
-      console.error('Error updating ad last shown time:', error);
+      console.error('🎯 AdManager: Error updating ad last shown time:', error);
     }
   }
 
@@ -56,6 +62,8 @@ class AdManager {
    */
   public async showAdIfAllowed(adType: string = 'general'): Promise<boolean> {
     try {
+      console.log(`🎯 AdManager: Attempting to show ${adType} ad`);
+      
       const canShow = await this.canShowAd();
       
       if (!canShow) {
@@ -63,13 +71,19 @@ class AdManager {
         return false;
       }
 
-      console.log(`🎯 AdManager: Showing ${adType} ad`);
-      await admobService.showInterstitialAd();
-      await this.updateLastShownTime();
+      console.log(`🎯 AdManager: Cooldown passed, trying to show ${adType} interstitial ad`);
+      const adShown = await adMobService.showInterstitialAd();
       
-      return true;
+      if (adShown) {
+        console.log(`🎯 AdManager: Successfully showed ${adType} ad`);
+        await this.updateLastShownTime();
+        return true;
+      } else {
+        console.log(`🎯 AdManager: Failed to show ${adType} ad - ad service returned false`);
+        return false;
+      }
     } catch (error) {
-      console.error(`Error showing ${adType} ad:`, error);
+      console.error(`🎯 AdManager: Error showing ${adType} ad:`, error);
       return false;
     }
   }
@@ -80,9 +94,9 @@ class AdManager {
   public async resetAdCooldown(): Promise<void> {
     try {
       await AsyncStorage.removeItem(this.AD_COOLDOWN_KEY);
-      console.log('🎯 AdManager: Ad cooldown reset');
+      console.log('🎯 AdManager: Ad cooldown reset - next ad can be shown immediately');
     } catch (error) {
-      console.error('Error resetting ad cooldown:', error);
+      console.error('🎯 AdManager: Error resetting ad cooldown:', error);
     }
   }
 

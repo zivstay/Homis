@@ -17,6 +17,8 @@ import CategoryManager from '../components/CategoryManager';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useTutorial } from '../contexts/TutorialContext';
+import { adManager } from '../services/adManager';
+import { adMobService } from '../services/admobService';
 import { BoardMember } from '../services/api';
 
 const SettingsScreen: React.FC = () => {
@@ -28,6 +30,27 @@ const SettingsScreen: React.FC = () => {
   const [inviteRole, setInviteRole] = useState('member');
   const [isInviting, setIsInviting] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  
+  const handleResetAdCooldown = async () => {
+    await adManager.resetAdCooldown();
+    Alert.alert('הצלחה', 'זמן ההמתנה לפרסומות אופס. הפרסומת הבאה תוצג מיד.');
+  };
+
+  const handleCheckAdStatus = () => {
+    const status = adMobService.getAdStatus();
+    const statusText = `
+מצב AdMob:
+• זמין: ${status.isAdMobAvailable ? 'כן' : 'לא'}
+• מאותחל: ${status.isInitialized ? 'כן' : 'לא'}
+
+פרסומות Interstitial (וידאו):
+• טעונה: ${status.interstitial.loaded ? 'כן' : 'לא'}  
+• בטעינה: ${status.interstitial.loading ? 'כן' : 'לא'}
+• קיימת: ${status.interstitial.exists ? 'כן' : 'לא'}
+    `;
+    
+    Alert.alert('מצב פרסומות', statusText.trim());
+  };
 
   // Update tutorial context when this screen is focused
   useFocusEffect(
@@ -392,6 +415,22 @@ const SettingsScreen: React.FC = () => {
           >
             <Text style={styles.resetTutorialButtonText}>🔄 אפס מדריך</Text>
             <Text style={styles.tutorialButtonSubtext}>המדריך יופיע בכניסה הבאה</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.tutorialButton, { backgroundColor: '#f39c12' }]}
+            onPress={handleResetAdCooldown}
+          >
+            <Text style={styles.resetTutorialButtonText}>📺 אפס זמן פרסומות</Text>
+            <Text style={styles.tutorialButtonSubtext}>הפרסומת הבאה תוצג מיד (לבדיקות)</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.tutorialButton, { backgroundColor: '#9b59b6' }]}
+            onPress={handleCheckAdStatus}
+          >
+            <Text style={styles.resetTutorialButtonText}>🔍 בדוק מצב פרסומות</Text>
+            <Text style={styles.tutorialButtonSubtext}>הצג מידע על מצב הפרסומות (דיבאג)</Text>
           </TouchableOpacity>
         </View>
       </View>

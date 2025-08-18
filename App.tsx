@@ -41,13 +41,23 @@ function BoardSwitcherHeader() {
     console.log('🔄 App: Selected categories:', selectedCategories);
   }, [selectedCategories]);
   const handleBoardSelect = async (board: Board) => {
-    // הצגת פרסומת אם מחליפים לוח אחר (לא אותו לוח)
-    if (selectedBoard && selectedBoard.id !== board.id) {
-      await adManager.showAdIfAllowed('board_switch');
-    }
+    // בדיקה אם מחליפים לוח אחר (לא אותו לוח)
+    const shouldShowAd = selectedBoard && selectedBoard.id !== board.id;
     
-    selectBoard(board);
-    setShowBoardModal(false);
+    if (shouldShowAd) {
+      // הצגת פרסומת תגמול לפני החלפת הלוח
+      console.log('🎯 Board Switch: Showing rewarded ad before board switch');
+      const adShown = await adManager.showAdIfAllowed('board_switch');
+      console.log(`🎯 Board Switch: Rewarded ad completed: ${adShown}`);
+      
+      // רק אחרי שהפרסומת הושלמה - מבצעים את החלפת הלוח
+      selectBoard(board);
+      setShowBoardModal(false);
+    } else {
+      // אם אין צורך בפרסומת - מחליפים ישירות
+      selectBoard(board);
+      setShowBoardModal(false);
+    }
   };
 
   const handleSetDefaultBoard = async (board: Board) => {

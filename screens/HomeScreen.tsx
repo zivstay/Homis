@@ -146,9 +146,7 @@ const HomeScreen: React.FC = () => {
     return selectedCategories;
   };
 
-  const handleQuickAddExpense = async (categoryName: string) => {
-    // הצגת פרסומת אם מותר
-    await adManager.showAdIfAllowed('quick_add_expense');
+  const handleQuickAddExpense = (categoryName: string) => {
     (navigation as any).navigate('AddExpense', { preselectedCategory: categoryName });
   };
 
@@ -300,11 +298,7 @@ const HomeScreen: React.FC = () => {
         {/* Always show "אחר" as the last option */}
         <TouchableOpacity
           style={[styles.quickCategoryButton, { backgroundColor: '#95a5a6' }]}
-          onPress={async () => {
-            // הצגת פרסומת אם מותר
-            await adManager.showAdIfAllowed('add_expense_other');
-            navigation.navigate('AddExpense' as never);
-          }}
+          onPress={() => navigation.navigate('AddExpense' as never)}
         >
           <Text style={styles.quickCategoryIcon}>➕</Text>
           <Text style={styles.quickCategoryText}>אחר</Text>
@@ -324,11 +318,14 @@ const HomeScreen: React.FC = () => {
   const handleDateRangeExport = async (startDate?: string, endDate?: string) => {
     if (!selectedBoard) return;
 
-    // הצגת פרסומת לפני הפקת הדוח
-    await adManager.showAdIfAllowed('export_report');
-
     setIsExporting(true);
     try {
+      // הצגת פרסומת תגמול לפני התחלת הייצוא
+      console.log('🎯 Export: Showing rewarded ad before export process');
+      const adShown = await adManager.showAdIfAllowed('export_report');
+      console.log(`🎯 Export: Rewarded ad completed: ${adShown}`);
+
+      // רק אחרי שהפרסומת הושלמה - מתחילים את הייצוא
       const result = await apiService.exportBoardExpenses(selectedBoard.id, startDate, endDate);
       if (result.success && result.data) {
         const { blob, filename } = result.data;
@@ -455,7 +452,7 @@ const HomeScreen: React.FC = () => {
             <Text style={styles.modalTitle}>בחר טווח תאריכים לייצוא</Text>
             
             <TouchableOpacity
-              style={styles.dateOption}
+              style={[styles.dateOption, isExporting && styles.dateOptionDisabled]}
               onPress={() => {
                 const now = new Date();
                 const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
@@ -463,12 +460,16 @@ const HomeScreen: React.FC = () => {
               }}
               disabled={isExporting}
             >
-              <Text style={styles.dateOptionText}>החודש האחרון</Text>
-              <Text style={styles.dateOptionSubtext}>30 ימים אחרונים</Text>
+              <Text style={styles.dateOptionText}>
+                {isExporting ? '⏳ מכין דוח...' : 'החודש האחרון'}
+              </Text>
+              {!isExporting && (
+                <Text style={styles.dateOptionSubtext}>30 ימים אחרונים</Text>
+              )}
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.dateOption}
+              style={[styles.dateOption, isExporting && styles.dateOptionDisabled]}
               onPress={() => {
                 const now = new Date();
                 const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
@@ -476,12 +477,16 @@ const HomeScreen: React.FC = () => {
               }}
               disabled={isExporting}
             >
-              <Text style={styles.dateOptionText}>3 חודשים אחרונים</Text>
-              <Text style={styles.dateOptionSubtext}>90 ימים אחרונים</Text>
+              <Text style={styles.dateOptionText}>
+                {isExporting ? '⏳ מכין דוח...' : '3 חודשים אחרונים'}
+              </Text>
+              {!isExporting && (
+                <Text style={styles.dateOptionSubtext}>90 ימים אחרונים</Text>
+              )}
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.dateOption}
+              style={[styles.dateOption, isExporting && styles.dateOptionDisabled]}
               onPress={() => {
                 const now = new Date();
                 const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
@@ -489,26 +494,41 @@ const HomeScreen: React.FC = () => {
               }}
               disabled={isExporting}
             >
-              <Text style={styles.dateOptionText}>השנה האחרונה</Text>
-              <Text style={styles.dateOptionSubtext}>365 ימים אחרונים</Text>
+              <Text style={styles.dateOptionText}>
+                {isExporting ? '⏳ מכין דוח...' : 'השנה האחרונה'}
+              </Text>
+              {!isExporting && (
+                <Text style={styles.dateOptionSubtext}>365 ימים אחרונים</Text>
+              )}
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.dateOption}
+              style={[styles.dateOption, isExporting && styles.dateOptionDisabled]}
               onPress={() => handleDateRangeExport()}
               disabled={isExporting}
             >
-              <Text style={styles.dateOptionText}>כל ההוצאות</Text>
-              <Text style={styles.dateOptionSubtext}>ללא הגבלת זמן</Text>
+              <Text style={styles.dateOptionText}>
+                {isExporting ? '⏳ מכין דוח...' : 'כל ההוצאות'}
+              </Text>
+              {!isExporting && (
+                <Text style={styles.dateOptionSubtext}>ללא הגבלת זמן</Text>
+              )}
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
+              style={[
+                styles.modalButton, 
+                styles.cancelButton,
+                isExporting && styles.cancelButtonDisabled
+              ]}
               onPress={() => setShowDateModal(false)}
               disabled={isExporting}
             >
-              <Text style={styles.cancelButtonText}>
-                {isExporting ? 'מייצא...' : 'ביטול'}
+              <Text style={[
+                styles.cancelButtonText,
+                isExporting && styles.cancelButtonTextDisabled
+              ]}>
+                {isExporting ? '⏳ מכין דוח...' : 'ביטול'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -815,6 +835,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  dateOptionDisabled: {
+    backgroundColor: '#f0f0f0',
+    borderColor: '#d0d0d0',
+    opacity: 0.7,
+  },
   dateOptionText: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -838,10 +863,17 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#ecf0f1',
   },
+  cancelButtonDisabled: {
+    backgroundColor: '#f5f5f5',
+    opacity: 0.6,
+  },
   cancelButtonText: {
     color: '#7f8c8d',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  cancelButtonTextDisabled: {
+    color: '#bdc3c7',
   },
 });
 

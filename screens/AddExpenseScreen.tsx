@@ -22,7 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
-import { adMobService } from '../services/admobService';
+import { adManager } from '../services/adManager';
 import { apiService, Category } from '../services/api';
 
 const AddExpenseScreen: React.FC = () => {
@@ -98,12 +98,7 @@ const AddExpenseScreen: React.FC = () => {
       }
     }
     
-    // Preload ad when screen loads (only if available)
-    try {
-      adMobService.preloadAd();
-    } catch (error) {
-      console.log('📺 AdMob: Preload failed, continuing without ads');
-    }
+    // No need to preload ad with new manager
   }, [selectedBoard, user, preselectedCategory]);
 
   const loadCategories = async () => {
@@ -201,14 +196,8 @@ const AddExpenseScreen: React.FC = () => {
         // Refresh board expenses to get the updated list
         await refreshBoardExpenses();
         
-        // Show interstitial ad after successful expense creation (only if available)
-        let adShown = false;
-        try {
-          adShown = await adMobService.showInterstitialAd();
-        } catch (error) {
-          console.log('📺 AdMob: Error showing ad, continuing without ad');
-          adShown = false;
-        }
+        // Show interstitial ad after successful expense creation
+        const adShown = await adManager.showAdIfAllowed('expense_created');
         
         if (adShown) {
           console.log('📺 AdMob: Interstitial ad shown after expense creation');
