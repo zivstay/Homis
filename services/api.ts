@@ -1212,6 +1212,17 @@ class ApiService {
 
     return this.handleResponse<{ message: string }>(response);
   }
+
+  // Delete user account
+  async deleteUser(): Promise<ApiResponse<{ message: string }>> {
+    console.log('🔵 API: Deleting user account...');
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/auth/delete-user`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
 }
 
 export const apiService = new ApiService(); 

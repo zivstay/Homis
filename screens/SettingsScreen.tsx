@@ -19,7 +19,7 @@ import { useBoard } from '../contexts/BoardContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { adManager } from '../services/adManager';
 import { adMobService } from '../services/admobService';
-import { BoardMember } from '../services/api';
+import { BoardMember, apiService } from '../services/api';
 
 const SettingsScreen: React.FC = () => {
   const { selectedBoard, boardMembers, inviteMember, removeMember } = useBoard();
@@ -30,6 +30,9 @@ const SettingsScreen: React.FC = () => {
   const [inviteRole, setInviteRole] = useState('member');
   const [isInviting, setIsInviting] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const handleResetAdCooldown = async () => {
     await adManager.resetAdCooldown();
@@ -50,6 +53,43 @@ const SettingsScreen: React.FC = () => {
     `;
     
     Alert.alert('מצב פרסומות', statusText.trim());
+  };
+
+  const handleDeleteUser = async () => {
+    if (deleteConfirmation.trim() !== 'מחיקה') {
+      Alert.alert('שגיאה', 'עליך להזין "מחיקה" כדי לאשר את הפעולה');
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      console.log('🗑️ Starting user deletion...');
+      
+      // Use the API service to delete user
+      const result = await apiService.deleteUser();
+      
+      if (result.success) {
+        console.log('✅ User deletion successful');
+        Alert.alert('הצלחה', 'המשתמש נמחק בהצלחה', [
+          {
+            text: 'אישור',
+            onPress: () => {
+              setShowDeleteModal(false);
+              setDeleteConfirmation('');
+              logout();
+            },
+          },
+        ]);
+      } else {
+        console.error('❌ User deletion failed:', result.error);
+        Alert.alert('שגיאה', result.error || 'שגיאה במחיקת המשתמש');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting user:', error);
+      Alert.alert('שגיאה', 'שגיאה בתקשורת עם השרת');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Update tutorial context when this screen is focused
@@ -405,6 +445,19 @@ const SettingsScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
+      {/* Account Settings */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>הגדרות חשבון</Text>
+        
+        <TouchableOpacity
+          style={[styles.settingButton, styles.deleteUserButton]}
+          onPress={() => setShowDeleteModal(true)}
+        >
+          <Text style={styles.deleteUserButtonText}>⚠️ מחק חשבון</Text>
+          <Text style={styles.deleteUserButtonSubtext}>פעולה זו תמחק את החשבון שלך לצמיתות ולא ניתן לשחזר</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Tutorial Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>מדריך ועזרה</Text>
@@ -450,6 +503,74 @@ const SettingsScreen: React.FC = () => {
         visible={showCategoryManager}
         onClose={() => setShowCategoryManager(false)}
       />
+
+      {/* Delete User Modal */}
+      <Modal
+        visible={showDeleteModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🗑️ מחיקת חשבון</Text>
+            <Text style={styles.modalText}>
+              האם אתה בטוח שאתה רוצה למחוק את המשתמש? לא תוכל לשחזר את המשתמש אחר כך.
+            </Text>
+            <Text style={styles.modalText}>
+              להשלמת הפעולה רשום "מחיקה" בתיבת הטקסט למטה:
+            </Text>
+            
+            <View style={styles.confirmationContainer}>
+              <Text style={styles.confirmationLabel}>אישור מחיקה:</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  deleteConfirmation.trim() === 'מחיקה' && styles.confirmationInputValid
+                ]}
+                placeholder="הקלד 'מחיקה' כדי לאשר"
+                value={deleteConfirmation}
+                onChangeText={setDeleteConfirmation}
+                keyboardType="default"
+                autoCapitalize="none"
+                textAlign="center"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+              {deleteConfirmation.trim() === 'מחיקה' && (
+                <Text style={styles.confirmationValidText}>✅ אישור תקין</Text>
+              )}
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowDeleteModal(false);
+                  setDeleteConfirmation('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modalButton, 
+                  styles.deleteUserButton,
+                  deleteConfirmation.trim() !== 'מחיקה' && styles.deleteUserButtonDisabled
+                ]}
+                onPress={handleDeleteUser}
+                disabled={isDeleting || deleteConfirmation.trim() !== 'מחיקה'}
+              >
+                <Text style={styles.deleteUserButtonText}>
+                  {isDeleting ? 'מחיקה...' : 'מחק חשבון'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -580,6 +701,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
+  modalText: {
+    fontSize: 16,
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 10, // Reduced margin
+    lineHeight: 22,
+  },
   modalInput: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -687,6 +815,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'white',
     opacity: 0.9,
+  },
+  deleteUserButton: {
+    backgroundColor: '#e74c3c',
+  },
+  deleteUserButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  deleteUserButtonSubtext: {
+    fontSize: 12,
+    color: 'white',
+    opacity: 0.9,
+  },
+  confirmationContainer: {
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  confirmationLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 8,
+  },
+  confirmationInputValid: {
+    borderColor: '#2ecc71',
+    borderWidth: 2,
+  },
+  confirmationValidText: {
+    color: '#2ecc71',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 10,
+  },
+  deleteUserButtonDisabled: {
+    opacity: 0.7,
   },
 });
 

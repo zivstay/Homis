@@ -1,10 +1,10 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    RefreshControl,
-    StyleSheet
+  Alert,
+  FlatList,
+  RefreshControl,
+  StyleSheet
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -139,7 +139,7 @@ export default function HomeScreen() {
   };
 
   const getPersonalizedTitle = () => {
-    return 'מנהל הוצאות הבית';
+    return 'Homeis - מנהל ההוצאות שלך';
   };
 
   const getPersonalizedEmptyMessage = () => {

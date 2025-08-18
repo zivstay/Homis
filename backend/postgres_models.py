@@ -1187,6 +1187,125 @@ class PostgreSQLDatabaseManager:
             print(f"Error deleting pending registration: {e}")
             return False
     
+    def delete_user(self, user_id: str) -> bool:
+        """Delete user and all related data"""
+        try:
+            print(f"🗑️ Starting deletion of user {user_id}")
+            
+            # Get user info for logging
+            user = User.query.get(user_id)
+            if not user:
+                print(f"❌ User {user_id} not found")
+                return False
+            
+            print(f"🗑️ Deleting user: {user.email}")
+            
+            # Delete all data in the correct order to avoid foreign key constraint issues
+            # First, get all boards owned by this user to delete their data
+            owned_boards = Board.query.filter_by(owner_id=user_id).all()
+            owned_board_ids = [board.id for board in owned_boards]
+            
+            if owned_board_ids:
+                print(f"🗑️ User owns {len(owned_board_ids)} board(s)")
+                
+                # Delete all data from owned boards first
+                for board_id in owned_board_ids:
+                    print(f"🗑️ Deleting data from board {board_id}")
+                    
+                    # Delete debts in this board
+                    debts_deleted = Debt.query.filter_by(board_id=board_id).delete()
+                    print(f"   Deleted {debts_deleted} debt(s)")
+                    
+                    # Delete expenses in this board
+                    expenses_deleted = Expense.query.filter_by(board_id=board_id).delete()
+                    print(f"   Deleted {expenses_deleted} expense(s)")
+                    
+                    # Delete categories in this board
+                    categories_deleted = Category.query.filter_by(board_id=board_id).delete()
+                    print(f"   Deleted {categories_deleted} categor(ies)")
+                    
+                    # Delete notifications for this board
+                    notifications_deleted = Notification.query.filter_by(board_id=board_id).delete()
+                    print(f"   Deleted {notifications_deleted} notification(s)")
+                    
+                    # Delete board members for this board
+                    board_members_deleted = BoardMember.query.filter_by(board_id=board_id).delete()
+                    print(f"   Deleted {board_members_deleted} board member(s)")
+                
+                # Now delete the owned boards
+                boards_deleted = Board.query.filter_by(owner_id=user_id).delete()
+                print(f"🗑️ Deleted {boards_deleted} owned board(s)")
+            
+            # Delete user's debts in other boards
+            debts_deleted = Debt.query.filter(
+                (Debt.from_user_id == user_id) | (Debt.to_user_id == user_id)
+            ).delete()
+            print(f"🗑️ Deleted {debts_deleted} debt(s) in other boards")
+            
+            # Delete user's expenses in other boards
+            expenses_deleted = Expense.query.filter(
+                (Expense.created_by == user_id) | (Expense.paid_by == user_id)
+            ).delete()
+            print(f"🗑️ Deleted {expenses_deleted} expense(s) in other boards")
+            
+            # Delete user's categories in other boards
+            categories_deleted = Category.query.filter_by(created_by=user_id).delete()
+            print(f"🗑️ Deleted {categories_deleted} categor(ies) in other boards")
+            
+            # Delete user's notifications
+            notifications_deleted = Notification.query.filter(
+                (Notification.user_id == user_id) | (Notification.created_by == user_id)
+            ).delete()
+            print(f"🗑️ Deleted {notifications_deleted} notification(s)")
+            
+            # Delete user's invitations
+            invitations_deleted = Invitation.query.filter_by(invited_by=user_id).delete()
+            print(f"🗑️ Deleted {invitations_deleted} invitation(s)")
+            
+            # Remove user from board memberships in other boards
+            board_members_deleted = BoardMember.query.filter_by(user_id=user_id).delete()
+            print(f"🗑️ Removed from {board_members_deleted} board(s)")
+            
+            # Delete user account
+            print(f"🗑️ About to delete user account with ID: {user_id}")
+            user_deleted = User.query.filter_by(id=user_id).delete()
+            print(f"🗑️ User.delete() returned: {user_deleted}")
+            
+            if user_deleted:
+                # Force flush to ensure changes are written to database
+                print(f"🗑️ Flushing session...")
+                self.db.session.flush()
+                print(f"✅ Flush completed")
+                
+                # Force commit to ensure changes are saved
+                print(f"🗑️ Forcing commit...")
+                self.db.session.commit()
+                print(f"✅ Commit completed")
+                
+                # Clear session to ensure fresh data
+                print(f"🗑️ Clearing session...")
+                self.db.session.expire_all()
+                print(f"✅ Session cleared")
+                
+                # Verify deletion with fresh query
+                print(f"🗑️ Verifying deletion...")
+                verify_user = User.query.get(user_id)
+                if verify_user:
+                    print(f"❌ User still exists after commit! ID: {verify_user.id}, Email: {verify_user.email}")
+                    return False
+                else:
+                    print(f"✅ User deletion verified - user no longer exists")
+                    return True
+            else:
+                print(f"❌ Failed to delete user account")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error deleting user {user_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def cleanup_expired_pending_registrations(self):
         """Remove expired pending registrations"""
         if not self.app:

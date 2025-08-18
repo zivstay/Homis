@@ -2844,6 +2844,55 @@ def create_app(config_name='default'):
             print(f"❌ Terms acceptance update error: {e}")
             return jsonify({'error': 'Failed to update terms acceptance'}), 500
 
+    @app.route('/api/auth/delete-user', methods=['DELETE'])
+    @require_auth
+    def delete_user():
+        """Delete current user account and all related data"""
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            user_id = current_user['id']
+            
+            print(f"🗑️ User {user_id} ({current_user['email']}) requested account deletion")
+            
+            # Get user info for logging
+            user = db_manager.get_user_by_id(user_id)
+            if not user:
+                print(f"❌ User {user_id} not found in database")
+                return jsonify({'error': 'User not found'}), 404
+            
+            print(f"🗑️ Found user in database: {user.email}")
+            
+            # Get user's boards and data for logging
+            user_boards = db_manager.get_user_boards(user_id)
+            owned_boards = [board for board in user_boards if board.owner_id == user_id]
+            
+            print(f"🗑️ User has {len(user_boards)} board memberships, owns {len(owned_boards)} boards")
+            
+            # Delete user and all related data
+            print(f"🗑️ Calling db_manager.delete_user({user_id})")
+            success = db_manager.delete_user(user_id)
+            print(f"🗑️ db_manager.delete_user returned: {success}")
+            
+            if success:
+                # Verify the user was actually deleted
+                print(f"🗑️ Verifying user deletion...")
+                deleted_user = db_manager.get_user_by_id(user_id)
+                if deleted_user:
+                    print(f"❌ User still exists after deletion! ID: {deleted_user.id}, Email: {deleted_user.email}")
+                    return jsonify({'error': 'User deletion failed - user still exists'}), 500
+                else:
+                    print(f"✅ User {user_id} ({current_user['email']}) verified as deleted")
+                    return jsonify({'message': 'User account deleted successfully'}), 200
+            else:
+                print(f"❌ Failed to delete user {user_id}")
+                return jsonify({'error': 'Failed to delete user account'}), 500
+                
+        except Exception as e:
+            print(f"❌ Error deleting user: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to delete user account'}), 500
+
     return app
 
 if __name__ == '__main__':

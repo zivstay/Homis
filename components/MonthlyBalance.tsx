@@ -48,7 +48,7 @@ export function MonthlyBalance({
   };
 
   const getPersonalizedTitle = () => {
-    if (!onboardingConfig) return 'מנהל הוצאות הבית';
+    if (!onboardingConfig) return 'Homeis - מנהל ההוצאות שלך';
     
     switch (onboardingConfig.type) {
       case 'roommates':
