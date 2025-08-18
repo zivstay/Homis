@@ -44,6 +44,13 @@ class AdManager {
   }
 
   /**
+   * בדיקה פומבית אם ניתן להציג פרסומת
+   */
+  public async checkCanShowAd(): Promise<boolean> {
+    return await this.canShowAd();
+  }
+
+  /**
    * עדכון זמן הצגת הפרסומת האחרונה
    */
   private async updateLastShownTime(): Promise<void> {
@@ -84,6 +91,38 @@ class AdManager {
       }
     } catch (error) {
       console.error(`🎯 AdManager: Error showing ${adType} ad:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * הצגת פרסומת מוטבלת אם מותר (בדיקת זמן)
+   * @param adType סוג הפרסומת לזיהוי בלוגים
+   */
+  public async showRewardedAdIfAllowed(adType: string = 'general'): Promise<boolean> {
+    try {
+      console.log(`🎯 AdManager: Attempting to show ${adType} rewarded ad`);
+      
+      const canShow = await this.canShowAd();
+      
+      if (!canShow) {
+        console.log(`🎯 AdManager: Not showing ${adType} rewarded ad - cooldown active`);
+        return false;
+      }
+
+      console.log(`🎯 AdManager: Cooldown passed, trying to show ${adType} rewarded ad`);
+      const adShown = await adMobService.showRewardedAd();
+      
+      if (adShown) {
+        console.log(`🎯 AdManager: Successfully showed ${adType} rewarded ad`);
+        await this.updateLastShownTime();
+        return true;
+      } else {
+        console.log(`🎯 AdManager: Failed to show ${adType} rewarded ad - ad service returned false`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`🎯 AdManager: Error showing ${adType} rewarded ad:`, error);
       return false;
     }
   }

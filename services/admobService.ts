@@ -68,6 +68,9 @@ class AdMobService {
       
       // Create and load interstitial ad
       this.createInterstitialAd();
+      
+      // Create and load rewarded ad
+      this.createRewardedAd();
     } catch (error) {
       console.error('📺 AdMob: Error initializing Mobile Ads SDK:', error);
       this.isAdMobAvailable = false;
@@ -138,8 +141,8 @@ class AdMobService {
   };
 
   private createRewardedAd = () => {
-    if (!this.isAdMobAvailable || !RewardedAd || !this.isInitialized) {
-      console.log('📺 AdMob: Cannot create rewarded ad - availability:', this.isAdMobAvailable, 'RewardedAd:', !!RewardedAd, 'initialized:', this.isInitialized);
+    if (!RewardedAd || !this.isInitialized) {
+      console.log('📺 AdMob: Cannot create rewarded ad - RewardedAd:', !!RewardedAd, 'initialized:', this.isInitialized);
       return;
     }
     
@@ -155,7 +158,7 @@ class AdMobService {
       );
       
       const unsubscribeFailedToLoad = this.rewardedAd.addAdEventListener(
-        RewardedAdEventType.ERROR,
+        AdEventType.ERROR,
         this.onRewardedAdFailedToLoad
       );
       
@@ -175,7 +178,8 @@ class AdMobService {
       this.loadRewardedAd();
     } catch (error) {
       console.error('📺 AdMob: Error creating rewarded ad:', error);
-      this.isAdMobAvailable = false;
+      // Don't disable AdMob entirely for rewarded ad creation errors
+      // this.isAdMobAvailable = false;
     }
   };
 
@@ -218,8 +222,8 @@ class AdMobService {
   };
 
   private loadRewardedAd = async () => {
-    if (!this.isAdMobAvailable || this.isRewardedAdLoading || this.isRewardedAdLoaded || !this.rewardedAd) {
-      console.log('📺 AdMob: Cannot load rewarded ad - Available:', this.isAdMobAvailable, 'Loading:', this.isRewardedAdLoading, 'Loaded:', this.isRewardedAdLoaded, 'Ad exists:', !!this.rewardedAd);
+    if (this.isRewardedAdLoading || this.isRewardedAdLoaded || !this.rewardedAd) {
+      console.log('📺 AdMob: Cannot load rewarded ad - Loading:', this.isRewardedAdLoading, 'Loaded:', this.isRewardedAdLoaded, 'Ad exists:', !!this.rewardedAd);
       return;
     }
 
@@ -312,11 +316,26 @@ class AdMobService {
   public showRewardedAd = async (): Promise<boolean> => {
     console.log('📺 AdMob: showRewardedAd called');
     
-    // If AdMob is not available, return false immediately
-    if (!this.isAdMobAvailable || !this.isInitialized) {
-      console.log('📺 AdMob: Not available or not initialized, skipping rewarded ad display');
-      console.log('📺 AdMob: Available:', this.isAdMobAvailable, 'Initialized:', this.isInitialized);
+    // Check if basic AdMob components are available
+    if (!RewardedAd || !mobileAds) {
+      console.log('📺 AdMob: Required components not available for rewarded ads');
+      console.log('📺 AdMob: RewardedAd:', !!RewardedAd, 'mobileAds:', !!mobileAds);
       return false;
+    }
+    
+    // Check if we're initialized
+    if (!this.isInitialized) {
+      console.log('📺 AdMob: Not initialized, attempting to initialize...');
+      try {
+        await this.initializeMobileAds();
+        if (!this.isInitialized) {
+          console.log('📺 AdMob: Failed to initialize, cannot show rewarded ad');
+          return false;
+        }
+      } catch (error) {
+        console.log('📺 AdMob: Error during initialization:', error);
+        return false;
+      }
     }
 
     try {
@@ -350,13 +369,25 @@ class AdMobService {
           }
         );
 
-        // Set up a one-time listener for ad dismissed without reward
+        // Set up a one-time listener for ad closed without reward
         const unsubscribeClosed = this.rewardedAd.addAdEventListener(
-          RewardedAdEventType.ERROR,
+          AdEventType.CLOSED,
           () => {
             console.log('📺 AdMob: Rewarded ad closed without earning reward');
             unsubscribeEarnedReward(); // Clean up the listener
             unsubscribeClosed(); // Clean up this listener too
+            resolve(false);
+          }
+        );
+
+        // Set up a one-time listener for ad error
+        const unsubscribeError = this.rewardedAd.addAdEventListener(
+          AdEventType.ERROR,
+          (error: any) => {
+            console.error('📺 AdMob: Rewarded ad error:', error);
+            unsubscribeEarnedReward(); // Clean up the listener
+            unsubscribeClosed(); // Clean up this listener too
+            unsubscribeError(); // Clean up this listener too
             resolve(false);
           }
         );
@@ -388,8 +419,8 @@ class AdMobService {
   };
 
   public isRewardedAdReady = (): boolean => {
-    const ready = this.isAdMobAvailable && this.isInitialized && this.isRewardedAdLoaded;
-    console.log('📺 AdMob: Rewarded ad ready check:', ready, '(Available:', this.isAdMobAvailable, 'Init:', this.isInitialized, 'Loaded:', this.isRewardedAdLoaded, ')');
+    const ready = this.isInitialized && this.isRewardedAdLoaded && !!RewardedAd;
+    console.log('📺 AdMob: Rewarded ad ready check:', ready, '(Init:', this.isInitialized, 'Loaded:', this.isRewardedAdLoaded, 'RewardedAd:', !!RewardedAd, ')');
     return ready;
   };
 
@@ -403,7 +434,18 @@ class AdMobService {
     }
   };
 
+  public preloadRewardedAd = () => {
+    if (this.isInitialized && !this.isRewardedAdLoaded && !this.isRewardedAdLoading && RewardedAd) {
+      if (!this.rewardedAd) {
+        this.createRewardedAd();
+      } else {
+        this.loadRewardedAd();
+      }
+    }
+  };
+
   public destroy = () => {
+    // Clean up interstitial ad
     if (this.interstitialAd && this.isAdMobAvailable) {
       try {
         // Remove event listeners using stored unsubscribers
@@ -415,13 +457,34 @@ class AdMobService {
           });
         }
       } catch (error) {
-        console.log('📺 AdMob: Error removing event listeners:', error);
+        console.log('📺 AdMob: Error removing interstitial event listeners:', error);
       }
       
       this.interstitialAd = null;
     }
+    
+    // Clean up rewarded ad
+    if (this.rewardedAd) {
+      try {
+        // Remove event listeners using stored unsubscribers
+        if (this.rewardedAd._unsubscribers) {
+          this.rewardedAd._unsubscribers.forEach((unsubscribe: any) => {
+            if (typeof unsubscribe === 'function') {
+              unsubscribe();
+            }
+          });
+        }
+      } catch (error) {
+        console.log('📺 AdMob: Error removing rewarded ad event listeners:', error);
+      }
+      
+      this.rewardedAd = null;
+    }
+    
     this.isAdLoaded = false;
     this.isAdLoading = false;
+    this.isRewardedAdLoaded = false;
+    this.isRewardedAdLoading = false;
   };
 
   // New method to check if AdMob is available

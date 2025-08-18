@@ -50,9 +50,16 @@ function BoardSwitcherHeader() {
       const adShown = await adManager.showAdIfAllowed('board_switch');
       console.log(`🎯 Board Switch: Rewarded ad completed: ${adShown}`);
       
-      // רק אחרי שהפרסומת הושלמה - מבצעים את החלפת הלוח
+      // תמיד מחליפים לוח, לא משנה אם הפרסומת הוצגה או לא
+      // אם הפרסומת לא הוצגה (cooldown) - זה בסדר, המשתמש עדיין יכול להחליף
       selectBoard(board);
       setShowBoardModal(false);
+      
+      if (adShown) {
+        console.log('🎯 Board Switch: Ad shown successfully');
+      } else {
+        console.log('🎯 Board Switch: Ad not shown (cooldown active), but board switch allowed');
+      }
     } else {
       // אם אין צורך בפרסומת - מחליפים ישירות
       selectBoard(board);

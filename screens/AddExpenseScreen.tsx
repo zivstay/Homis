@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { showAdConsentModal } from '../components/AdConsentModal';
 import { uploadExpenseImage } from '../config/api';
 import { getAllAvailableCategories, getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +24,7 @@ import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { adManager } from '../services/adManager';
+import { adMobService } from '../services/admobService';
 import { apiService, Category } from '../services/api';
 
 const AddExpenseScreen: React.FC = () => {
@@ -98,7 +100,13 @@ const AddExpenseScreen: React.FC = () => {
       }
     }
     
-    // No need to preload ad with new manager
+    // Preload rewarded ad for expense creation
+    adManager.checkCanShowAd().then(canShow => {
+      if (canShow && adMobService.isAvailable()) {
+        console.log('🎯 AddExpenseScreen: Preloading rewarded ad...');
+        adMobService.preloadRewardedAd();
+      }
+    });
   }, [selectedBoard, user, preselectedCategory]);
 
   const loadCategories = async () => {
@@ -161,7 +169,54 @@ const AddExpenseScreen: React.FC = () => {
       return;
     }
 
-    setIsLoading(true);
+    // בדוק אם ניתן להציג פרסומת
+    const canShowAd = await adManager.checkCanShowAd();
+    
+    if (canShowAd) {
+      // הצג הודעה למשתמש לפני הפרסומת
+      const userConsent = await showAdConsentModal();
+
+      if (!userConsent) {
+        // המשתמש לא הסכים לצפות בפרסומת - לא יוצרים הוצאה
+        Alert.alert(
+          'אוקיי, לא נורא! 😊',
+          'ההוצאה לא תתווסף כרגע. תוכל לנסות שוב בהמשך! 😊'
+        );
+        return;
+      }
+
+      // המשתמש הסכים - מציגים פרסומת מוטבלת
+      setIsLoading(true);
+      console.log('🎯 User agreed, showing rewarded ad...');
+      
+      const adWatched = await adManager.showRewardedAdIfAllowed('expense_creation_rewarded');
+      
+      if (adWatched) {
+        console.log('🎯 User watched the full ad, creating expense...');
+        // המשתמש צפה בפרסומת עד הסוף - יוצרים את ההוצאה
+        await createExpense(amountValue);
+      } else {
+        console.log('🎯 User did not complete the ad');
+        // המשתמש לא צפה בפרסומת עד הסוף - לא יוצרים הוצאה
+        setIsLoading(false);
+        Alert.alert(
+          'הפרסומת לא הושלמה',
+          'כדי להוסיף את ההוצאה, אנא צפה בפרסומת עד הסוף. תוכל לנסות שוב! 😊'
+        );
+        return;
+      }
+    } else {
+      // לא ניתן להציג פרסומת בגלל cooldown - יוצרים הוצאה ללא פרסומת
+      console.log('🎯 Cannot show ad due to cooldown, creating expense without ad');
+      setIsLoading(true);
+      await createExpense(amountValue);
+    }
+  };
+
+  // פונקציה ליצירת ההוצאה
+  const createExpense = async (amountValue: number) => {
+    if (!selectedBoard) return; // בדיקת בטיחות נוספת
+    
     try {
       // Upload image if selected
       let imageUrl = null;
@@ -187,7 +242,7 @@ const AddExpenseScreen: React.FC = () => {
         is_recurring: isRecurring,
         frequency: 'monthly',
         tags: [],
-        image_url: imageUrl, // Add image URL to the expense data
+        image_url: imageUrl,
       };
 
       const result = await apiService.createExpense(selectedBoard.id, expenseData);
@@ -196,24 +251,15 @@ const AddExpenseScreen: React.FC = () => {
         // Refresh board expenses to get the updated list
         await refreshBoardExpenses();
         
-        // Show interstitial ad after successful expense creation
-        const adShown = await adManager.showAdIfAllowed('expense_created');
-        
-        if (adShown) {
-          console.log('📺 AdMob: Interstitial ad shown after expense creation');
-          // Navigate back immediately since ad will handle the delay
-          navigation.goBack();
-        } else {
-          // If ad didn't show, show success message and navigate back
-          Alert.alert('', 'ההוצאה נוספה בהצלחה', [
-            { 
-              text: 'אישור', 
-              onPress: () => {
-                navigation.goBack();
-              }
+        // הצג הודעת הצלחה ונחזור למסך הקודם
+        Alert.alert('', 'ההוצאה נוספה בהצלחה! 🎉', [
+          { 
+            text: 'מעולה!', 
+            onPress: () => {
+              navigation.goBack();
             }
-          ]);
-        }
+          }
+        ]);
       } else {
         Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
       }

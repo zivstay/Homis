@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { showAdConsentModal } from '../components/AdConsentModal';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,6 +35,8 @@ const HomeScreen: React.FC = () => {
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
+  const [selectedExportOption, setSelectedExportOption] = useState<string | null>(null);
+
 
   // Update tutorial context when this screen is focused
   useFocusEffect(
@@ -315,15 +318,40 @@ const HomeScreen: React.FC = () => {
     setShowDateModal(true);
   };
 
-  const handleDateRangeExport = async (startDate?: string, endDate?: string) => {
+  const handleDateRangeExport = async (startDate?: string, endDate?: string, optionName?: string) => {
     if (!selectedBoard) return;
 
     setIsExporting(true);
+    setSelectedExportOption(optionName || null);
     try {
       // הצגת פרסומת תגמול לפני התחלת הייצוא
       console.log('🎯 Export: Showing rewarded ad before export process');
-      const adShown = await adManager.showAdIfAllowed('export_report');
+      
+      // תמיד מציגים פרסומת בייצוא (פונקציונאלית מתקדמת)
+      const userConsent = await showAdConsentModal({
+        title: '🎉 ייצוא לאקסל',
+        message: 'בשביל שתוכל לייצא דוח לאקסל, נשמח שתצפה בפרסומת קטנה שתעזור לנו להמשיך לפתח את Homeis!\n\n**חשוב לדעת:**\n•תצטרך לצפות בה עד הסוף כדי שהדוח ייוצא',
+        alwaysRequireAd: true
+      });
+
+      // המשתמש חייב להסכים בייצוא (אבל יכול לבטל)
+      if (!userConsent) {
+        setIsExporting(false);
+        return;
+      }
+
+      const adShown = await adManager.showRewardedAdIfAllowed('export_report');
       console.log(`🎯 Export: Rewarded ad completed: ${adShown}`);
+
+      if (!adShown) {
+        // הפרסומת לא הושלמה או לא זמינה
+        setIsExporting(false);
+        Alert.alert(
+          'שגיאה בפרסומת',
+          'לא ניתן להציג פרסומת כרגע. אנא נסה שוב מאוחר יותר.'
+        );
+        return;
+      }
 
       // רק אחרי שהפרסומת הושלמה - מתחילים את הייצוא
       const result = await apiService.exportBoardExpenses(selectedBoard.id, startDate, endDate);
@@ -381,6 +409,7 @@ const HomeScreen: React.FC = () => {
       Alert.alert('שגיאה', 'שגיאה בייצוא הדוח');
     } finally {
       setIsExporting(false);
+      setSelectedExportOption(null);
       setShowDateModal(false);
     }
   };
@@ -456,14 +485,14 @@ const HomeScreen: React.FC = () => {
               onPress={() => {
                 const now = new Date();
                 const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-                handleDateRangeExport(oneMonthAgo.toISOString(), now.toISOString());
+                handleDateRangeExport(oneMonthAgo.toISOString(), now.toISOString(), 'החודש האחרון');
               }}
               disabled={isExporting}
             >
               <Text style={styles.dateOptionText}>
-                {isExporting ? '⏳ מכין דוח...' : 'החודש האחרון'}
+                {isExporting && selectedExportOption === 'החודש האחרון' ? '⏳ מכין דוח...' : 'החודש האחרון'}
               </Text>
-              {!isExporting && (
+              {!(isExporting && selectedExportOption === 'החודש האחרון') && (
                 <Text style={styles.dateOptionSubtext}>30 ימים אחרונים</Text>
               )}
             </TouchableOpacity>
@@ -473,14 +502,14 @@ const HomeScreen: React.FC = () => {
               onPress={() => {
                 const now = new Date();
                 const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-                handleDateRangeExport(threeMonthsAgo.toISOString(), now.toISOString());
+                handleDateRangeExport(threeMonthsAgo.toISOString(), now.toISOString(), '3 חודשים אחרונים');
               }}
               disabled={isExporting}
             >
               <Text style={styles.dateOptionText}>
-                {isExporting ? '⏳ מכין דוח...' : '3 חודשים אחרונים'}
+                {isExporting && selectedExportOption === '3 חודשים אחרונים' ? '⏳ מכין דוח...' : '3 חודשים אחרונים'}
               </Text>
-              {!isExporting && (
+              {!(isExporting && selectedExportOption === '3 חודשים אחרונים') && (
                 <Text style={styles.dateOptionSubtext}>90 ימים אחרונים</Text>
               )}
             </TouchableOpacity>
@@ -489,29 +518,16 @@ const HomeScreen: React.FC = () => {
               style={[styles.dateOption, isExporting && styles.dateOptionDisabled]}
               onPress={() => {
                 const now = new Date();
-                const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-                handleDateRangeExport(oneYearAgo.toISOString(), now.toISOString());
+                const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+                handleDateRangeExport(sixMonthsAgo.toISOString(), now.toISOString(), 'חצי שנה');
               }}
               disabled={isExporting}
             >
               <Text style={styles.dateOptionText}>
-                {isExporting ? '⏳ מכין דוח...' : 'השנה האחרונה'}
+                {isExporting && selectedExportOption === 'חצי שנה' ? '⏳ מכין דוח...' : 'חצי שנה'}
               </Text>
-              {!isExporting && (
-                <Text style={styles.dateOptionSubtext}>365 ימים אחרונים</Text>
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.dateOption, isExporting && styles.dateOptionDisabled]}
-              onPress={() => handleDateRangeExport()}
-              disabled={isExporting}
-            >
-              <Text style={styles.dateOptionText}>
-                {isExporting ? '⏳ מכין דוח...' : 'כל ההוצאות'}
-              </Text>
-              {!isExporting && (
-                <Text style={styles.dateOptionSubtext}>ללא הגבלת זמן</Text>
+              {!(isExporting && selectedExportOption === 'חצי שנה') && (
+                <Text style={styles.dateOptionSubtext}>6 חודשים אחרונים</Text>
               )}
             </TouchableOpacity>
             
@@ -528,12 +544,14 @@ const HomeScreen: React.FC = () => {
                 styles.cancelButtonText,
                 isExporting && styles.cancelButtonTextDisabled
               ]}>
-                {isExporting ? '⏳ מכין דוח...' : 'ביטול'}
+                ביטול
               </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+
     </View>
   );
 };
@@ -875,6 +893,7 @@ const styles = StyleSheet.create({
   cancelButtonTextDisabled: {
     color: '#bdc3c7',
   },
+
 });
 
 export default HomeScreen; 
