@@ -417,7 +417,7 @@ const SettingsScreen: React.FC = () => {
             <Text style={styles.tutorialButtonSubtext}>המדריך יופיע בכניסה הבאה</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={[styles.tutorialButton, { backgroundColor: '#f39c12' }]}
             onPress={handleResetAdCooldown}
           >
@@ -431,7 +431,7 @@ const SettingsScreen: React.FC = () => {
           >
             <Text style={styles.resetTutorialButtonText}>🔍 בדוק מצב פרסומות</Text>
             <Text style={styles.tutorialButtonSubtext}>הצג מידע על מצב הפרסומות (דיבאג)</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 

@@ -37,6 +37,9 @@ class UserDataclass:
     is_active: bool = True
     email_verified: bool = False
     avatar_url: Optional[str] = None
+    accepted_terms: bool = False
+    terms_accepted_at: Optional[str] = None
+    terms_version: Optional[str] = None
 
 @dataclass
 class BoardDataclass:
@@ -171,6 +174,11 @@ class User(db.Model):
     email_verified = Column(Boolean, default=False)
     avatar_url = Column(String(500), nullable=True)
     
+    # Add new fields for terms acceptance
+    accepted_terms = Column(Boolean, default=False, nullable=False)
+    terms_accepted_at = Column(DateTime, nullable=True)
+    terms_version = Column(String(50), nullable=True)  # Optional: track terms version
+    
     # Relationships
     owned_boards = relationship("Board", back_populates="owner", foreign_keys="Board.owner_id")
     board_memberships = relationship("BoardMember", back_populates="user", foreign_keys="BoardMember.user_id", primaryjoin="User.id == BoardMember.user_id")
@@ -201,7 +209,10 @@ class User(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'is_active': self.is_active,
             'email_verified': self.email_verified,
-            'avatar_url': self.avatar_url
+            'avatar_url': self.avatar_url,
+            'accepted_terms': self.accepted_terms,
+            'terms_accepted_at': self.terms_accepted_at.isoformat() if self.terms_accepted_at else None,
+            'terms_version': self.terms_version
         }
     
     def to_dataclass(self) -> UserDataclass:
@@ -647,7 +658,10 @@ class PostgreSQLDatabaseManager:
             username=user_data['username'],
             password_hash=user_data['password_hash'],
             first_name=user_data['first_name'],
-            last_name=user_data['last_name']
+            last_name=user_data['last_name'],
+            accepted_terms=user_data.get('accepted_terms', False),
+            terms_accepted_at=user_data.get('terms_accepted_at'),
+            terms_version=user_data.get('terms_version', '1.0')
         )
         self.db.session.add(user)
         self.db.session.commit()
@@ -771,15 +785,41 @@ class PostgreSQLDatabaseManager:
     
     # Board member methods
     def add_board_member(self, board_id: str, user_id: str, role: str, invited_by: str) -> BoardMemberDataclass:
+        print(f"🔍 Creating BoardMember: board_id={board_id}, user_id={user_id}, role={role}, invited_by={invited_by}")
+        
+        # Check if member already exists
+        existing_member = BoardMember.query.filter_by(
+            board_id=board_id,
+            user_id=user_id,
+            is_active=True
+        ).first()
+        
+        if existing_member:
+            print(f"⚠️ Member already exists: {existing_member.id}")
+            return existing_member.to_dataclass()
+        
+        permissions = self._get_permissions_for_role(role)
+        print(f"🔍 Permissions for role {role}: {permissions}")
+        
         member = BoardMember(
             board_id=board_id,
             user_id=user_id,
             role=role,
             invited_by=invited_by,
-            permissions=self._get_permissions_for_role(role)
+            permissions=permissions
         )
+        
+        print(f"🔍 BoardMember object created with ID: {member.id}")
         self.db.session.add(member)
         self.db.session.commit()
+        
+        # Verify it was saved
+        saved_member = BoardMember.query.get(member.id)
+        if saved_member:
+            print(f"✅ BoardMember saved successfully: {saved_member.id}")
+        else:
+            print(f"❌ BoardMember was not saved properly")
+        
         return member.to_dataclass()
     
     def get_board_members(self, board_id: str) -> List[BoardMemberDataclass]:
@@ -1181,27 +1221,58 @@ class PostgreSQLDatabaseManager:
         invitation = Invitation.query.filter_by(token=token).first()
         return invitation.to_dataclass() if invitation else None
     
+    def get_pending_invitations_by_email(self, email: str) -> List[InvitationDataclass]:
+        """Get all pending invitations for an email address"""
+        print(f"🔍 Searching for pending invitations for email: {email.lower()}")
+        
+        # Get all invitations for this email (for debugging)
+        all_invitations = Invitation.query.filter_by(email=email.lower()).all()
+        print(f"🔍 Total invitations for this email: {len(all_invitations)}")
+        
+        for inv in all_invitations:
+            print(f"🔍 Invitation {inv.id}: accepted_at={inv.accepted_at}, is_expired={inv.is_expired}, expires_at={inv.expires_at}")
+        
+        invitations = Invitation.query.filter_by(
+            email=email.lower(),
+            accepted_at=None,
+            is_expired=False
+        ).filter(
+            Invitation.expires_at > datetime.utcnow()
+        ).all()
+        
+        print(f"🔍 Pending invitations found: {len(invitations)}")
+        return [invitation.to_dataclass() for invitation in invitations]
+    
     def accept_invitation(self, invitation_id: str, user_id: str) -> bool:
         try:
+            print(f"🔍 Accept invitation: Looking for invitation {invitation_id}")
             invitation = Invitation.query.get(invitation_id)
             if not invitation:
+                print(f"❌ Invitation {invitation_id} not found")
                 return False
             
+            print(f"🔍 Found invitation: board_id={invitation.board_id}, role={invitation.role}, invited_by={invitation.invited_by}")
+            
             # Add user to board
-            self.add_board_member(
+            print(f"🔍 Adding user {user_id} to board {invitation.board_id} with role {invitation.role}")
+            member = self.add_board_member(
                 board_id=invitation.board_id,
                 user_id=user_id,
                 role=invitation.role,
                 invited_by=invitation.invited_by
             )
+            print(f"🔍 Board member created: {member.id}")
             
             # Mark invitation as accepted
             invitation.accepted_at = datetime.utcnow()
             self.db.session.commit()
+            print(f"✅ Invitation {invitation_id} accepted successfully")
             return True
         except Exception as e:
             self.db.session.rollback()
-            print(f"Error accepting invitation: {e}")
+            print(f"❌ Error accepting invitation: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # Helper methods

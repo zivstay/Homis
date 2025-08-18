@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
+  InteractionManager,
   Modal,
   RefreshControl,
   StyleSheet,
@@ -12,7 +13,6 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { showAdConsentModal } from '../components/AdConsentModal';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,6 +36,21 @@ const HomeScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [showDateModal, setShowDateModal] = useState(false);
   const [selectedExportOption, setSelectedExportOption] = useState<string | null>(null);
+  const [exportData, setExportData] = useState<{blob: Blob, filename: string} | null>(null);
+  const [forceUpdate, setForceUpdate] = useState(0);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+
+  // פונקציה לניקוי מלא של כל ה-states
+  const resetAllExportStates = () => {
+    console.log('🎯 Reset: Clearing all export states');
+    setShowDateModal(false);
+    setIsExporting(false);
+    setSelectedExportOption(null);
+    setExportData(null);
+    setShowDownloadModal(false);
+    setIsLoading(false);
+    setRefreshing(false);
+  };
 
 
   // Update tutorial context when this screen is focused
@@ -318,94 +333,133 @@ const HomeScreen: React.FC = () => {
     setShowDateModal(true);
   };
 
+  // פונקציה נפרדת להורדת הקובץ
+  const downloadExportFile = async () => {
+    console.log('🎯 Download: Function called - START OF FUNCTION');
+    console.log('🎯 Download: exportData exists:', !!exportData);
+    console.log('🎯 Download: selectedBoard exists:', !!selectedBoard);
+    if (!exportData || !selectedBoard) {
+      console.log('🎯 Download: Missing data or board - EXITING');
+      return;
+    }
+
+    console.log('🎯 Download: Starting download process');
+    try {
+      const { blob, filename } = exportData;
+      
+      // Create file path in app documents directory
+      const fileUri = FileSystem.documentDirectory + filename;
+      
+      // Convert blob to base64 and write to file system
+      const reader = new FileReader();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove the data URL prefix to get just the base64 data
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      
+      // Write Excel content to file as base64
+      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      console.log('✅ Excel file saved to:', fileUri);
+      
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('שגיאה', 'שיתוף לא זמין במכשיר זה');
+        return;
+      }
+      
+      // Share the saved file
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: `דוח הוצאות - ${selectedBoard.name}`,
+        UTI: 'org.openxmlformats.spreadsheetml.sheet',
+      });
+      
+      // נקה את הדוח אחרי השיתוף
+      console.log('🎯 Download: Process completed successfully');
+      
+      // ניקוי מלא של כל ה-states ו-force refresh
+      InteractionManager.runAfterInteractions(() => {
+        setTimeout(() => {
+          resetAllExportStates();
+          // כפה רענון של הקומפוננטה
+          setForceUpdate(prev => prev + 1);
+        }, 200);
+      });
+      
+    } catch (error) {
+      console.error('🎯 Download: Error occurred:', error);
+      setTimeout(() => {
+        resetAllExportStates();
+      }, 100);
+      Alert.alert('שגיאה', 'שגיאה בהורדת הקובץ');
+    }
+    
+    console.log('🎯 Download: Function ended');
+  };
+
   const handleDateRangeExport = async (startDate?: string, endDate?: string, optionName?: string) => {
     if (!selectedBoard) return;
 
     setIsExporting(true);
     setSelectedExportOption(optionName || null);
     try {
-      // הצגת פרסומת תגמול לפני התחלת הייצוא
-      console.log('🎯 Export: Showing rewarded ad before export process');
+      // הצגת פרסומת Interstitial פשוטה לפני הייצוא
+      console.log('🎯 Export: Showing interstitial ad before export');
       
-      // תמיד מציגים פרסומת בייצוא (פונקציונאלית מתקדמת)
-      const userConsent = await showAdConsentModal({
-        title: '🎉 ייצוא לאקסל',
-        message: 'בשביל שתוכל לייצא דוח לאקסל, נשמח שתצפה בפרסומת קטנה שתעזור לנו להמשיך לפתח את Homeis!\n\n**חשוב לדעת:**\n•תצטרך לצפות בה עד הסוף כדי שהדוח ייוצא',
-        alwaysRequireAd: true
-      });
-
-      // המשתמש חייב להסכים בייצוא (אבל יכול לבטל)
-      if (!userConsent) {
-        setIsExporting(false);
-        return;
-      }
-
-      const adShown = await adManager.showRewardedAdIfAllowed('export_report');
-      console.log(`🎯 Export: Rewarded ad completed: ${adShown}`);
-
-      if (!adShown) {
-        // הפרסומת לא הושלמה או לא זמינה
-        setIsExporting(false);
-        Alert.alert(
-          'שגיאה בפרסומת',
-          'לא ניתן להציג פרסומת כרגע. אנא נסה שוב מאוחר יותר.'
-        );
-        return;
+      // בדיקה אם ניתן להציג פרסומת
+      const canShowAd = await adManager.checkCanShowAd();
+      
+      if (canShowAd) {
+        console.log('🎯 Export: Can show ad, displaying interstitial');
+        const adShown = await adManager.showAdIfAllowed('export_report');
+        console.log(`🎯 Export: Interstitial ad shown: ${adShown}`);
+      } else {
+        console.log('🎯 Export: Cannot show ad due to cooldown, proceeding without ad');
       }
 
       // רק אחרי שהפרסומת הושלמה - מתחילים את הייצוא
+      console.log('🎯 Export: Starting export process...');
       const result = await apiService.exportBoardExpenses(selectedBoard.id, startDate, endDate);
+      
       if (result.success && result.data) {
         const { blob, filename } = result.data;
         
-        try {
-          // Create file path in app documents directory
-          const fileUri = FileSystem.documentDirectory + filename;
-          
-          // Convert blob to base64 and write to file system
-          const reader = new FileReader();
-          const base64Data = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => {
-              const result = reader.result as string;
-              // Remove the data URL prefix to get just the base64 data
-              const base64 = result.split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-          
-          // Write Excel content to file as base64
-          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          
-          console.log('✅ Excel file saved to:', fileUri);
-          
-          // Check if sharing is available
-          const isAvailable = await Sharing.isAvailableAsync();
-          if (!isAvailable) {
-            Alert.alert('שגיאה', 'שיתוף לא זמין במכשיר זה');
-            return;
-          }
-          
-          // Share the saved file
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            dialogTitle: `דוח הוצאות - ${selectedBoard.name}`,
-            UTI: 'org.openxmlformats.spreadsheetml.sheet',
-          });
-          
-        } catch (fileError) {
-          console.error('Error saving/sharing file:', fileError);
-          Alert.alert('שגיאה', 'שגיאה בשמירת הקובץ');
-        }
+        // שמירת הדוח במצב State ללא שיתוף אוטומטי
+        setExportData({ blob, filename });
+        
+        // סגירת המודל והצגת Modal ההורדה
+        setShowDateModal(false);
+        setIsExporting(false);
+        setSelectedExportOption(null);
+        
+        // פתיחת Modal ההורדה
+        setTimeout(() => {
+          setShowDownloadModal(true);
+        }, 300);
         
       } else {
+        // סגירת המודל גם במקרה של שגיאת API
+        setShowDateModal(false);
+        setIsExporting(false);
+        setSelectedExportOption(null);
         Alert.alert('שגיאה', result.error || 'שגיאה בייצוא הדוח');
       }
     } catch (error) {
       console.error('Error exporting expenses:', error);
+      // סגירת המודל גם במקרה של שגיאה כללית
+      setShowDateModal(false);
+      setIsExporting(false);
+      setSelectedExportOption(null);
       Alert.alert('שגיאה', 'שגיאה בייצוא הדוח');
     } finally {
       setIsExporting(false);
@@ -415,7 +469,7 @@ const HomeScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} key={`home-${forceUpdate}`}>
       {renderSummary()}
       
       <View style={styles.headerContainer}>
@@ -425,17 +479,20 @@ const HomeScreen: React.FC = () => {
         
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>הוצאות אחרונות</Text>
-          {boardExpenses.length > 0 && (
-            <TouchableOpacity
-              style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
-              onPress={handleExportExpenses}
-              disabled={isExporting}
-            >
-              <Text style={styles.exportButtonText}>
-                {isExporting ? 'מייצא...' : '📊 אקסל'}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <View style={styles.headerButtons}>
+            {boardExpenses.length > 0 && (
+              <TouchableOpacity
+                style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
+                onPress={handleExportExpenses}
+                disabled={isExporting}
+              >
+                <Text style={styles.exportButtonText}>
+                  {isExporting ? 'מייצא...' : '📊 אקסל'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+          </View>
         </View>
       </View>
 
@@ -551,6 +608,49 @@ const HomeScreen: React.FC = () => {
         </View>
       </Modal>
 
+      {/* Download Ready Modal */}
+      <Modal
+        visible={showDownloadModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => {
+          setShowDownloadModal(false);
+          resetAllExportStates();
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.downloadModalContent}>
+            <Text style={styles.downloadModalTitle}>הדוח מוכן! 🎉</Text>
+            <Text style={styles.downloadModalMessage}>
+              הדוח נוצר בהצלחה ומוכן להורדה
+            </Text>
+            
+            <View style={styles.downloadModalButtons}>
+              <TouchableOpacity
+                style={styles.downloadModalCancelButton}
+                onPress={() => {
+                  console.log('🎯 Modal: User cancelled download');
+                  setShowDownloadModal(false);
+                  resetAllExportStates();
+                }}
+              >
+                <Text style={styles.downloadModalCancelText}>ביטול</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.downloadModalDownloadButton}
+                onPress={() => {
+                  console.log('🎯 Modal: User chose to download');
+                  setShowDownloadModal(false);
+                  downloadExportFile();
+                }}
+              >
+                <Text style={styles.downloadModalDownloadText}>📥 הורד עכשיו</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </View>
   );
@@ -809,6 +909,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  downloadButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  downloadButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -892,6 +1015,75 @@ const styles = StyleSheet.create({
   },
   cancelButtonTextDisabled: {
     color: '#bdc3c7',
+  },
+  // Download Modal Styles
+  downloadModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    maxWidth: 350,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  downloadModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  downloadModalMessage: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  downloadModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  downloadModalCancelButton: {
+    flex: 1,
+    backgroundColor: '#ecf0f1',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  downloadModalCancelText: {
+    color: '#7f8c8d',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  downloadModalDownloadButton: {
+    flex: 1,
+    backgroundColor: '#3498db',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  downloadModalDownloadText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 
 });

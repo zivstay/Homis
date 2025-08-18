@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import PasswordResetModal from '../components/PasswordResetModal';
+import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import { useAuth } from '../contexts/AuthContext';
 
 const LoginScreen: React.FC = () => {
@@ -25,7 +26,6 @@ const LoginScreen: React.FC = () => {
 
   // Register form
   const [registerEmail, setRegisterEmail] = useState('');
-  const [registerUsername, setRegisterUsername] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
   const [registerFirstName, setRegisterFirstName] = useState('');
@@ -40,6 +40,12 @@ const LoginScreen: React.FC = () => {
 
   // Password reset modal
   const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  
+  // Terms and conditions modal
+  const [showTermsModal, setShowTermsModal] = useState(false);
+
+  // Add new state for terms acceptance
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   useEffect(() => {
     setError('');
@@ -193,9 +199,15 @@ const LoginScreen: React.FC = () => {
     console.log('🔍 LoginScreen: Starting registration process...');
     console.log('🔍 LoginScreen: Current isLogin state:', isLogin);
     
-    if (!registerEmail || !registerUsername || !registerPassword ||
-        !registerConfirmPassword || !registerFirstName || !registerLastName) {
-      setRegisterError('נא למלא את כל השדות');
+         if (!registerEmail || !registerPassword ||
+         !registerConfirmPassword || !registerFirstName || !registerLastName) {
+       setRegisterError('נא למלא את כל השדות');
+       return;
+     }
+
+    // Check if terms are accepted
+    if (!acceptedTerms) {
+      setRegisterError('עליך לאשר את תנאי השימוש כדי להמשיך');
       return;
     }
 
@@ -216,18 +228,20 @@ const LoginScreen: React.FC = () => {
       return;
     }
 
-    if (registerUsername.length < 3) {
-      setRegisterError('שם המשתמש חייב להיות לפחות 3 תווים');
-      return;
-    }
+    
 
-    const userData = {
-      email: registerEmail,
-      username: registerUsername,
-      password: registerPassword,
-      first_name: registerFirstName,
-      last_name: registerLastName,
-    };
+         // Generate username from email (remove @domain part)
+     const username = registerEmail.split('@')[0];
+     
+     const userData = {
+       email: registerEmail,
+       username: username,
+       password: registerPassword,
+       first_name: registerFirstName,
+       last_name: registerLastName,
+       accepted_terms: acceptedTerms, // Use the checkbox state
+       terms_accepted_at: acceptedTerms ? new Date().toISOString() : null // Only set if accepted
+     };
 
     console.log('🔍 LoginScreen: Sending verification code for:', userData.email);
     setIsLoading(true);
@@ -251,17 +265,13 @@ const LoginScreen: React.FC = () => {
       
       if (errorMessage.includes('Email already exists')) {
         errorMessage = 'כתובת האימייל כבר קיימת במערכת';
-      } else if (errorMessage.includes('Username already exists')) {
-        errorMessage = 'שם המשתמש כבר קיים במערכת';
-      } else if (errorMessage.includes('already exists') || errorMessage.includes('already registered')) {
-        if (errorMessage.includes('email')) {
-          errorMessage = 'כתובת האימייל כבר קיימת במערכת';
-        } else if (errorMessage.includes('username')) {
-          errorMessage = 'שם המשתמש כבר קיים במערכת';
-        } else {
-          errorMessage = 'המשתמש כבר קיים במערכת';
-        }
-      } else if (errorMessage.includes('Connection failed')) {
+      } else        if (errorMessage.includes('already exists') || errorMessage.includes('already registered')) {
+         if (errorMessage.includes('email')) {
+           errorMessage = 'כתובת האימייל כבר קיימת במערכת';
+         } else {
+           errorMessage = 'המשתמש כבר קיים במערכת';
+         }
+       } else if (errorMessage.includes('Connection failed')) {
         errorMessage = 'שגיאת חיבור - בדוק את החיבור לאינטרנט';
       }
       
@@ -333,6 +343,15 @@ const LoginScreen: React.FC = () => {
       >
         <Text style={styles.linkText}>אין לך חשבון? הירשם כאן</Text>
       </TouchableOpacity>
+      
+             <View style={styles.termsContainer}>
+         <Text style={styles.termsText}>
+           בהתחברות למערכת, אתה מסכים לתנאי השימוש שלנו
+         </Text>
+         <TouchableOpacity onPress={() => setShowTermsModal(true)}>
+           <Text style={styles.termsLink}>תנאי השימוש</Text>
+         </TouchableOpacity>
+       </View>
     </View>
   );
 
@@ -366,20 +385,7 @@ const LoginScreen: React.FC = () => {
         blurOnSubmit={true}
       />
       
-      <TextInput
-        style={[styles.input, registerError ? styles.inputError : null]}
-        placeholder="שם משתמש"
-        value={registerUsername}
-        onChangeText={(text) => {
-          setRegisterUsername(text);
-          if (registerError) setRegisterError('');
-        }}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="next"
-        onSubmitEditing={() => Keyboard.dismiss()}
-        blurOnSubmit={true}
-      />
+      
       
       <TextInput
         style={[styles.input, registerError ? styles.inputError : null]}
@@ -429,25 +435,66 @@ const LoginScreen: React.FC = () => {
         <Text style={styles.errorText}>{registerError}</Text>
       ) : null}
       
+      {/* Add terms acceptance checkbox */}
+      <View style={styles.termsCheckboxContainer}>
+        <TouchableOpacity 
+          style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
+          onPress={() => setAcceptedTerms(!acceptedTerms)}
+        >
+          {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+        </TouchableOpacity>
+                 <View style={styles.termsTextContainer}>
+           <Text style={styles.termsCheckboxText}>
+             אני מסכים לתנאי השימוש של המערכת
+           </Text>
+           <TouchableOpacity onPress={() => setShowTermsModal(true)}>
+             <Text style={styles.termsLinkCheckbox}>תנאי השימוש</Text>
+           </TouchableOpacity>
+         </View>
+      </View>
+      
       <TouchableOpacity
-        style={[styles.button, styles.primaryButton]}
+        style={[
+          styles.button, 
+          styles.primaryButton,
+          !acceptedTerms && styles.buttonDisabled
+        ]}
         onPress={handleRegister}
-        disabled={isLoading}
+        disabled={isLoading || !acceptedTerms}
       >
         <Text style={styles.buttonText}>
           {isLoading ? 'נרשם...' : 'הירשם'}
         </Text>
       </TouchableOpacity>
       
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => {
-          setIsLogin(true);
-          clearErrors();
-        }}
-      >
-        <Text style={styles.linkText}>יש לך חשבון? התחבר כאן</Text>
-      </TouchableOpacity>
+             <TouchableOpacity
+         style={styles.linkButton}
+         onPress={() => {
+           setIsLogin(true);
+           clearErrors();
+         }}
+       >
+         <Text style={styles.linkText}>יש לך חשבון? התחבר כאן</Text>
+       </TouchableOpacity>
+       
+       <TouchableOpacity
+         style={styles.linkButton}
+         onPress={() => {
+           setIsLogin(true);
+           clearErrors();
+         }}
+       >
+         <Text style={styles.linkText}>חזור להתחברות</Text>
+       </TouchableOpacity>
+      
+             <View style={styles.termsContainer}>
+         <Text style={styles.termsText}>
+           בהרשמה למערכת, אתה מסכים לתנאי השימוש שלנו
+         </Text>
+         <TouchableOpacity onPress={() => setShowTermsModal(true)}>
+           <Text style={styles.termsLink}>תנאי השימוש</Text>
+         </TouchableOpacity>
+       </View>
     </View>
   );
 
@@ -574,6 +621,22 @@ const LoginScreen: React.FC = () => {
       <PasswordResetModal
         visible={showPasswordResetModal}
         onClose={() => setShowPasswordResetModal(false)}
+      />
+      
+      <TermsAndConditionsModal
+        visible={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        onDecline={() => {
+          setShowTermsModal(false);
+          // אפשר להוסיף כאן לוגיקה נוספת כמו יציאה מהאפליקציה או הצגת הודעה
+          Alert.alert(
+            'התנאים לא התקבלו',
+            'אם אינך מסכים לתנאי השימוש, לא תוכל להשתמש באפליקציה. אנא שקול שוב את החלטתך.',
+            [
+              { text: 'הבנתי', style: 'default' }
+            ]
+          );
+        }}
       />
     </KeyboardAvoidingView>
   );
@@ -731,6 +794,77 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.7,
+  },
+  termsContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    marginTop: 20,
+    paddingHorizontal: 10,
+  },
+  termsText: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+    lineHeight: 16,
+  },
+  termsLink: {
+    fontSize: 12,
+    color: '#3498db',
+    textDecorationLine: 'underline',
+    fontWeight: 'bold',
+    writingDirection: 'rtl',
+    lineHeight: 16,
+  },
+  termsCheckboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginVertical: 15,
+    paddingHorizontal: 5,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#3498db',
+    borderRadius: 4,
+    marginRight: 12,
+    marginTop: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'white',
+  },
+  checkboxChecked: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  checkmark: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  termsTextContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginTop: 0,
+    minHeight: 24,
+  },
+  termsCheckboxText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  termsLinkCheckbox: {
+    fontSize: 14,
+    color: '#3498db',
+    textDecorationLine: 'underline',
+    fontWeight: 'bold',
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });
 

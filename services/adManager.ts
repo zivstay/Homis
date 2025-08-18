@@ -4,7 +4,7 @@ import { adMobService } from './admobService';
 class AdManager {
   private static instance: AdManager;
   private readonly AD_COOLDOWN_KEY = 'ad_last_shown_time';
-  private readonly COOLDOWN_MINUTES = 0.5; // 30 שניות (לבדיקה)
+  private readonly COOLDOWN_MINUTES = 5; // 30 שניות (לבדיקה)
 
   public static getInstance(): AdManager {
     if (!AdManager.instance) {

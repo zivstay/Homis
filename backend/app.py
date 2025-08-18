@@ -14,6 +14,8 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from PIL import Image
 import io
+from werkzeug.security import generate_password_hash
+from functools import wraps
 
 from config import config
 from models import UserRole, BoardPermission
@@ -468,17 +470,628 @@ def create_app(config_name='default'):
     # Authentication routes
     @app.route('/api/auth/register', methods=['POST'])
     def register():
-        """Register a new user"""
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
+        print("🔍 === REGULAR REGISTRATION ENDPOINT CALLED ===")
+        try:
+            data = request.get_json()
+            
+            # בדיקות תקינות
+            if not all(key in data for key in ['email', 'password', 'first_name', 'last_name']):
+                return jsonify({'error': 'Missing required fields'}), 400
+            
+            # בדיקה שהמשתמש מסכים לתנאים
+            if not data.get('accepted_terms', False):
+                return jsonify({'error': 'You must accept the terms and conditions to register'}), 400
+            
+            # בדיקה שיש תאריך אישור תנאים
+            if not data.get('terms_accepted_at'):
+                return jsonify({'error': 'Terms acceptance timestamp is required'}), 400
+            
+            # בדיקה שהמשתמש לא קיים כבר
+            if db_manager.get_user_by_email(data['email']):
+                return jsonify({'error': 'Email already registered'}), 400
+            
+            # Generate username from email
+            username = data['email'].split('@')[0]
+            
+            # יצירת משתמש חדש עם תנאי השימוש
+            user_data = {
+                'email': data['email'].lower(),
+                'username': username,
+                'password_hash': generate_password_hash(data['password']),
+                'first_name': data['first_name'],
+                'last_name': data['last_name'],
+                'accepted_terms': data.get('accepted_terms', True),
+                'terms_accepted_at': data.get('terms_accepted_at', datetime.utcnow()),
+                'terms_version': '1.0'
+            }
+            
+            # יצירת המשתמש בבסיס הנתונים
+            user = db_manager.create_user(user_data)
+            
+            if user:
+                # Check for pending invitations for this email
+                print(f"🔍 Checking for pending invitations for email: {data['email'].lower()}")
+                pending_invitations = db_manager.get_pending_invitations_by_email(data['email'].lower())
+                boards_joined = []
+                
+                print(f"🔍 Found {len(pending_invitations)} pending invitation(s) for {data['email']}")
+                
+                if pending_invitations:
+                    print(f"🎉 Processing {len(pending_invitations)} pending invitation(s) for {data['email']}")
+                    
+                    for invitation in pending_invitations:
+                        print(f"🔍 Processing invitation {invitation.id} for board {invitation.board_id}")
+                        try:
+                            # Accept the invitation automatically
+                            print(f"🔍 Attempting to accept invitation {invitation.id} for user {user.id}")
+                            success = db_manager.accept_invitation(invitation.id, user.id)
+                            print(f"🔍 Accept invitation result: {success}")
+                            
+                            if success:
+                                board = db_manager.get_board_by_id(invitation.board_id)
+                                if board:
+                                    boards_joined.append({
+                                        'board_id': board.id,
+                                        'board_name': board.name,
+                                        'role': invitation.role
+                                    })
+                                    print(f"✅ Successfully joined user {user.id} to board '{board.name}' with role '{invitation.role}'")
+                                    
+                                    # Verify membership was created
+                                    member_role = db_manager.get_user_role_in_board(user.id, board.id)
+                                    print(f"🔍 Verification - User {user.id} role in board {board.id}: {member_role}")
+                                else:
+                                    print(f"❌ Board {invitation.board_id} not found")
+                            else:
+                                print(f"❌ Failed to accept invitation {invitation.id}")
+                        except Exception as e:
+                            print(f"❌ Error accepting invitation {invitation.id}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                else:
+                    print(f"ℹ️ No pending invitations found for {data['email']}")
+                
+                response_data = {
+                    'message': 'User registered successfully',
+                    'user_id': user.id,
+                    'accepted_terms': user.accepted_terms,
+                    'terms_accepted_at': user.terms_accepted_at,
+                    'terms_version': user.terms_version
+                }
+                
+                # Add information about automatically joined boards
+                if boards_joined:
+                    response_data['boards_joined'] = boards_joined
+                    response_data['message'] += f' and automatically joined {len(boards_joined)} board(s)'
+                
+                return jsonify(response_data), 201
+            else:
+                return jsonify({'error': 'Failed to create user'}), 500
+            
+        except Exception as e:
+            print(f"❌ Registration error: {e}")
+            return jsonify({'error': 'Registration failed'}), 500
+
+    @app.route('/api/auth/register-with-invitation', methods=['POST'])
+    def register_with_invitation():
+        """Register user with invitation token"""
+        try:
+            data = request.get_json()
+            
+            # בדיקות תקינות
+            if not all(key in data for key in ['email', 'password', 'first_name', 'last_name', 'invitation_token']):
+                return jsonify({'error': 'Missing required fields'}), 400
+            
+            # בדיקה שהמשתמש מסכים לתנאים
+            if not data.get('accepted_terms', False):
+                return jsonify({'error': 'You must accept the terms and conditions to register'}), 400
+            
+            # בדיקה שיש תאריך אישור תנאים
+            if not data.get('terms_accepted_at'):
+                return jsonify({'error': 'Terms acceptance timestamp is required'}), 400
+            
+            # Check if invitation exists and is valid
+            invitation = db_manager.get_invitation_by_token(data['invitation_token'])
+            if not invitation:
+                return jsonify({'error': 'Invalid or expired invitation'}), 400
+            
+            # Check if invitation is expired
+            invitation_expires = datetime.fromisoformat(invitation.expires_at.replace('Z', '+00:00'))
+            if invitation_expires < datetime.now(timezone.utc):
+                return jsonify({'error': 'Invitation has expired'}), 400
+            
+            # Check if invitation email matches registration email
+            if invitation.email.lower() != data['email'].lower():
+                return jsonify({'error': 'Email does not match invitation'}), 400
+            
+            # Check if invitation is already accepted
+            if invitation.accepted_at:
+                return jsonify({'error': 'Invitation has already been accepted'}), 400
+            
+            # בדיקה שהמשתמש לא קיים כבר
+            if db_manager.get_user_by_email(data['email']):
+                return jsonify({'error': 'Email already registered'}), 400
+            
+            # Generate username from email
+            username = data['email'].split('@')[0]
+            
+            # יצירת משתמש חדש עם תנאי השימוש
+            user_data = {
+                'email': data['email'].lower(),
+                'username': username,
+                'password_hash': generate_password_hash(data['password']),
+                'first_name': data['first_name'],
+                'last_name': data['last_name'],
+                'accepted_terms': data.get('accepted_terms', True),
+                'terms_accepted_at': data.get('terms_accepted_at', datetime.utcnow()),
+                'terms_version': '1.0'
+            }
+            
+            # יצירת המשתמש בבסיס הנתונים
+            user = db_manager.create_user(user_data)
+            
+            if user:
+                # Accept the specific invitation
+                success = db_manager.accept_invitation(invitation.id, user.id)
+                board = db_manager.get_board_by_id(invitation.board_id)
+                
+                if success and board:
+                    print(f"✅ User {user.id} registered and joined board '{board.name}' via invitation")
+                    
+                    # Check for any other pending invitations for this email
+                    other_invitations = db_manager.get_pending_invitations_by_email(data['email'].lower())
+                    boards_joined = [{
+                        'board_id': board.id,
+                        'board_name': board.name,
+                        'role': invitation.role
+                    }]
+                    
+                    # Accept other pending invitations automatically
+                    for other_invitation in other_invitations:
+                        if other_invitation.id != invitation.id:  # Skip the one we already processed
+                            try:
+                                success = db_manager.accept_invitation(other_invitation.id, user.id)
+                                if success:
+                                    other_board = db_manager.get_board_by_id(other_invitation.board_id)
+                                    if other_board:
+                                        boards_joined.append({
+                                            'board_id': other_board.id,
+                                            'board_name': other_board.name,
+                                            'role': other_invitation.role
+                                        })
+                                        print(f"✅ Also joined user {user.id} to board '{other_board.name}'")
+                            except Exception as e:
+                                print(f"❌ Error accepting additional invitation {other_invitation.id}: {e}")
+                    
+                    return jsonify({
+                        'message': f'User registered successfully and joined {len(boards_joined)} board(s)',
+                        'user_id': user.id,
+                        'accepted_terms': user.accepted_terms,
+                        'terms_accepted_at': user.terms_accepted_at,
+                        'terms_version': user.terms_version,
+                        'boards_joined': boards_joined
+                    }), 201
+                else:
+                    return jsonify({'error': 'Failed to accept invitation'}), 500
+            else:
+                return jsonify({'error': 'Failed to create user'}), 500
+            
+        except Exception as e:
+            print(f"❌ Registration with invitation error: {e}")
+            return jsonify({'error': 'Registration failed'}), 500
+
+    @app.route('/api/auth/invitation/<invitation_token>', methods=['GET'])
+    def get_invitation_info(invitation_token):
+        """Get invitation information by token"""
+        try:
+            invitation = db_manager.get_invitation_by_token(invitation_token)
+            if not invitation:
+                return jsonify({'error': 'Invalid or expired invitation'}), 404
+            
+            # Check if invitation is expired
+            invitation_expires = datetime.fromisoformat(invitation.expires_at.replace('Z', '+00:00'))
+            if invitation_expires < datetime.now(timezone.utc):
+                return jsonify({'error': 'Invitation has expired'}), 400
+            
+            # Check if invitation is already accepted
+            if invitation.accepted_at:
+                return jsonify({'error': 'Invitation has already been accepted'}), 400
+            
+            # Get board information
+            board = db_manager.get_board_by_id(invitation.board_id)
+            if not board:
+                return jsonify({'error': 'Board not found'}), 404
+            
+            # Get inviter information
+            inviter = db_manager.get_user_by_id(invitation.invited_by)
+            inviter_name = f"{inviter.first_name} {inviter.last_name}" if inviter else "משתמש לא ידוע"
+            
+            return jsonify({
+                'valid': True,
+                'invitation': {
+                    'id': invitation.id,
+                    'email': invitation.email,
+                    'role': invitation.role,
+                    'expires_at': invitation.expires_at,
+                    'created_at': invitation.created_at
+                },
+                'board': {
+                    'id': board.id,
+                    'name': board.name,
+                    'description': board.description,
+                    'currency': board.currency
+                },
+                'inviter': {
+                    'name': inviter_name
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error getting invitation info: {e}")
+            return jsonify({'error': 'Failed to get invitation information'}), 500
+
+    @app.route('/download', methods=['GET'])
+    def download_page():
+        """App download page with invitation tracking"""
+        invitation_token = request.args.get('invitation')
         
-        result = auth_manager.register_user(data)
+        # Get invitation info if token provided
+        invitation_info = None
+        if invitation_token:
+            try:
+                invitation = db_manager.get_invitation_by_token(invitation_token)
+                if invitation:
+                    # Check if invitation is valid
+                    invitation_expires = datetime.fromisoformat(invitation.expires_at.replace('Z', '+00:00'))
+                    if invitation_expires >= datetime.now(timezone.utc) and not invitation.accepted_at:
+                        board = db_manager.get_board_by_id(invitation.board_id)
+                        inviter = db_manager.get_user_by_id(invitation.invited_by)
+                        inviter_name = f"{inviter.first_name} {inviter.last_name}" if inviter else "משתמש"
+                        
+                        invitation_info = {
+                            'email': invitation.email,
+                            'board_name': board.name if board else 'לוח לא ידוע',
+                            'inviter_name': inviter_name
+                        }
+            except Exception as e:
+                print(f"Error getting invitation info for download page: {e}")
         
-        if result['valid']:
-            return jsonify(result), 201
-        else:
-            return jsonify({'error': result['error']}), result.get('code', 400)
+        # Create HTML download page
+        html_content = f"""
+        <!DOCTYPE html>
+        <html dir="rtl" lang="he">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Homis - הורדת האפליקציה</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    margin: 0;
+                    padding: 20px;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                .container {{
+                    background: white;
+                    border-radius: 20px;
+                    padding: 40px;
+                    max-width: 500px;
+                    width: 100%;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                    text-align: center;
+                }}
+                .logo {{
+                    font-size: 48px;
+                    color: #3498db;
+                    margin-bottom: 10px;
+                }}
+                .app-name {{
+                    font-size: 32px;
+                    font-weight: bold;
+                    color: #2c3e50;
+                    margin-bottom: 10px;
+                }}
+                .tagline {{
+                    color: #7f8c8d;
+                    font-size: 16px;
+                    margin-bottom: 30px;
+                }}
+                .invitation-box {{
+                    background: #e8f4fd;
+                    border-radius: 12px;
+                    padding: 20px;
+                    margin-bottom: 30px;
+                    border-right: 4px solid #3498db;
+                }}
+                .invitation-title {{
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #2c3e50;
+                    margin-bottom: 10px;
+                }}
+                .invitation-details {{
+                    color: #555;
+                    line-height: 1.6;
+                }}
+                .steps {{
+                    background: #f8f9fa;
+                    border-radius: 12px;
+                    padding: 25px;
+                    margin-bottom: 30px;
+                    text-align: right;
+                }}
+                .steps h3 {{
+                    color: #2c3e50;
+                    margin-bottom: 20px;
+                    text-align: center;
+                }}
+                .step {{
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 15px;
+                    padding: 10px;
+                    background: white;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .step-number {{
+                    background: #3498db;
+                    color: white;
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                    margin-left: 15px;
+                    flex-shrink: 0;
+                }}
+                .step-text {{
+                    color: #555;
+                    line-height: 1.5;
+                }}
+                .download-buttons {{
+                    display: flex;
+                    gap: 15px;
+                    justify-content: center;
+                    margin-bottom: 20px;
+                    flex-wrap: wrap;
+                }}
+                .download-btn {{
+                    display: inline-flex;
+                    align-items: center;
+                    background: #2c3e50;
+                    color: white;
+                    text-decoration: none;
+                    padding: 15px 25px;
+                    border-radius: 12px;
+                    font-weight: bold;
+                    transition: transform 0.2s;
+                    min-width: 200px;
+                    justify-content: center;
+                }}
+                .download-btn:hover {{
+                    transform: translateY(-2px);
+                    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+                }}
+                .download-btn.ios {{
+                    background: #007AFF;
+                }}
+                .download-btn.android {{
+                    background: #34A853;
+                }}
+                .store-icon {{
+                    width: 24px;
+                    height: 24px;
+                    margin-left: 10px;
+                }}
+                .footer {{
+                    color: #7f8c8d;
+                    font-size: 14px;
+                    margin-top: 30px;
+                }}
+                @media (max-width: 600px) {{
+                    .container {{ padding: 20px; }}
+                    .download-buttons {{ flex-direction: column; }}
+                    .download-btn {{ min-width: auto; }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="logo">💰</div>
+                <div class="app-name">Homis</div>
+                <div class="tagline">ניהול הוצאות משותפות</div>
+                
+                {f'''
+                <div class="invitation-box">
+                    <div class="invitation-title">🎉 הוזמנת להצטרף!</div>
+                    <div class="invitation-details">
+                        <strong>{invitation_info['inviter_name']}</strong> הזמין אותך להצטרף ללוח הוצאות "<strong>{invitation_info['board_name']}</strong>"<br>
+                        עם המייל: <strong style="color: #3498db;">{invitation_info['email']}</strong>
+                    </div>
+                </div>
+                ''' if invitation_info else ''}
+                
+                <div class="steps">
+                    <h3>💫 איך להתחיל?</h3>
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-text">הורד את אפליקציית Homis מחנות האפליקציות</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-text">
+                            פתח את האפליקציה וצור משתמש חדש
+                            {f'עם המייל: <strong style="color: #3498db;">{invitation_info["email"]}</strong>' if invitation_info else ''}
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-text">
+                            {f'הלוח "{invitation_info["board_name"]}" יופיע לך אוטומטית!' if invitation_info else 'התחל לנהל את ההוצאות שלך!'}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="download-buttons">
+                    <a href="https://apps.apple.com/app/homis" class="download-btn ios">
+                        📱 App Store
+                    </a>
+                    <a href="https://play.google.com/store/apps/details?id=com.homis" class="download-btn android">
+                        📱 Google Play
+                    </a>
+                </div>
+                
+                <div class="footer">
+                    אפליקציית Homis מאפשרת לך ולחבריך לעקוב אחר הוצאות משותפות, 
+                    לחלוק עלויות בצורה הוגנת ולנהל חובות בקלות.
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return Response(html_content, mimetype='text/html')
+
+    @app.route('/api/debug/user-status/<email>', methods=['GET'])
+    @require_auth
+    def debug_user_status(email):
+        """Debug endpoint to check user status and board memberships"""
+        try:
+            email = email.lower()
+            
+            # Check if user exists
+            user = db_manager.get_user_by_email(email)
+            
+            # Check pending invitations
+            pending_invitations = db_manager.get_pending_invitations_by_email(email)
+            
+            # Get all invitations for this email
+            from postgres_models import Invitation
+            all_invitations = Invitation.query.filter_by(email=email).all()
+            
+            # Get user boards if user exists
+            user_boards = []
+            if user:
+                user_boards = db_manager.get_user_boards(user.id)
+            
+            return jsonify({
+                'email': email,
+                'user_exists': user is not None,
+                'user_id': user.id if user else None,
+                'pending_invitations_count': len(pending_invitations),
+                'total_invitations_count': len(all_invitations),
+                'user_boards_count': len(user_boards),
+                'pending_invitations': [
+                    {
+                        'id': inv.id,
+                        'board_id': inv.board_id,
+                        'role': inv.role,
+                        'created_at': inv.created_at,
+                        'expires_at': inv.expires_at
+                    } for inv in pending_invitations
+                ],
+                'all_invitations': [
+                    {
+                        'id': inv.id,
+                        'board_id': inv.board_id,
+                        'role': inv.role,
+                        'accepted_at': inv.accepted_at.isoformat() if inv.accepted_at else None,
+                        'is_expired': inv.is_expired,
+                        'expires_at': inv.expires_at.isoformat() if inv.expires_at else None
+                    } for inv in all_invitations
+                ],
+                'user_boards': [
+                    {
+                        'id': board.id,
+                        'name': board.name,
+                        'user_role': db_manager.get_user_role_in_board(user.id, board.id) if user else None
+                    } for board in user_boards
+                ]
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error in debug endpoint: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/debug/simulate-registration', methods=['POST'])
+    def simulate_registration():
+        """Debug endpoint to simulate the registration process without email verification"""
+        try:
+            data = request.get_json()
+            email = data.get('email', '').lower()
+            
+            if not email:
+                return jsonify({'error': 'Email is required'}), 400
+            
+            print(f"🧪 SIMULATION: Starting registration process for {email}")
+            
+            # Check if user already exists
+            existing_user = db_manager.get_user_by_email(email)
+            if existing_user:
+                return jsonify({'error': 'User already exists'}), 400
+            
+            # Create fake user data
+            user_data = {
+                'email': email,
+                'username': email.split('@')[0],
+                'password_hash': generate_password_hash('testpassword123'),
+                'first_name': 'Test',
+                'last_name': 'User',
+                'accepted_terms': True,
+                'terms_accepted_at': datetime.utcnow(),
+                'terms_version': '1.0'
+            }
+            
+            # Create user
+            user = db_manager.create_user(user_data)
+            print(f"🧪 Created user: {user.id}")
+            
+            # Check for pending invitations
+            print(f"🧪 Checking for pending invitations for: {email}")
+            pending_invitations = db_manager.get_pending_invitations_by_email(email)
+            boards_joined = []
+            
+            print(f"🧪 Found {len(pending_invitations)} pending invitations")
+            
+            if pending_invitations:
+                for invitation in pending_invitations:
+                    print(f"🧪 Processing invitation {invitation.id}")
+                    try:
+                        success = db_manager.accept_invitation(invitation.id, user.id)
+                        if success:
+                            board = db_manager.get_board_by_id(invitation.board_id)
+                            if board:
+                                boards_joined.append({
+                                    'board_id': board.id,
+                                    'board_name': board.name,
+                                    'role': invitation.role
+                                })
+                                print(f"🧪 Joined board: {board.name}")
+                    except Exception as e:
+                        print(f"🧪 Error accepting invitation: {e}")
+            
+            return jsonify({
+                'message': 'Simulation completed',
+                'user_id': user.id,
+                'email': email,
+                'boards_joined': boards_joined,
+                'pending_invitations_found': len(pending_invitations)
+            }), 201
+            
+        except Exception as e:
+            print(f"❌ Error in simulation: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/auth/login', methods=['POST'])
     def login():
@@ -554,6 +1167,7 @@ def create_app(config_name='default'):
     @app.route('/api/auth/verify-and-register', methods=['POST'])
     def verify_and_register():
         """Verify code and complete registration"""
+        print("🔍 === EMAIL VERIFICATION REGISTRATION ENDPOINT CALLED ===")
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No data provided'}), 400
@@ -897,15 +1511,39 @@ def create_app(config_name='default'):
             }), 201
         else:
             # User doesn't exist, create invitation
+            current_user_info = auth_manager.get_current_user()['user']
+            inviter = db_manager.get_user_by_id(current_user_info['id'])
+            inviter_name = f"{inviter.first_name} {inviter.last_name}" if inviter else "משתמש לא ידוע"
+            
             invitation_data = {
                 'board_id': board_id,
                 'email': data['email'],
-                'invited_by': auth_manager.get_current_user()['user']['id'],
+                'invited_by': current_user_info['id'],
                 'role': data.get('role', UserRole.MEMBER.value),
                 'expires_at': (datetime.now() + timedelta(days=7)).isoformat()
             }
             
             invitation = db_manager.create_invitation(invitation_data)
+            
+            # Send invitation email
+            try:
+                email_sent = auth_manager.send_board_invitation_email(
+                    email=data['email'],
+                    inviter_name=inviter_name,
+                    board_name=board.name,
+                    invitation_token=invitation.token,
+                    app_config=app.config
+                )
+                
+                if email_sent:
+                    print(f"✅ Invitation email sent successfully to {data['email']} for board '{board.name}'")
+                else:
+                    print(f"⚠️ Failed to send invitation email to {data['email']}, but invitation was created")
+                    
+            except Exception as e:
+                print(f"❌ Error sending invitation email: {e}")
+                # Continue anyway - invitation was created
+            
             return jsonify({
                 'message': 'Invitation sent successfully',
                 'invitation_id': invitation.id
@@ -2146,6 +2784,65 @@ def create_app(config_name='default'):
             return jsonify({'message': 'Notification deleted'}), 200
         else:
             return jsonify({'error': 'Failed to delete notification'}), 500
+
+    @app.route('/api/auth/check-terms-acceptance', methods=['GET'])
+    @require_auth
+    def check_terms_acceptance():
+        """Check if current user has accepted the latest terms"""
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            user = db_manager.get_user_by_id(current_user['id'])
+            
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            return jsonify({
+                'accepted_terms': user.accepted_terms,
+                'terms_accepted_at': user.terms_accepted_at.isoformat() if user.terms_accepted_at else None,
+                'terms_version': user.terms_version,
+                'current_terms_version': '1.0'  # Update this when terms change
+            }), 200
+            
+        except Exception as e:
+            print(f"Error checking terms acceptance: {e}")
+            return jsonify({'error': 'Failed to check terms acceptance'}), 500
+
+
+
+
+
+    @app.route('/api/auth/accept-terms', methods=['POST'])
+    @require_auth
+    def accept_terms():
+        """Mark current terms as accepted by user"""
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            user = db_manager.get_user_by_id(current_user['id'])
+            
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            # Update terms acceptance
+            update_data = {
+                'accepted_terms': True,
+                'terms_accepted_at': datetime.utcnow(),
+                'terms_version': '1.0'
+            }
+            
+            success = db_manager.update_user(current_user['id'], update_data)
+            
+            if success:
+                return jsonify({
+                    'message': 'Terms accepted successfully',
+                    'accepted_at': datetime.utcnow().isoformat(),
+                    'terms_version': '1.0'
+                }), 200
+            else:
+                return jsonify({'error': 'Failed to update terms acceptance'}), 500
+                
+        except Exception as e:
+            print(f"❌ Terms acceptance update error: {e}")
+            return jsonify({'error': 'Failed to update terms acceptance'}), 500
 
     return app
 

@@ -5,7 +5,7 @@ from flask_jwt_extended import (
     verify_jwt_in_request, get_jwt
 )
 from flask_bcrypt import Bcrypt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 import os
 import random
@@ -66,23 +66,40 @@ class AuthManager:
                 'code': 409
             }
 
-        if self.db.get_user_by_username(user_data['username']):
-            return {
-                'valid': False,
-                'error': 'Username already taken',
-                'code': 409
-            }
+
 
         # Hash password
         password_hash = bcrypt.generate_password_hash(user_data['password']).decode('utf-8')
 
-        # Create user
+        # Check if terms are accepted
+        if not user_data.get('accepted_terms'):
+            return {
+                'valid': False,
+                'error': 'Terms and conditions must be accepted',
+                'code': 400
+            }
+        
+        # Check if terms acceptance timestamp is provided
+        if not user_data.get('terms_accepted_at'):
+            return {
+                'valid': False,
+                'error': 'Terms acceptance timestamp is required',
+                'code': 400
+            }
+
+        # Generate username from email
+        username = user_data['email'].split('@')[0]
+        
+        # Create user with terms acceptance info
         user = self.db.create_user({
             'email': user_data['email'],
-            'username': user_data['username'],
+            'username': username,
             'password_hash': password_hash,
             'first_name': user_data['first_name'],
-            'last_name': user_data['last_name']
+            'last_name': user_data['last_name'],
+            'accepted_terms': True,
+            'terms_accepted_at': datetime.now(timezone.utc),
+            'terms_version': '1.0'  # You can update this when terms change
         })
 
         # Generate tokens
@@ -267,7 +284,7 @@ class AuthManager:
 
     def _validate_user_data(self, user_data: dict) -> dict:
         """Validate user registration data"""
-        required_fields = ['email', 'username', 'password', 'first_name', 'last_name']
+        required_fields = ['email', 'password', 'first_name', 'last_name']
         
         for field in required_fields:
             if field not in user_data or not user_data[field]:
@@ -287,20 +304,7 @@ class AuthManager:
                 'code': 400
             }
 
-        # Validate username
-        if len(user_data['username']) < 3:
-            return {
-                'valid': False,
-                'error': 'Username must be at least 3 characters long',
-                'code': 400
-            }
 
-        if not re.match(r'^[a-zA-Z0-9_]+$', user_data['username']):
-            return {
-                'valid': False,
-                'error': 'Username can only contain letters, numbers, and underscores',
-                'code': 400
-            }
 
         # Validate password
         if len(user_data['password']) < 8:
@@ -381,6 +385,122 @@ class AuthManager:
             print(f"❌ Unexpected error sending email: {e}")
             return False
     
+    def send_board_invitation_email(self, email: str, inviter_name: str, board_name: str, invitation_token: str, app_config: dict) -> bool:
+        """Send board invitation email via Brevo"""
+        if not self.brevo_client:
+            print("❌ Brevo client not initialized")
+            return False
+            
+        try:
+            # Create app download link with invitation token for tracking
+            app_url = app_config.get('APP_URL', 'https://homis-app.com')  # Update with your actual app URL
+            download_link = f"{app_url}/download?invitation={invitation_token}"
+            
+            send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+                to=[{"email": email}],
+                sender={"name": "Homis Team", "email": "sarusiziv96@gmail.com"},  # Update with your verified email
+                subject=f"הזמנה ללוח הוצאות {board_name} - Homis",
+                html_content=f"""
+                <div dir="rtl" style="font-family: Arial, sans-serif; text-align: center; padding: 30px; background-color: #f8f9fa;">
+                    <div style="background-color: white; border-radius: 12px; padding: 40px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto;">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <h1 style="color: #3498db; font-size: 36px; margin: 0;">💰 Homis</h1>
+                            <p style="color: #7f8c8d; font-size: 14px; margin: 5px 0;">ניהול הוצאות משותפות</p>
+                        </div>
+                        
+                        <h2 style="color: #2c3e50; margin-bottom: 20px;">🎉 הוזמנת להצטרף ללוח הוצאות!</h2>
+                        
+                        <div style="background-color: #e8f4fd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                            <p style="font-size: 16px; color: #2c3e50; margin: 0;">
+                                <strong>{inviter_name}</strong> הזמין אותך להצטרף ללוח הוצאות:
+                            </p>
+                            <h3 style="color: #3498db; margin: 10px 0; font-size: 24px;">"{board_name}"</h3>
+                        </div>
+                        
+                        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+                            Homis היא אפליקציה לניהול הוצאות משותפות שמאפשרת לך ולחבריך לעקוב אחר ההוצאות, לחלוק עלויות ולנהל חובות בצורה פשוטה ונוחה.
+                        </p>
+                        
+                        <div style="background-color: #e8f4fd; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                            <h4 style="color: #2c3e50; margin: 0 0 15px 0;">💫 איך להצטרף:</h4>
+                            <ol style="color: #555; text-align: right; padding-right: 20px; margin: 0;">
+                                <li style="margin-bottom: 8px;">הורד את אפליקציית Homis מחנות האפליקציות</li>
+                                <li style="margin-bottom: 8px;">צור משתמש חדש עם כתובת המייל הזו: <strong style="color: #3498db;">{email}</strong></li>
+                                <li style="margin-bottom: 8px;">הלוח "{board_name}" יופיע לך אוטומטית!</li>
+                            </ol>
+                        </div>
+                        
+                        <div style="margin: 30px 0;">
+                            <a href="{download_link}" 
+                               style="background-color: #3498db; color: white; padding: 15px 30px; text-decoration: none; 
+                                      border-radius: 8px; font-size: 18px; font-weight: bold; display: inline-block;">
+                                📱 הורד את האפליקציה
+                            </a>
+                        </div>
+                        
+                        <div style="background-color: #fff3cd; border-radius: 8px; padding: 15px; margin: 20px 0; border: 1px solid #ffeaa7;">
+                            <p style="color: #856404; margin: 0; font-size: 14px;">
+                                ⏰ ההזמנה תקפה למשך 7 ימים
+                            </p>
+                        </div>
+                        
+                        <hr style="border: none; border-top: 1px solid #ecf0f1; margin: 30px 0;">
+                        
+                        <div style="text-align: center;">
+                            <h4 style="color: #2c3e50; margin-bottom: 15px;">💡 מה תוכל לעשות ב-Homis?</h4>
+                            <div style="text-align: right; color: #555;">
+                                <p>📊 לעקוב אחר הוצאות משותפות</p>
+                                <p>💳 לחלוק עלויות בצורה הוגנת</p>
+                                <p>📱 לקבל התראות על הוצאות חדשות</p>
+                                <p>📈 לראות סיכומים חודשיים</p>
+                                <p>🔄 לנהל חובות ותשלומים</p>
+                            </div>
+                        </div>
+                        
+                        <p style="color: #7f8c8d; font-size: 12px; margin-top: 30px;">
+                            אם לא ביקשת הזמנה זו, אנא התעלם מהודעה זו. ההזמנה תפוג אוטומטית לאחר 7 ימים.
+                        </p>
+                    </div>
+                </div>
+                """,
+                text_content=f"""
+                הוזמנת להצטרף ללוח הוצאות ב-Homis!
+                
+                {inviter_name} הזמין אותך להצטרף ללוח הוצאות "{board_name}".
+                
+                Homis היא אפליקציה לניהול הוצאות משותפות שמאפשרת לך ולחבריך לעקוב אחר ההוצאות, לחלוק עלויות ולנהל חובות בצורה פשוטה ונוחה.
+                
+                איך להצטרף:
+                1. הורד את אפליקציית Homis מחנות האפליקציות
+                2. צור משתמש חדש עם כתובת המייל הזו: {email}
+                3. הלוח "{board_name}" יופיע לך אוטומטית!
+                
+                להורדת האפליקציה: {download_link}
+                
+                ההזמנה תקפה למשך 7 ימים.
+                
+                מה תוכל לעשות ב-Homis:
+                • לעקוב אחר הוצאות משותפות
+                • לחלוק עלויות בצורה הוגנת
+                • לקבל התראות על הוצאות חדשות
+                • לראות סיכומים חודשיים
+                • לנהל חובות ותשלומים
+                
+                אם לא ביקשת הזמנה זו, אנא התעלם מהודעה זו.
+                """
+            )
+            
+            api_response = self.brevo_client.send_transac_email(send_smtp_email)
+            print(f"✅ Board invitation email sent successfully to {email} for board '{board_name}'")
+            return True
+            
+        except ApiException as e:
+            print(f"❌ Failed to send board invitation email: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error sending invitation email: {e}")
+            return False
+    
     def send_verification_code(self, user_data: dict) -> dict:
         """Send verification code for registration"""
         # Convert email to lowercase
@@ -399,12 +519,7 @@ class AuthManager:
                 'code': 409
             }
 
-        if self.db.get_user_by_username(user_data['username']):
-            return {
-                'valid': False,
-                'error': 'Username already exists',
-                'code': 409
-            }
+
 
         # Check if there's already a pending registration for this email
         existing_pending_email = self.db.get_pending_registration(user_data['email'])
@@ -413,12 +528,7 @@ class AuthManager:
             self.db.delete_pending_registration(user_data['email'])
             print(f"🔄 Removed existing pending registration for email: {user_data['email']}")
 
-        # Check if there's a pending registration with this username (but different email)
-        existing_pending_username = self.db.get_pending_registration_by_username(user_data['username'])
-        if existing_pending_username and existing_pending_username.email != user_data['email']:
-            # Delete the existing pending registration with the same username
-            self.db.delete_pending_registration(existing_pending_username.email)
-            print(f"🔄 Removed existing pending registration for username: {user_data['username']} (email: {existing_pending_username.email})")
+
 
         # Generate verification code
         verification_code = self._generate_verification_code()
@@ -427,16 +537,22 @@ class AuthManager:
         # Hash password for storage
         password_hash = bcrypt.generate_password_hash(user_data['password']).decode('utf-8')
 
-        # Store pending registration
+        # Generate username from email
+        username = user_data['email'].split('@')[0]
+        
+        # Store pending registration with terms acceptance info
         self.db.create_pending_registration({
             'email': user_data['email'],
-            'username': user_data['username'],
+            'username': username,
             'password_hash': password_hash,
             'first_name': user_data['first_name'],
             'last_name': user_data['last_name'],
             'verification_code': verification_code,
             'expiry_time': expiry_time.isoformat(),  # Convert to string
-            'attempts': 0
+            'attempts': 0,
+            'accepted_terms': user_data.get('accepted_terms', True),
+            'terms_accepted_at': user_data.get('terms_accepted_at', datetime.now().isoformat()),
+            'terms_version': '1.0'
         })
 
         # Send verification email
@@ -512,23 +628,51 @@ class AuthManager:
                 'code': 400
             }
 
-        # Create user in database
+        # Create user in database with terms acceptance info from pending registration
         user = self.db.create_user({
             'email': pending_reg.email,
             'username': pending_reg.username,
             'password_hash': pending_reg.password_hash,
             'first_name': pending_reg.first_name,
-            'last_name': pending_reg.last_name
+            'last_name': pending_reg.last_name,
+            'accepted_terms': getattr(pending_reg, 'accepted_terms', True),
+            'terms_accepted_at': getattr(pending_reg, 'terms_accepted_at', datetime.now(timezone.utc)),
+            'terms_version': getattr(pending_reg, 'terms_version', '1.0')
         })
 
         # Clean up pending registration
         self.db.delete_pending_registration(email)
 
+        # 🎉 NEW: Check for pending invitations and auto-join boards
+        print(f"🔍 Checking for pending invitations for user {user.id} with email {email}")
+        pending_invitations = self.db.get_pending_invitations_by_email(email)
+        boards_joined = []
+        
+        if pending_invitations:
+            print(f"🎉 Found {len(pending_invitations)} pending invitation(s) for {email}")
+            
+            for invitation in pending_invitations:
+                try:
+                    print(f"🔍 Processing invitation {invitation.id} for board {invitation.board_id}")
+                    # Accept the invitation automatically
+                    success = self.db.accept_invitation(invitation.id, user.id)
+                    if success:
+                        board = self.db.get_board_by_id(invitation.board_id)
+                        if board:
+                            boards_joined.append({
+                                'board_id': board.id,
+                                'board_name': board.name,
+                                'role': invitation.role
+                            })
+                            print(f"✅ Automatically joined user {user.id} to board '{board.name}' with role '{invitation.role}'")
+                except Exception as e:
+                    print(f"❌ Error accepting invitation {invitation.id}: {e}")
+
         # Generate tokens
         access_token = create_access_token(identity=user.id)
         refresh_token = create_refresh_token(identity=user.id)
 
-        return {
+        response_data = {
             'valid': True,
             'user': {
                 'id': user.id,
@@ -541,6 +685,13 @@ class AuthManager:
             'access_token': access_token,
             'refresh_token': refresh_token
         }
+        
+        # Add information about automatically joined boards
+        if boards_joined:
+            response_data['boards_joined'] = boards_joined
+            print(f"✅ User {user.id} automatically joined {len(boards_joined)} board(s)")
+
+        return response_data
     
     def _send_password_reset_email(self, email: str, code: str, first_name: str) -> bool:
         """Send password reset email via Brevo"""

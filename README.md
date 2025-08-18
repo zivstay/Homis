@@ -14,7 +14,9 @@ A React Native mobile application for managing shared expenses with a profession
 - Create and manage multiple expense boards
 - Board selection and switching
 - Role-based permissions (Owner, Admin, Member, Viewer)
-- Board member invitations
+- **Smart board invitations** with beautiful email templates
+- **Automatic user registration and board joining** via invitation links
+- Support for multiple pending invitations per email
 
 ### 💰 Expense Management
 - Add expenses with categories and descriptions
@@ -132,6 +134,14 @@ API_BASE_URL=http://localhost:5000/api
 - **Admin**: Can manage expenses and members
 - **Member**: Can add expenses and view data
 - **Viewer**: Read-only access
+
+### 📧 Smart Invitation System
+- Beautiful, professional Hebrew email invitations
+- Automatic user registration when clicking invitation links
+- Support for multiple pending invitations per email address
+- 7-day expiration with secure token validation
+- Automatic board joining after successful registration
+- Professional email templates with board and inviter information
 
 ## 🔒 Security Features
 
