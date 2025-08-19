@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
+  FlatList,
   Modal,
   Platform,
   ScrollView,
@@ -99,13 +100,18 @@ const SummaryScreen: React.FC = () => {
   // Function to get current period filters with fresh dates
   const getCurrentPeriodFilters = (): PeriodFilter[] => [
     {
+      label: 'השבוע',
+      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      endDate: new Date().toISOString(),
+    },
+    {
       label: 'החודש',
       startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
       endDate: new Date().toISOString(),
     },
     {
-      label: 'השבוע',
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      label: '3 חודשים אחרונים',
+      startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
       endDate: new Date().toISOString(),
     },
     {
@@ -126,7 +132,7 @@ const SummaryScreen: React.FC = () => {
   useEffect(() => {
     if (!isInitialized && selectedBoard) {
       console.log('🔧 SummaryScreen: Initializing with default filters');
-      setSelectedPeriod(periodFilters[0]); // Set default to "החודש" (current month)
+      setSelectedPeriod(periodFilters[0]); // Set default to "השבוע" (current week)
       setSelectedBoards([selectedBoard.id]); // Set default to current selected board
       setIsInitialized(true);
     }
@@ -158,7 +164,7 @@ const SummaryScreen: React.FC = () => {
       
       // Reset to default period filter when board changes
       if (periodFilters.length > 0) {
-        setSelectedPeriod(periodFilters[0]); // Reset to current month
+        setSelectedPeriod(periodFilters[0]); // Reset to current week
         setCustomPeriod(null); // Clear custom period
       }
     }
@@ -252,6 +258,7 @@ const SummaryScreen: React.FC = () => {
         }
 
         console.log('🔵 SummaryScreen: Loading summary with filters:', filters);
+        console.log('📅 SummaryScreen: Selected period label:', selectedPeriod.label);
         const result = await apiService.getExpensesSummary(filters);
         
         if (result.success && result.data) {
@@ -327,6 +334,7 @@ const SummaryScreen: React.FC = () => {
         }
 
         console.log('🔵 SummaryScreen: Loading debts with filters:', filters);
+        console.log('📅 SummaryScreen: Selected period label for debts:', selectedPeriod.label);
         const result = await apiService.getAllDebts(filters);
         if (result.success && result.data) {
           setDebts(result.data.debts as DebtWithBoard[]);
@@ -1031,8 +1039,7 @@ const SummaryScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Period Filters - TEMPORARILY DISABLED */}
-      {/* 
+      {/* Period Filters */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>סינון לפי תקופה</Text>
         <FlatList
@@ -1044,7 +1051,6 @@ const SummaryScreen: React.FC = () => {
           style={styles.filterList}
         />
       </View>
-      */}
 
       {/* Board Filters - TEMPORARILY DISABLED */}
       {/* 
