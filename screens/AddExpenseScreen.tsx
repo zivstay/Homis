@@ -94,7 +94,7 @@ const AddExpenseScreen: React.FC = () => {
   useEffect(() => {
     if (selectedBoard) {
       loadCategories();
-      // Set current user as default payer
+      // Always set current user as payer - user can only add expenses for themselves
       if (user) {
         setSelectedPaidBy(user.id);
       }
@@ -504,34 +504,7 @@ const AddExpenseScreen: React.FC = () => {
     );
   };
 
-  const renderPaidBySelector = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>שולם על ידי</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={styles.memberContainer}>
-          {boardMembers.map((member) => (
-            <TouchableOpacity
-              key={member.user_id}
-              style={[
-                styles.memberButton,
-                selectedPaidBy === member.user_id && styles.selectedMemberButton,
-              ]}
-              onPress={() => setSelectedPaidBy(member.user_id)}
-            >
-              <Text
-                style={[
-                  styles.memberButtonText,
-                  selectedPaidBy === member.user_id && styles.selectedMemberButtonText,
-                ]}
-              >
-                {member.user.first_name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-    </View>
-  );
+
 
   return (
     <KeyboardAvoidingView
@@ -579,7 +552,7 @@ const AddExpenseScreen: React.FC = () => {
               />
             </View>
 
-            {renderPaidBySelector()}
+
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
@@ -655,17 +628,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingTop: 16,
-    paddingBottom: 24,
+    padding: 20,
+    paddingTop: 24,
+    paddingBottom: 32,
     flexGrow: 1, // This ensures the content fills the available space
   },
   form: {
     backgroundColor: 'white',
     borderRadius: 12,
-    padding: 16,
-    marginTop: 16, // Increased from 8 to 16
-    marginBottom: 16, // Increased from 8 to 16
+    padding: 20,
+    marginTop: 20, // Increased from 16 to 20
+    marginBottom: 20, // Increased from 16 to 20
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -736,31 +709,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  memberContainer: {
-    flexDirection: 'row',
-    paddingVertical: 8,
-  },
-  memberButton: {
-    borderWidth: 2,
-    borderColor: '#ddd',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-    backgroundColor: 'white',
-  },
-  selectedMemberButton: {
-    borderColor: '#3498db',
-    backgroundColor: '#ebf3fd',
-  },
-  memberButtonText: {
-    fontSize: 14,
-    color: '#2c3e50',
-  },
-  selectedMemberButtonText: {
-    fontWeight: 'bold',
-    color: '#3498db',
-  },
+
   recurringContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -938,6 +887,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+
   bottomSpacing: {
     height: 60, // Increased from 40 to 60
   },
