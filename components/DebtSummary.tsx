@@ -38,8 +38,8 @@ export function DebtSummary({
   };
 
   const getBalanceDescription = (balance: number) => {
-    if (balance > 0) return 'צריכים להחזיר לי';
-    if (balance < 0) return 'אני צריך להחזיר';
+    if (balance > 0) return 'חייבים לי';
+    if (balance < 0) return 'אני חייב';
     return 'מאוזן';
   };
 
@@ -47,7 +47,7 @@ export function DebtSummary({
     <ThemedView style={styles.container}>
       <View style={styles.header}>
         <ThemedText type="subtitle" style={styles.title}>
-          סיכום חובות
+          סיכום התחשבנויות
         </ThemedText>
         <View style={styles.balanceContainer}>
           <Ionicons
@@ -95,7 +95,7 @@ export function DebtSummary({
         <View style={styles.unpaidContainer}>
           <Ionicons name="alert-circle" size={16} color="#FF9800" />
           <ThemedText style={styles.unpaidText}>
-            {unpaidDebtsCount} חובות לא שולמו
+            {unpaidDebtsCount} התחשבנויות לא שולמו
           </ThemedText>
         </View>
       )}

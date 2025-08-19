@@ -75,13 +75,13 @@ export function AddDebtModal({
     if (debtType === 'i-owe') {
       finalFromUser = currentUser;
       if (!finalToUser.trim()) {
-        Alert.alert('שגיאה', 'אנא בחר למי אתה צריך להחזיר');
+        Alert.alert('שגיאה', 'אנא בחר למי אתה חייב');
         return;
       }
     } else {
       finalToUser = currentUser;
       if (!finalFromUser.trim()) {
-        Alert.alert('שגיאה', 'אנא בחר מי צריך להחזיר לך');
+        Alert.alert('שגיאה', 'אנא בחר מי חייב לך');
         return;
       }
     }
@@ -90,7 +90,7 @@ export function AddDebtModal({
       fromUser: finalFromUser,
       toUser: finalToUser,
       amount: parseFloat(amount),
-      description: description.trim() || 'חוב',
+      description: description.trim() || 'חשבנות',
       isPaid: false,
     };
 
@@ -122,7 +122,7 @@ export function AddDebtModal({
             <Ionicons name="close" size={24} color="#007AFF" />
           </TouchableOpacity>
           <ThemedText type="subtitle" style={styles.title}>
-            {isEditing ? 'ערוך חוב' : 'הוסף חוב חדש'}
+            {isEditing ? 'ערוך התחשבנות' : 'הוסף התחשבנות חדשה'}
           </ThemedText>
           <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
             <ThemedText style={styles.saveButtonText}>שמור</ThemedText>
@@ -132,7 +132,7 @@ export function AddDebtModal({
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Debt Type Selection */}
           <View style={styles.inputGroup}>
-            <ThemedText style={styles.label}>סוג החוב</ThemedText>
+            <ThemedText style={styles.label}>סוגחשבנות</ThemedText>
             <View style={styles.debtTypeSelector}>
               <TouchableOpacity
                 style={[
@@ -152,7 +152,7 @@ export function AddDebtModal({
                     debtType === 'i-owe' && styles.debtTypeTextActive,
                   ]}
                 >
-                  אני צריך להחזיר
+                  אני חייב
                 </ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
@@ -173,7 +173,7 @@ export function AddDebtModal({
                     debtType === 'owe-me' && styles.debtTypeTextActive,
                   ]}
                 >
-                  צריך להחזיר לי
+                  חייב לי
                 </ThemedText>
               </TouchableOpacity>
             </View>
@@ -182,7 +182,7 @@ export function AddDebtModal({
           {/* User Selection */}
           <View style={styles.inputGroup}>
             <ThemedText style={styles.label}>
-              {debtType === 'i-owe' ? 'אני צריך להחזיר ל:' : 'צריך להחזיר לי:'}
+              {debtType === 'i-owe' ? 'אני חייב ל:' : 'חייב לי:'}
             </ThemedText>
             <View style={styles.userGrid}>
               {otherUsers.map((user) => (
@@ -239,7 +239,7 @@ export function AddDebtModal({
               style={[styles.textInput, styles.textArea]}
               value={description}
               onChangeText={setDescription}
-              placeholder="הוסף תיאור לחוב"
+              placeholder="הוסף תיאור לחשבנות"
               placeholderTextColor="#999"
               textAlign="right"
               multiline

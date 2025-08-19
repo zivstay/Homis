@@ -60,8 +60,8 @@ export default function DebtsScreen() {
 
   const handleDeleteDebt = (debtId: string) => {
     Alert.alert(
-      'מחיקת חוב',
-      'האם אתה בטוח שברצונך למחוק חוב זה?',
+      'מחיקת התחשבנות',
+      'האם אתה בטוח שברצונך למחוק התחשבנות זו?',
       [
         { text: 'ביטול', style: 'cancel' },
         {
@@ -76,7 +76,7 @@ export default function DebtsScreen() {
   const handleMarkAsPaid = (debtId: string) => {
     Alert.alert(
       'סימון כשולם',
-      'האם אתה בטוח שברצונך לסמן חוב זה כשולם?',
+      'האם אתה בטוח שברצונך לסמן התחשבנות זו כשולמה?',
       [
         { text: 'ביטול', style: 'cancel' },
         {
@@ -129,7 +129,7 @@ export default function DebtsScreen() {
       <ThemedView style={styles.container}>
         <View style={styles.header}>
           <ThemedText type="title" style={styles.headerTitle}>
-            מעקב חובות
+            מעקב התחשבנויות
           </ThemedText>
           <TouchableOpacity
             style={styles.addButton}
@@ -166,16 +166,16 @@ export default function DebtsScreen() {
               <Ionicons name="card-outline" size={64} color="#CCC" />
               <ThemedText style={styles.emptyText}>
                 {filter === 'all' 
-                  ? 'אין חובות להצגה'
+                  ? 'אין התחשבנויות להצגה'
                   : filter === 'unpaid'
-                    ? 'אין חובות לא שולמו'
-                    : 'אין חובות שולמו'
+                    ? 'אין התחשבנויות לא שולמו'
+                    : 'אין התחשבנויות שולמו'
                 }
               </ThemedText>
               <ThemedText style={styles.emptySubtext}>
                 {filter === 'all' 
-                  ? 'הוסף חוב ראשון כדי להתחיל לעקוב אחר החובות שלך'
-                  : 'כל החובות כבר שולמו'
+                  ? 'הוסף התחשבנות ראשונה כדי להתחיל לעקוב אחרחשבנויות שלך'
+                  : 'כלחשבנויות כבר שולמו'
                 }
               </ThemedText>
             </View>

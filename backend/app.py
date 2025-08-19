@@ -2862,63 +2862,8 @@ def create_app(config_name='default'):
             final_balance = current_balance + new_debt_to_payer
             print(f"💰 Final balance after expense: {final_balance}")
             
-            # Now handle the offsetting logic
-            if current_balance > 0 and new_debt_to_payer > 0:
-                # Member owes payer money, and now member owes even more → offset what we can
-                amount_to_offset = min(current_balance, new_debt_to_payer)
-                print(f"💰 Can offset {amount_to_offset} from existing member debts")
-                
-                # Offset existing debts where member owes payer
-                offset_remaining = amount_to_offset
-                member_debts_to_payer = [debt for debt in unpaid_debts 
-                                       if debt.from_user_id == member_id and debt.to_user_id == payer_id]
-                
-                for debt in sorted(member_debts_to_payer, key=lambda x: x.amount):
-                    if offset_remaining <= 0:
-                        break
-                    
-                    # Get the actual DB debt object
-                    db_debt = Debt.query.get(debt.id)
-                    if not db_debt:
-                        continue
-                        
-                    if debt.amount <= offset_remaining:
-                        # Close this debt completely
-                        print(f"💰 Closing member debt {debt.id} completely (amount: {debt.amount}) - OFFSET!")
-                        db_debt.is_paid = True
-                        db_debt.paid_at = datetime.utcnow()
-                        db_debt.paid_amount = db_debt.original_amount or db_debt.amount
-                        if db_debt.original_amount is None:
-                            db_debt.original_amount = db_debt.amount
-                        offset_remaining -= debt.amount
-                    else:
-                        # Partially reduce this debt
-                        old_amount = debt.amount
-                        db_debt.amount -= offset_remaining
-                        db_debt.paid_amount = (db_debt.paid_amount or 0) + offset_remaining
-                        if db_debt.original_amount is None:
-                            db_debt.original_amount = old_amount
-                        print(f"💰 Partially reducing member debt {debt.id}: {old_amount} → {db_debt.amount} - OFFSET!")
-                        offset_remaining = 0
-                
-                # Create new debt only for the remaining amount after offset
-                remaining_debt = new_debt_to_payer - amount_to_offset
-                if remaining_debt > 0:
-                    debt_data = {
-                        'board_id': expense.board_id,
-                        'expense_id': expense.id,
-                        'from_user_id': member_id,
-                        'to_user_id': payer_id,
-                        'amount': remaining_debt,
-                        'description': f"{expense.category} - {expense.description or 'Shared expense'}"
-                    }
-                    new_debt = db_manager.create_debt(debt_data)
-                    print(f"💰 Created new debt {new_debt.id}: {member_name} owes {remaining_debt} to payer (after offset)")
-                    debts_processed.append(new_debt.id)
-                else:
-                    print(f"💰 Perfect offset! No new debt needed - existing debt fully covers this expense")
-            
-            elif current_balance < 0:
+            # Now handle the offsetting logic - only offset when there are opposite direction debts
+            if current_balance < 0 and new_debt_to_payer > 0:
                 # Payer owes member money, new expense creates debt other direction → offset!
                 amount_to_offset = min(abs(current_balance), new_debt_to_payer)
                 print(f"💰 Can offset {amount_to_offset} - payer owes member, member owes from expense")
@@ -2974,7 +2919,11 @@ def create_app(config_name='default'):
                     print(f"💰 Perfect offset! No new debt needed - fully offset by existing debts")
             
             else:
-                # current_balance == 0, just create new debt
+                # No offsetting needed - just create new debt
+                # This covers cases where:
+                # 1. current_balance == 0 (no existing debts)
+                # 2. current_balance > 0 (member already owes payer - debts accumulate)
+                print(f"💰 No offsetting needed - creating new debt")
                 debt_data = {
                     'board_id': expense.board_id,
                     'expense_id': expense.id,
@@ -2984,7 +2933,10 @@ def create_app(config_name='default'):
                     'description': f"{expense.category} - {expense.description or 'Shared expense'}"
                 }
                 new_debt = db_manager.create_debt(debt_data)
-                print(f"💰 Created new debt {new_debt.id}: {member_name} owes {new_debt_to_payer} to payer (no existing debts)")
+                if current_balance > 0:
+                    print(f"💰 Created new debt {new_debt.id}: {member_name} owes {new_debt_to_payer} to payer (accumulating with existing {current_balance})")
+                else:
+                    print(f"💰 Created new debt {new_debt.id}: {member_name} owes {new_debt_to_payer} to payer (no existing debts)")
                 debts_processed.append(new_debt.id)
 
         

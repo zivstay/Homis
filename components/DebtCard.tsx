@@ -44,8 +44,8 @@ export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCard
 
   const getStatusText = () => {
     if (debt.isPaid) return 'הוחזר';
-    if (isOwedByMe) return 'אני צריך להחזיר';
-    return 'צריך להחזיר לי';
+    if (isOwedByMe) return 'אני חייב';
+    return 'חייב לי';
   };
 
   const getDebtTypeColor = () => {
@@ -90,10 +90,10 @@ export function DebtCard({ debt, onMarkAsPaid, onDelete, currentUser }: DebtCard
         <View style={styles.debtDetails}>
           <ThemedText style={styles.debtDescription}>
             {isOwedToMe 
-              ? `${debt.fromUser} צריך להחזיר לי`
+              ? `${debt.fromUser} חייב לי`
               : isOwedByMe 
-                ? `אני צריך להחזיר ל${debt.toUser}`
-                : `${debt.fromUser} צריך להחזיר ל${debt.toUser}`
+                ? `אני חייב ל${debt.toUser}`
+                : `${debt.fromUser} חייב ל${debt.toUser}`
             }
           </ThemedText>
           

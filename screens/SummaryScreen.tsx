@@ -1216,7 +1216,7 @@ const SummaryScreen: React.FC = () => {
           {debtSummary && (
             <View style={styles.summaryCards}>
               <View style={styles.summaryCard}>
-                <Text style={styles.summaryCardTitle}>אני צריך להחזיר</Text>
+                <Text style={styles.summaryCardTitle}>אני חייב</Text>
                 <Text style={styles.summaryCardAmount}>
                   {formatCurrencyLocal(debtSummary.total_owed)}
                 </Text>
@@ -1280,8 +1280,9 @@ const SummaryScreen: React.FC = () => {
                     <View key={index} style={styles.personalDebtItem}>
                       <View style={styles.personalDebtRowInfo}>
                         <Text style={styles.personalDebtText}>
+                          <Text style={styles.personalDebtDescription}>אני צריך להחזיר ל: </Text>
                           <Text style={styles.personalDebtName}>{debt.name}</Text>
-                          <Text style={styles.personalDebtDescription}> אני חייב לו סה"כ </Text>
+                          <Text style={styles.personalDebtDescription}> סה"כ </Text>
                           <Text style={styles.personalDebtAmount}>{formatCurrencyLocal(debt.amount)}</Text>
                         </Text>
                       </View>
@@ -1300,8 +1301,8 @@ const SummaryScreen: React.FC = () => {
             <View style={styles.infoBox}>
               <Text style={styles.infoTitle}>💡 קיזוז אוטומטי</Text>
               <Text style={styles.infoText}>
-                המערכת מבצעת קיזוז אוטומטי של חובות הדדיים. 
-                חובות שקוזזו מסומנים כ"שולם" ומופיעים רק בסינון "שולם" או "הכל".
+                המערכת מבצעת קיזוז אוטומטי של התחשבנויות הדדיות. 
+                התחשבנויות שקוזזו מסומנות כ"שולם" ומופיעות רק בסינון "שולם" או "הכל".
               </Text>
             </View>
             
@@ -1353,7 +1354,7 @@ const SummaryScreen: React.FC = () => {
                   onPress={() => setDebtFilter('owe_me')}
                 >
                   <Text style={[styles.debtFilterText, debtFilter === 'owe_me' && styles.selectedDebtFilterText]}>
-                    חייבים לי
+                    צריכים להחזיר לי
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -1361,7 +1362,7 @@ const SummaryScreen: React.FC = () => {
                   onPress={() => setDebtFilter('i_owe')}
                 >
                   <Text style={[styles.debtFilterText, debtFilter === 'i_owe' && styles.selectedDebtFilterText]}>
-                    אני חייב
+                    אני צריך להחזיר
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1544,7 +1545,7 @@ const SummaryScreen: React.FC = () => {
                 <Text style={styles.paymentIcon}>💰</Text>
               </View>
               <Text style={styles.professionalModalTitle}>רישום תשלום</Text>
-              <Text style={styles.professionalModalSubtitle}>עדכון יתרת חוב</Text>
+              <Text style={styles.professionalModalSubtitle}>עדכון יתרת חשבון</Text>
             </View>
 
             {selectedDebtor && (
@@ -1563,7 +1564,7 @@ const SummaryScreen: React.FC = () => {
                     </View>
                   </View>
                   <View style={styles.debtorAmountContainer}>
-                    <Text style={styles.debtorAmountLabel}>סה"כ חוב</Text>
+                    <Text style={styles.debtorAmountLabel}>סה"כ חשבון</Text>
                     <Text style={styles.debtorAmount}>{formatCurrencyLocal(selectedDebtor.amount)}</Text>
                   </View>
                 </View>
@@ -1650,17 +1651,31 @@ const SummaryScreen: React.FC = () => {
                 <Text style={styles.successIcon}>✅</Text>
               </View>
               <Text style={styles.successTitle}>תשלום נקלט בהצלחה!</Text>
-              <Text style={styles.successSubtitle}>יתרת החוב עודכנה</Text>
+              <Text style={styles.successSubtitle}>יתרת החשבון עודכנה</Text>
             </View>
 
             {/* Payment Summary */}
             {paymentResults && (
               <View style={styles.successBody}>
-                {/* Amount processed */}
+                {/* Total remaining debt */}
                 <View style={styles.processedAmountCard}>
-                  <Text style={styles.processedAmountLabel}>סכום שעובד</Text>
+                  <Text style={styles.processedAmountLabel}>יתרת החשבון הכולל</Text>
                   <Text style={styles.processedAmount}>
-                    {formatCurrencyLocal(parseFloat(partialPaymentAmount) || 0)}
+                    {(() => {
+                      if (!paymentResults) return formatCurrencyLocal(0);
+                      
+                      // Calculate total remaining debt from payment results
+                      let totalRemainingDebt = 0;
+                      
+                      // Add remaining amounts from updated debts
+                      if (paymentResults.debts_updated) {
+                        paymentResults.debts_updated.forEach((debt: any) => {
+                          totalRemainingDebt += debt.remaining_amount;
+                        });
+                      }
+                      
+                      return formatCurrencyLocal(totalRemainingDebt);
+                    })()}
                   </Text>
                 </View>
 
