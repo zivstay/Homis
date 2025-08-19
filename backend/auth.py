@@ -315,14 +315,14 @@ class AuthManager:
             }
 
         # Validate names
-        if len(user_data['first_name']) < 2:
+        if len(user_data['first_name']) < 1:
             return {
                 'valid': False,
                 'error': 'First name must be at least 2 characters long',
                 'code': 400
             }
 
-        if len(user_data['last_name']) < 2:
+        if len(user_data['last_name']) < 1:
             return {
                 'valid': False,
                 'error': 'Last name must be at least 2 characters long',

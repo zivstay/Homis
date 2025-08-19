@@ -337,6 +337,8 @@ def create_app(config_name='default'):
         db_manager = PostgreSQLDatabaseManager(app)
         db_manager.initialize_default_data()
         db_manager.cleanup_expired_pending_registrations()
+        # Migrate existing debts to new format
+        db_manager.migrate_existing_debts_to_new_format()
     
     app.db_manager = db_manager
     
@@ -1959,10 +1961,10 @@ def create_app(config_name='default'):
             print(f"🔍 Member: {user.first_name} {user.last_name} (ID: {member.user_id})")
         
         if len(members) > 1:
-            print(f"🔍 Creating debts for expense...")
-            create_debts_for_expense(expense, members)
+            print(f"💰 Processing debts for expense...")
+            process_expense_debts(expense, members)
         else:
-            print(f"🔍 Only one member - no debts to create")
+            print(f"💰 Only one member - no debts to process")
         
         # Create notifications for all board members except the creator
         db_manager.create_expense_notification(expense, members, 'expense_added')
@@ -2044,6 +2046,8 @@ def create_app(config_name='default'):
                 updated_expense = next((e for e in updated_expense if e.id == expense_id), None)
                 if updated_expense:
                     db_manager.create_expense_notification(updated_expense, members, 'expense_updated')
+                
+
                 
                 return jsonify({'message': 'Expense updated successfully'}), 200
         
@@ -2321,6 +2325,102 @@ def create_app(config_name='default'):
         else:
             return jsonify({'error': 'Failed to mark debt as paid'}), 500
 
+    @app.route('/api/debts/process-partial-payment', methods=['POST'])
+    @require_auth
+    def process_partial_payment():
+        """Process partial payment between users"""
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+            
+            from_user_id = data.get('from_user_id')
+            payment_amount = data.get('payment_amount')
+            board_ids = data.get('board_ids', [])
+            
+            if not from_user_id or not payment_amount:
+                return jsonify({'error': 'from_user_id and payment_amount are required'}), 400
+            
+            if payment_amount <= 0:
+                return jsonify({'error': 'Payment amount must be positive'}), 400
+            
+            current_user_id = auth_manager.get_current_user()['user']['id']
+            
+            # Verify that the current user has access to the boards involved
+            user_boards = db_manager.get_user_boards(current_user_id)
+            user_board_ids = [board.id for board in user_boards]
+            
+            if board_ids:
+                # Check that all requested board_ids are accessible to the user
+                for board_id in board_ids:
+                    if board_id not in user_board_ids:
+                        return jsonify({'error': f'Access denied to board {board_id}'}), 403
+            else:
+                # If no specific boards, use all user's boards
+                board_ids = user_board_ids
+            
+            # Process the partial payment
+            result = db_manager.process_partial_payment_for_user(
+                from_user_id=from_user_id,
+                to_user_id=current_user_id,  # Current user is the one receiving payment
+                payment_amount=payment_amount,
+                board_ids=board_ids
+            )
+            
+            if result['success']:
+                return jsonify({
+                    'message': 'Partial payment processed successfully',
+                    'debts_closed': result['debts_closed'],
+                    'debts_updated': result['debts_updated'],
+                    'total_processed': result['total_processed']
+                }), 200
+            else:
+                return jsonify({'error': result['error']}), 400
+                
+        except Exception as e:
+            print(f"Error processing partial payment: {e}")
+            return jsonify({'error': 'Failed to process partial payment'}), 500
+
+    @app.route('/api/debts/auto-offset', methods=['POST'])
+    @require_auth
+    def auto_offset_debts():
+        """Automatically offset mutual debts between users"""
+        try:
+            data = request.get_json() or {}
+            board_ids = data.get('board_ids', [])
+            
+            current_user_id = auth_manager.get_current_user()['user']['id']
+            
+            # Get user's boards
+            user_boards = db_manager.get_user_boards(current_user_id)
+            user_board_ids = [board.id for board in user_boards]
+            
+            if board_ids:
+                # Check that all requested board_ids are accessible to the user
+                for board_id in board_ids:
+                    if board_id not in user_board_ids:
+                        return jsonify({'error': f'Access denied to board {board_id}'}), 403
+            else:
+                # If no specific boards, use all user's boards
+                board_ids = user_board_ids
+            
+            # Process debt offsets
+            result = db_manager.auto_offset_mutual_debts(current_user_id, board_ids)
+            
+            if result['success']:
+                return jsonify({
+                    'message': 'Debt offsets processed successfully',
+                    'offsets_processed': result['offsets_processed'],
+                    'total_amount_offset': result['total_amount_offset'],
+                    'details': result['details']
+                }), 200
+            else:
+                return jsonify({'error': result['error']}), 400
+                
+        except Exception as e:
+            print(f"Error processing debt offsets: {e}")
+            return jsonify({'error': 'Failed to process debt offsets'}), 500
+
     # Summary and Statistics routes
     @app.route('/api/expenses/summary', methods=['GET'])
     @require_auth
@@ -2407,12 +2507,24 @@ def create_app(config_name='default'):
     @app.route('/api/debts/all', methods=['GET'])
     @require_auth
     def get_all_debts():
-        """Get all debts for the current user across all boards"""
+        """Get all debts for the current user across all boards with filtering support"""
         current_user_id = auth_manager.get_current_user()['user']['id']
         print(f"🔍 === Loading debts for user: {current_user_id} ===")
         
+        # Get query parameters for filtering
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        board_ids = request.args.getlist('board_ids')
+        is_paid_param = request.args.get('is_paid')
+        
+        print(f"🔍 Filters received: start_date={start_date}, end_date={end_date}, board_ids={board_ids}, is_paid={is_paid_param}")
+        
         # Get user's boards
         user_boards = db_manager.get_user_boards(current_user_id)
+        
+        # Filter boards if specific board_ids requested
+        if board_ids:
+            user_boards = [board for board in user_boards if board.id in board_ids]
         
         print(f"🔍 User has access to {len(user_boards)} boards")
         for board in user_boards:
@@ -2430,7 +2542,43 @@ def create_app(config_name='default'):
             print(f"🔍 Found {len(board_debts)} debts in this board")
             
             for debt in board_debts:
-                print(f"🔍 Processing debt: {debt.from_user_id} -> {debt.to_user_id}, amount: {debt.amount}, paid: {debt.is_paid}")
+                print(f"🔍 Processing debt: {debt.from_user_id} -> {debt.to_user_id}, amount: {debt.amount}, paid: {debt.is_paid}, paid_amount: {debt.paid_amount}")
+                
+                # Apply is_paid filter if specified
+                if is_paid_param is not None:
+                    is_paid_filter = is_paid_param.lower() == 'true'
+                    if debt.is_paid != is_paid_filter:
+                        print(f"🔍 Skipping debt due to paid filter: required={is_paid_filter}, actual={debt.is_paid}")
+                        continue
+                    else:
+                        print(f"✅ Debt passed paid filter: required={is_paid_filter}, actual={debt.is_paid}")
+                
+                # Apply date filtering if specified (filter by expense creation date)
+                if start_date or end_date:
+                    try:
+                        # Get the expense to check its date
+                        expense = db_manager.get_expense_by_id(debt.expense_id)
+                        if expense:
+                            expense_date = normalize_expense_date(expense.date)
+                            
+                            # Check start date
+                            if start_date:
+                                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                                if expense_date < start_dt:
+                                    print(f"🔍 Skipping debt due to start date filter: expense_date={expense_date}, start_date={start_dt}")
+                                    continue
+                            
+                            # Check end date
+                            if end_date:
+                                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                                if expense_date > end_dt:
+                                    print(f"🔍 Skipping debt due to end date filter: expense_date={expense_date}, end_date={end_dt}")
+                                    continue
+                        else:
+                            print(f"🔍 Warning: Could not find expense {debt.expense_id} for debt {debt.id}")
+                    except Exception as e:
+                        print(f"🔍 Error applying date filter to debt {debt.id}: {e}")
+                        # Continue processing if date filtering fails
                 
                 # Get user names for display
                 from_user = db_manager.get_user_by_id(debt.from_user_id)
@@ -2439,7 +2587,7 @@ def create_app(config_name='default'):
                 from_user_name = f"{from_user.first_name} {from_user.last_name}" if from_user else "משתמש לא ידוע"
                 to_user_name = f"{to_user.first_name} {to_user.last_name}" if to_user else "משתמש לא ידוע"
                 
-                all_debts.append({
+                debt_data = {
                     'id': debt.id,
                     'board_id': debt.board_id,
                     'expense_id': debt.expense_id,
@@ -2452,8 +2600,13 @@ def create_app(config_name='default'):
                     'is_paid': debt.is_paid,
                     'paid_at': debt.paid_at,
                     'created_at': debt.created_at,
-                    'board_name': board.name
-                })
+                    'board_name': board.name,
+                    'original_amount': debt.original_amount,
+                    'paid_amount': debt.paid_amount
+                }
+                
+                print(f"✅ Adding debt to results: {debt.id}, paid={debt.is_paid}, amount={debt.amount}, paid_amount={debt.paid_amount}")
+                all_debts.append(debt_data)
                 
                 # Calculate summary
                 if debt.from_user_id == current_user_id:
@@ -2469,7 +2622,7 @@ def create_app(config_name='default'):
                         total_owed_to_me += debt.amount
         
         print(f"🔍 Final summary - Total owed: {total_owed}, Total owed to me: {total_owed_to_me}")
-        print(f"🔍 Total debts found: {len(all_debts)}")
+        print(f"🔍 Total debts found after filtering: {len(all_debts)}")
         
         return jsonify({
             'debts': all_debts,
@@ -2645,64 +2798,212 @@ def create_app(config_name='default'):
             print(f"❌ Error updating board categories: {str(e)}")
             return jsonify({'error': 'Failed to update categories'}), 500
 
-    # Helper function to create debts for an expense
-    def create_debts_for_expense(expense, members):
-        """Create debts for all members except the payer"""
-        print(f"🔍 === Creating debts for expense ===")
-        print(f"🔍 Expense ID: {expense.id}")
-        print(f"🔍 Expense amount: {expense.amount}")
-        print(f"🔍 Total members: {len(members)}")
-        print(f"🔍 Paid by: {expense.paid_by}")
+    # Helper function to process debts for an expense with smart offsetting
+    def process_expense_debts(expense, members):
+        """
+        Process debts for an expense with smart offsetting logic.
         
-        # Debug: Print all members
-        for i, member in enumerate(members):
-            user = db_manager.get_user_by_id(member.user_id)
-            print(f"🔍 Member {i+1}: {user.first_name} {user.last_name} (ID: {member.user_id})")
+        Logic:
+        1. Calculate how much each member owes for this expense
+        2. For each member, check existing debts with the payer
+        3. Offset existing debts where possible
+        4. Create new debts only for remaining amounts
+        """
+        from postgres_models import Debt
         
-        other_members = [member for member in members if member.user_id != expense.paid_by]
-        print(f"🔍 Other members (who owe money): {len(other_members)}")
+        print(f"💰 === Processing debts for expense ===")
+        print(f"💰 Expense ID: {expense.id}")
+        print(f"💰 Expense amount: {expense.amount}")
+        print(f"💰 Total members: {len(members)}")
+        print(f"💰 Paid by: {expense.paid_by}")
         
-        # Debug: Print other members
-        for i, member in enumerate(other_members):
-            user = db_manager.get_user_by_id(member.user_id)
-            print(f"🔍 Debtor {i+1}: {user.first_name} {user.last_name} (ID: {member.user_id})")
+        payer_id = expense.paid_by
+        other_members = [member for member in members if member.user_id != payer_id]
         
         if not other_members:
-            print("🔍 No other members - no debts to create")
+            print("💰 No other members - no debts to process")
             return
         
+        # Calculate how much each person owes
         total_people = len(members)
         amount_per_person = expense.amount / total_people
+        print(f"💰 Amount per person: {amount_per_person}")
         
-        print(f"🔍 Total people: {total_people}")
-        print(f"🔍 Amount per person: {amount_per_person}")
-        print(f"🔍 Each person owes to payer: {amount_per_person}")
+        debts_processed = []
         
-        debts_created = 0
         for member in other_members:
-            debt_data = {
-                'board_id': expense.board_id,
-                'expense_id': expense.id,
-                'from_user_id': member.user_id,
-                'to_user_id': expense.paid_by,
-                'amount': amount_per_person,
-                'description': f"{expense.category} - {expense.description or 'Shared expense'}"
-            }
-            print(f"🔍 Creating debt: {member.user_id} owes {amount_per_person} to {expense.paid_by}")
-            debt = db_manager.create_debt(debt_data)
-            print(f"🔍 Debt created with ID: {debt.id}")
-            debts_created += 1
+            member_id = member.user_id
+            member_user = db_manager.get_user_by_id(member_id)
+            member_name = f"{member_user.first_name} {member_user.last_name}" if member_user else "Unknown"
+            
+            print(f"\n💰 Processing debts for {member_name} (ID: {member_id})")
+            
+            # Get existing unpaid debts between member and payer
+            existing_debts = db_manager.get_debts_between_users(member_id, payer_id, expense.board_id)
+            unpaid_debts = [debt for debt in existing_debts if not debt.is_paid]
+            
+            # Calculate current debt balance
+            member_owes_payer = sum(debt.amount for debt in unpaid_debts 
+                                  if debt.from_user_id == member_id and debt.to_user_id == payer_id)
+            payer_owes_member = sum(debt.amount for debt in unpaid_debts 
+                                  if debt.from_user_id == payer_id and debt.to_user_id == member_id)
+            
+            print(f"💰 Current balance: {member_name} owes {member_owes_payer}, payer owes {payer_owes_member}")
+            
+            # Calculate net position: positive means member owes payer, negative means payer owes member
+            current_balance = member_owes_payer - payer_owes_member
+            # New debt: member owes payer amount_per_person (positive value)
+            new_debt_to_payer = amount_per_person
+            
+            print(f"💰 Current net balance: {current_balance} (+ means {member_name} owes payer)")
+            print(f"💰 New debt to payer from expense: {new_debt_to_payer}")
+            
+            # Calculate final balance: current + new debt to payer
+            final_balance = current_balance + new_debt_to_payer
+            print(f"💰 Final balance after expense: {final_balance}")
+            
+            # Now handle the offsetting logic
+            if current_balance > 0 and new_debt_to_payer > 0:
+                # Member owes payer money, and now member owes even more → offset what we can
+                amount_to_offset = min(current_balance, new_debt_to_payer)
+                print(f"💰 Can offset {amount_to_offset} from existing member debts")
+                
+                # Offset existing debts where member owes payer
+                offset_remaining = amount_to_offset
+                member_debts_to_payer = [debt for debt in unpaid_debts 
+                                       if debt.from_user_id == member_id and debt.to_user_id == payer_id]
+                
+                for debt in sorted(member_debts_to_payer, key=lambda x: x.amount):
+                    if offset_remaining <= 0:
+                        break
+                    
+                    # Get the actual DB debt object
+                    db_debt = Debt.query.get(debt.id)
+                    if not db_debt:
+                        continue
+                        
+                    if debt.amount <= offset_remaining:
+                        # Close this debt completely
+                        print(f"💰 Closing member debt {debt.id} completely (amount: {debt.amount}) - OFFSET!")
+                        db_debt.is_paid = True
+                        db_debt.paid_at = datetime.utcnow()
+                        db_debt.paid_amount = db_debt.original_amount or db_debt.amount
+                        if db_debt.original_amount is None:
+                            db_debt.original_amount = db_debt.amount
+                        offset_remaining -= debt.amount
+                    else:
+                        # Partially reduce this debt
+                        old_amount = debt.amount
+                        db_debt.amount -= offset_remaining
+                        db_debt.paid_amount = (db_debt.paid_amount or 0) + offset_remaining
+                        if db_debt.original_amount is None:
+                            db_debt.original_amount = old_amount
+                        print(f"💰 Partially reducing member debt {debt.id}: {old_amount} → {db_debt.amount} - OFFSET!")
+                        offset_remaining = 0
+                
+                # Create new debt only for the remaining amount after offset
+                remaining_debt = new_debt_to_payer - amount_to_offset
+                if remaining_debt > 0:
+                    debt_data = {
+                        'board_id': expense.board_id,
+                        'expense_id': expense.id,
+                        'from_user_id': member_id,
+                        'to_user_id': payer_id,
+                        'amount': remaining_debt,
+                        'description': f"{expense.category} - {expense.description or 'Shared expense'}"
+                    }
+                    new_debt = db_manager.create_debt(debt_data)
+                    print(f"💰 Created new debt {new_debt.id}: {member_name} owes {remaining_debt} to payer (after offset)")
+                    debts_processed.append(new_debt.id)
+                else:
+                    print(f"💰 Perfect offset! No new debt needed - existing debt fully covers this expense")
+            
+            elif current_balance < 0:
+                # Payer owes member money, new expense creates debt other direction → offset!
+                amount_to_offset = min(abs(current_balance), new_debt_to_payer)
+                print(f"💰 Can offset {amount_to_offset} - payer owes member, member owes from expense")
+                
+                # Offset existing debts where payer owes member
+                offset_remaining = amount_to_offset
+                payer_debts_to_member = [debt for debt in unpaid_debts 
+                                       if debt.from_user_id == payer_id and debt.to_user_id == member_id]
+                
+                for debt in sorted(payer_debts_to_member, key=lambda x: x.amount):
+                    if offset_remaining <= 0:
+                        break
+                    
+                    # Get the actual DB debt object
+                    db_debt = Debt.query.get(debt.id)
+                    if not db_debt:
+                        continue
+                        
+                    if debt.amount <= offset_remaining:
+                        # Close this debt completely
+                        print(f"💰 Closing payer debt {debt.id} completely (amount: {debt.amount}) - OFFSET!")
+                        db_debt.is_paid = True
+                        db_debt.paid_at = datetime.utcnow()
+                        db_debt.paid_amount = db_debt.original_amount or db_debt.amount
+                        if db_debt.original_amount is None:
+                            db_debt.original_amount = db_debt.amount
+                        offset_remaining -= debt.amount
+                    else:
+                        # Partially reduce this debt
+                        old_amount = debt.amount
+                        db_debt.amount -= offset_remaining
+                        db_debt.paid_amount = (db_debt.paid_amount or 0) + offset_remaining
+                        if db_debt.original_amount is None:
+                            db_debt.original_amount = old_amount
+                        print(f"💰 Partially reducing payer debt {debt.id}: {old_amount} → {db_debt.amount} - OFFSET!")
+                        offset_remaining = 0
+                
+                # Create new debt only for the remaining amount after offset
+                remaining_debt = new_debt_to_payer - amount_to_offset
+                if remaining_debt > 0:
+                    debt_data = {
+                        'board_id': expense.board_id,
+                        'expense_id': expense.id,
+                        'from_user_id': member_id,
+                        'to_user_id': payer_id,
+                        'amount': remaining_debt,
+                        'description': f"{expense.category} - {expense.description or 'Shared expense'}"
+                    }
+                    new_debt = db_manager.create_debt(debt_data)
+                    print(f"💰 Created new debt {new_debt.id}: {member_name} owes {remaining_debt} to payer (after offset)")
+                    debts_processed.append(new_debt.id)
+                else:
+                    print(f"💰 Perfect offset! No new debt needed - fully offset by existing debts")
+            
+            else:
+                # current_balance == 0, just create new debt
+                debt_data = {
+                    'board_id': expense.board_id,
+                    'expense_id': expense.id,
+                    'from_user_id': member_id,
+                    'to_user_id': payer_id,
+                    'amount': new_debt_to_payer,
+                    'description': f"{expense.category} - {expense.description or 'Shared expense'}"
+                }
+                new_debt = db_manager.create_debt(debt_data)
+                print(f"💰 Created new debt {new_debt.id}: {member_name} owes {new_debt_to_payer} to payer (no existing debts)")
+                debts_processed.append(new_debt.id)
+
         
-        print(f"🔍 Total debts created: {debts_created}")
-        print(f"🔍 === Finished creating debts ===")
+        # Commit all changes
+        try:
+            db_manager.db.session.commit()
+            print(f"💰 Successfully processed debts for {len(other_members)} members")
+            print(f"💰 Total new debts created: {len(debts_processed)}")
+        except Exception as e:
+            db_manager.db.session.rollback()
+            print(f"💰 Error processing debts: {e}")
+            raise
         
-        # Let's verify the debts were actually saved
-        print(f"🔍 === Verifying debts in database ===")
-        all_debts = db_manager.get_user_debts(expense.paid_by, expense.board_id)
-        print(f"🔍 Total debts for payer in this board: {len(all_debts)}")
-        for debt in all_debts:
-            if debt.expense_id == expense.id:
-                print(f"🔍 Found debt for this expense: {debt.from_user_id} -> {debt.to_user_id}, amount: {debt.amount}")
+        print(f"💰 === Finished processing debts ===")
+    
+    # Keep the old function name for compatibility
+    def create_debts_for_expense(expense, members):
+        """Legacy function name - calls the new process_expense_debts"""
+        return process_expense_debts(expense, members)
 
     # Notification endpoints
     @app.route('/api/notifications', methods=['GET'])

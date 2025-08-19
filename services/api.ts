@@ -5,8 +5,8 @@ import { QuickCategory } from '../constants/boardTypes';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-// const API_BASE_URL = 'http://192.168.7.9:5000/api';   // <-- your IP
-const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
+const API_BASE_URL = 'http://192.168.7.9:5000/api';   // <-- your IP
+// const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
 
 // Types
 export interface User {
@@ -76,6 +76,11 @@ export interface Debt {
   is_paid: boolean;
   paid_at?: string;
   created_at: string;
+  original_amount?: number;
+  paid_amount?: number;
+  from_user_name?: string;
+  to_user_name?: string;
+  board_name?: string;
 }
 
 export interface Category {
@@ -996,6 +1001,92 @@ class ApiService {
       `${API_BASE_URL}/boards/${boardId}/debts/${debtId}/mark-paid`,
       {
         method: 'PUT',
+      }
+    );
+  }
+
+  async processPartialPayment(fromUserId: string, paymentAmount: number, boardIds?: string[]): Promise<ApiResponse<{
+    message: string;
+    debts_closed: Array<{
+      debt_id: string;
+      original_amount: number;
+      amount_paid: number;
+      description: string;
+    }>;
+    debts_updated: Array<{
+      debt_id: string;
+      original_amount: number;
+      amount_paid: number;
+      remaining_amount: number;
+      description: string;
+    }>;
+    total_processed: number;
+  }>> {
+    return this.makeAuthenticatedRequest<{
+      message: string;
+      debts_closed: Array<{
+        debt_id: string;
+        original_amount: number;
+        amount_paid: number;
+        description: string;
+      }>;
+      debts_updated: Array<{
+        debt_id: string;
+        original_amount: number;
+        amount_paid: number;
+        remaining_amount: number;
+        description: string;
+      }>;
+      total_processed: number;
+    }>(
+      `${API_BASE_URL}/debts/process-partial-payment`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from_user_id: fromUserId,
+          payment_amount: paymentAmount,
+          board_ids: boardIds
+        }),
+      }
+    );
+  }
+
+  async autoOffsetDebts(boardIds?: string[]): Promise<ApiResponse<{
+    message: string;
+    offsets_processed: number;
+    total_amount_offset: number;
+    details: Array<{
+      user1_name: string;
+      user2_name: string;
+      offset_amount: number;
+      remaining_debt: number;
+      direction: 'user1_owes_user2' | 'user2_owes_user1' | 'balanced';
+    }>;
+  }>> {
+    return this.makeAuthenticatedRequest<{
+      message: string;
+      offsets_processed: number;
+      total_amount_offset: number;
+      details: Array<{
+        user1_name: string;
+        user2_name: string;
+        offset_amount: number;
+        remaining_debt: number;
+        direction: 'user1_owes_user2' | 'user2_owes_user1' | 'balanced';
+      }>;
+    }>(
+      `${API_BASE_URL}/debts/auto-offset`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          board_ids: boardIds
+        }),
       }
     );
   }

@@ -4,12 +4,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
-  FlatList,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
@@ -71,7 +71,7 @@ const SummaryScreen: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter | null>(null);
   const [selectedBoards, setSelectedBoards] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('expenses');
-  const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+
   const [showCharts, setShowCharts] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -85,6 +85,16 @@ const SummaryScreen: React.FC = () => {
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [startDateValue, setStartDateValue] = useState(new Date());
   const [endDateValue, setEndDateValue] = useState(new Date());
+  const [showPartialPaymentModal, setShowPartialPaymentModal] = useState(false);
+  const [selectedDebtor, setSelectedDebtor] = useState<{name: string; amount: number; fromUserId: string} | null>(null);
+  const [partialPaymentAmount, setPartialPaymentAmount] = useState('');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [paymentResults, setPaymentResults] = useState<any>(null);
+  const [debtFilter, setDebtFilter] = useState<'all' | 'i_owe' | 'owe_me'>('all');
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<'unpaid' | 'paid' | 'all'>('all');
 
   // Function to get current period filters with fresh dates
   const getCurrentPeriodFilters = (): PeriodFilter[] => [
@@ -312,8 +322,8 @@ const SummaryScreen: React.FC = () => {
         if (selectedBoards.length > 0) {
           filters.board_ids = selectedBoards;
         }
-        if (paidFilter !== 'all') {
-          filters.is_paid = paidFilter === 'paid';
+        if (paymentStatusFilter !== 'all') {
+          filters.is_paid = paymentStatusFilter === 'paid';
         }
 
         console.log('🔵 SummaryScreen: Loading debts with filters:', filters);
@@ -355,7 +365,7 @@ const SummaryScreen: React.FC = () => {
       console.log('🔄 SummaryScreen: Loading debts due to filter change');
       loadDebts();
     }
-  }, [paidFilter, selectedPeriod, selectedBoards, customPeriod, activeTab, isInitialized]);
+  }, [paymentStatusFilter, selectedPeriod, selectedBoards, customPeriod, activeTab, isInitialized]);
 
   // Refresh data when screen comes into focus (returning from other screens)
   useFocusEffect(
@@ -556,6 +566,62 @@ const SummaryScreen: React.FC = () => {
     }
   };
 
+  const handlePartialPaymentPress = (debtor: {name: string; amount: number; fromUserId: string}) => {
+    setSelectedDebtor(debtor);
+    setPartialPaymentAmount('');
+    setShowPartialPaymentModal(true);
+  };
+
+  const handlePartialPaymentSubmit = async () => {
+    if (!selectedDebtor || !partialPaymentAmount) {
+      Alert.alert('שגיאה', 'יש למלא סכום תשלום');
+      return;
+    }
+
+    const amount = parseFloat(partialPaymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('שגיאה', 'יש להזין סכום תקין');
+      return;
+    }
+
+    if (amount > selectedDebtor.amount) {
+      Alert.alert('שגיאה', `לא ניתן לרשום תשלום גבוה מהסכום הכולל (${formatCurrencyLocal(selectedDebtor.amount)})`);
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    try {
+      // Get current filter board IDs or all user boards
+      const boardIds = selectedBoards.length > 0 ? selectedBoards : undefined;
+      
+      const result = await apiService.processPartialPayment(
+        selectedDebtor.fromUserId,
+        amount,
+        boardIds
+      );
+
+      if (result.success && result.data) {
+        await loadDebts(); // Reload debts to show updated data
+        
+        // Store results for success modal
+        setPaymentResults(result.data);
+        
+        // Close partial payment modal and show success modal
+        setShowPartialPaymentModal(false);
+        setSelectedDebtor(null);
+        setPartialPaymentAmount('');
+        setShowSuccessModal(true);
+      } else {
+        Alert.alert('שגיאה', result.error || 'שגיאה בעיבוד התשלום');
+      }
+    } catch (error) {
+      console.error('Error processing partial payment:', error);
+      Alert.alert('שגיאה', 'שגיאה בעיבוד התשלום');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
   const formatCurrencyLocal = (amount: number) => {
     return formatCurrency(amount, selectedBoard?.currency || 'ILS');
   };
@@ -564,28 +630,128 @@ const SummaryScreen: React.FC = () => {
     return new Date(dateString).toLocaleDateString('he-IL');
   };
 
+
+
+
+
   // Calculate per-person debt summaries for people who owe the current user money
   const calculatePersonalDebtSummary = () => {
     if (!debts || !user) return [];
     
-    const personalDebts: { [personName: string]: number } = {};
+    const personalDebts: { [personName: string]: { amount: number; fromUserId: string } } = {};
     
     debts.forEach(debt => {
       // Only include unpaid debts where someone owes the current user money
       if (!debt.is_paid && debt.to_user_id === user.id && debt.from_user_id !== user.id) {
         const debtorName = debt.from_user_name || 'משתמש לא ידוע';
         if (personalDebts[debtorName]) {
-          personalDebts[debtorName] += debt.amount;
+          personalDebts[debtorName].amount += debt.amount;
         } else {
-          personalDebts[debtorName] = debt.amount;
+          personalDebts[debtorName] = {
+            amount: debt.amount,
+            fromUserId: debt.from_user_id
+          };
         }
       }
     });
     
     // Convert to array and sort by amount (highest first)
     return Object.entries(personalDebts)
-      .map(([name, amount]) => ({ name, amount }))
+      .map(([name, data]) => ({ 
+        name, 
+        amount: data.amount, 
+        fromUserId: data.fromUserId 
+      }))
       .sort((a, b) => b.amount - a.amount);
+  };
+
+  // Calculate per-person debt summaries for people the current user owes money to
+  const calculateMyDebtSummary = () => {
+    if (!debts || !user) return [];
+    
+    console.log('🔍 calculateMyDebtSummary: Total debts in array:', debts.length);
+    
+    const myDebts: { [personName: string]: { amount: number; toUserId: string } } = {};
+    
+    debts.forEach(debt => {
+      // Only include unpaid debts where the current user owes money to someone
+      if (!debt.is_paid && debt.from_user_id === user.id && debt.to_user_id !== user.id) {
+        const creditorName = debt.to_user_name || 'משתמש לא ידוע';
+        console.log(`🔍 Found MY unpaid debt: I owe ${debt.amount} to ${creditorName}`);
+        if (myDebts[creditorName]) {
+          myDebts[creditorName].amount += debt.amount;
+        } else {
+          myDebts[creditorName] = {
+            amount: debt.amount,
+            toUserId: debt.to_user_id
+          };
+        }
+      } else if (debt.is_paid && debt.from_user_id === user.id && debt.to_user_id !== user.id) {
+        const creditorName = debt.to_user_name || 'משתמש לא ידוע';
+        console.log(`🔍 Found MY PAID debt: I owed ${debt.amount} to ${creditorName} (now paid)`);
+      }
+    });
+    
+    // Convert to array and sort by amount (highest first)
+    return Object.entries(myDebts)
+      .map(([name, data]) => ({ 
+        name, 
+        amount: data.amount, 
+        toUserId: data.toUserId 
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+
+  // Get list of all unique people in debts for filtering
+  const getAllPeopleInDebts = () => {
+    if (!debts || !user) return [];
+    
+    const people = new Set<string>();
+    
+    debts.forEach(debt => {
+      if (debt.from_user_id !== debt.to_user_id) { // Skip self-debts
+        if (debt.from_user_id === user.id) {
+          // I owe money to this person
+          const personName = debt.to_user_name || 'משתמש לא ידוע';
+          people.add(personName);
+        } else if (debt.to_user_id === user.id) {
+          // This person owes me money
+          const personName = debt.from_user_name || 'משתמש לא ידוע';
+          people.add(personName);
+        }
+      }
+    });
+    
+    return Array.from(people).sort();
+  };
+
+  // Filter debts based on current filters
+  const getFilteredDebts = () => {
+    if (!debts || !user) return [];
+    
+    let filtered = debts.filter(debt => {
+      // Skip self-debts
+      if (debt.from_user_id === debt.to_user_id) return false;
+      
+      // Apply payment status filter
+      if (paymentStatusFilter === 'paid' && !debt.is_paid) return false;
+      if (paymentStatusFilter === 'unpaid' && debt.is_paid) return false;
+      
+      // Apply debt direction filter
+      if (debtFilter === 'i_owe' && debt.from_user_id !== user.id) return false;
+      if (debtFilter === 'owe_me' && debt.to_user_id !== user.id) return false;
+      
+      // Apply person filter
+      if (selectedPerson) {
+        const isIOwe = debt.from_user_id === user.id;
+        const otherUserName = isIOwe ? debt.to_user_name : debt.from_user_name;
+        if (otherUserName !== selectedPerson) return false;
+      }
+      
+      return true;
+    });
+    
+    return filtered;
   };
 
   // Generate bar chart data for expenses by board
@@ -706,24 +872,7 @@ const SummaryScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  const renderPaidFilter = ({ item }: { item: { label: string; value: 'all' | 'paid' | 'unpaid' } }) => (
-    <TouchableOpacity
-      style={[
-        styles.paidFilterButton,
-        paidFilter === item.value && styles.selectedPaidFilterButton,
-      ]}
-      onPress={() => setPaidFilter(item.value)}
-    >
-      <Text
-        style={[
-          styles.paidFilterText,
-          paidFilter === item.value && styles.selectedPaidFilterText,
-        ]}
-      >
-        {item.label}
-      </Text>
-    </TouchableOpacity>
-  );
+
 
   const renderDebtItem = ({ item }: { item: DebtWithBoard }) => {
     // Don't show debts with yourself
@@ -736,26 +885,46 @@ const SummaryScreen: React.FC = () => {
 
     return (
       <View style={[styles.debtItem, item.is_paid && styles.paidDebtItem]}>
+        {/* Header Row - Board Name, Date and Status */}
         <View style={styles.debtHeader}>
-          <Text style={styles.debtBoard}>{item.board_name}</Text>
+          <View style={styles.debtHeaderLeft}>
+            <Text style={styles.debtBoard}>{item.board_name}</Text>
+            <Text style={styles.debtDate}>{formatDate(item.created_at)}</Text>
+          </View>
           <Text style={[styles.debtStatus, item.is_paid && styles.paidStatus]}>
             {item.is_paid ? 'שולם' : 'טרם שולם'}
           </Text>
         </View>
         
+        {/* Divider Line */}
+        <View style={styles.debtDivider} />
+        
+        {/* Description */}
         <Text style={styles.debtDescription}>{item.description}</Text>
         
+        {/* Amount Row */}
         <View style={styles.debtDetails}>
-                          <Text style={styles.debtAmount}>{formatCurrencyLocal(item.amount)}</Text>
-          <Text style={styles.debtDate}>{formatDate(item.created_at)}</Text>
+          <View style={styles.debtAmountContainer}>
+            <Text style={styles.debtAmount}>{formatCurrencyLocal(item.amount)}</Text>
+            {item.original_amount && item.original_amount !== item.amount && (
+              <Text style={styles.partialPaymentInfo}>
+                מתוך {formatCurrencyLocal(item.original_amount)} מקורי, שולם {formatCurrencyLocal(item.paid_amount || 0)}
+              </Text>
+            )}
+          </View>
         </View>
         
+        {/* Direction Text */}
         <View style={styles.debtDirection}>
           <Text style={styles.debtDirectionText}>
-            {isIOwe ? `אני צריך להחזיר ל${otherUserName}` : `${otherUserName} צריך להחזיר לי`}
+            {item.is_paid 
+              ? (isIOwe ? `שולם ע"י: אני` : `שולם ע"י: ${otherUserName}`)
+              : (isIOwe ? `אני חייב ל${otherUserName}` : `${otherUserName} חייב לי`)
+            }
           </Text>
         </View>
         
+        {/* Action Button */}
         {!item.is_paid && !isIOwe && (
           <TouchableOpacity
             style={styles.markPaidButton}
@@ -862,7 +1031,8 @@ const SummaryScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Period Filters */}
+      {/* Period Filters - TEMPORARILY DISABLED */}
+      {/* 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>סינון לפי תקופה</Text>
         <FlatList
@@ -874,8 +1044,10 @@ const SummaryScreen: React.FC = () => {
           style={styles.filterList}
         />
       </View>
+      */}
 
-      {/* Board Filters */}
+      {/* Board Filters - TEMPORARILY DISABLED */}
+      {/* 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>סינון לפי לוח</Text>
         <Text style={styles.filterHelpText}>לחץ על לוח לבחירה, לחץ שוב לביטול</Text>
@@ -919,8 +1091,10 @@ const SummaryScreen: React.FC = () => {
           <Text style={styles.allBoardsSelectedText}>מציג נתונים מכל הלוחות</Text>
         )}
       </View>
+      */}
 
       {/* Paid Status Filters - Only for settlements tab */}
+      {/* 
       {activeTab === 'debts' && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>סטטוס תשלום</Text>
@@ -938,6 +1112,7 @@ const SummaryScreen: React.FC = () => {
           />
         </View>
       )}
+      */}
 
       {/* Expenses Tab Content */}
       {activeTab === 'expenses' && (
@@ -1068,15 +1243,25 @@ const SummaryScreen: React.FC = () => {
             const personalDebtSummary = calculatePersonalDebtSummary();
             return personalDebtSummary.length > 0 ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>סיכום יתרות אישי</Text>
+                <Text style={styles.sectionTitle}>צריכים להחזיר לי</Text>
                 <View style={styles.personalDebtSummary}>
                   {personalDebtSummary.map((debt, index) => (
                     <View key={index} style={styles.personalDebtItem}>
-                      <Text style={styles.personalDebtText}>
-                        <Text style={styles.personalDebtName}>{debt.name}</Text>
-                        <Text style={styles.personalDebtDescription}> צריך להחזיר לך סה"כ </Text>
-                        <Text style={styles.personalDebtAmount}>{formatCurrencyLocal(debt.amount)}</Text>
-                      </Text>
+                      <View style={styles.personalDebtRow}>
+                        <Text style={styles.personalDebtText}>
+                          <Text style={styles.personalDebtName}>{debt.name}</Text>
+                          <Text style={styles.personalDebtDescription}> צריך להחזיר לך סה"כ </Text>
+                          <Text style={styles.personalDebtAmount}>{formatCurrencyLocal(debt.amount)}</Text>
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.partialPaymentButton}
+                          onPress={() => handlePartialPaymentPress(debt)}
+                        >
+                          <Text style={styles.partialPaymentButtonText}>
+                            💰 קיבלתי תשלום
+                            </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -1084,12 +1269,135 @@ const SummaryScreen: React.FC = () => {
             ) : null;
           })()}
 
-          {/* Settlements List */}
+          {/* My Debt Summary - Who I owe money to */}
+          {(() => {
+            const myDebtSummary = calculateMyDebtSummary();
+            return myDebtSummary.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>אני צריך להחזיר</Text>
+                <View style={styles.personalDebtSummary}>
+                  {myDebtSummary.map((debt, index) => (
+                    <View key={index} style={styles.personalDebtItem}>
+                      <View style={styles.personalDebtRowInfo}>
+                        <Text style={styles.personalDebtText}>
+                          <Text style={styles.personalDebtName}>{debt.name}</Text>
+                          <Text style={styles.personalDebtDescription}> אני חייב לו סה"כ </Text>
+                          <Text style={styles.personalDebtAmount}>{formatCurrencyLocal(debt.amount)}</Text>
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null;
+          })()}
+
+                      {/* Settlements List */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>רשימת התחשבנויות</Text>
-            {debts.length > 0 ? (
+            
+            {/* Auto Offset Info Message */}
+            <View style={styles.infoBox}>
+              <Text style={styles.infoTitle}>💡 קיזוז אוטומטי</Text>
+              <Text style={styles.infoText}>
+                המערכת מבצעת קיזוז אוטומטי של חובות הדדיים. 
+                חובות שקוזזו מסומנים כ"שולם" ומופיעים רק בסינון "שולם" או "הכל".
+              </Text>
+            </View>
+            
+            {/* Payment Status Filter */}
+            <View style={styles.filterSubsection}>
+              <Text style={styles.filterSubtitle}>סטטוס תשלום:</Text>
+              <View style={styles.filterRowContainer}>
+                <TouchableOpacity
+                  style={[styles.paymentStatusFilterButton, paymentStatusFilter === 'unpaid' && styles.selectedPaymentStatusFilterButton]}
+                  onPress={() => setPaymentStatusFilter('unpaid')}
+                >
+                  <Text style={[styles.paymentStatusFilterText, paymentStatusFilter === 'unpaid' && styles.selectedPaymentStatusFilterText]}>
+                    טרם שולם
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.paymentStatusFilterButton, paymentStatusFilter === 'paid' && styles.selectedPaymentStatusFilterButton]}
+                  onPress={() => setPaymentStatusFilter('paid')}
+                >
+                  <Text style={[styles.paymentStatusFilterText, paymentStatusFilter === 'paid' && styles.selectedPaymentStatusFilterText]}>
+                    שולם
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.paymentStatusFilterButton, paymentStatusFilter === 'all' && styles.selectedPaymentStatusFilterButton]}
+                  onPress={() => setPaymentStatusFilter('all')}
+                >
+                  <Text style={[styles.paymentStatusFilterText, paymentStatusFilter === 'all' && styles.selectedPaymentStatusFilterText]}>
+                    הכל
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Debt Direction Filter */}
+            <View style={styles.filterSubsection}>
+              <Text style={styles.filterSubtitle}>הצג התחשבנויות:</Text>
+              <View style={styles.filterRowContainer}>
+                <TouchableOpacity
+                  style={[styles.debtFilterButton, debtFilter === 'all' && styles.selectedDebtFilterButton]}
+                  onPress={() => setDebtFilter('all')}
+                >
+                  <Text style={[styles.debtFilterText, debtFilter === 'all' && styles.selectedDebtFilterText]}>
+                    הכל
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.debtFilterButton, debtFilter === 'owe_me' && styles.selectedDebtFilterButton]}
+                  onPress={() => setDebtFilter('owe_me')}
+                >
+                  <Text style={[styles.debtFilterText, debtFilter === 'owe_me' && styles.selectedDebtFilterText]}>
+                    חייבים לי
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.debtFilterButton, debtFilter === 'i_owe' && styles.selectedDebtFilterButton]}
+                  onPress={() => setDebtFilter('i_owe')}
+                >
+                  <Text style={[styles.debtFilterText, debtFilter === 'i_owe' && styles.selectedDebtFilterText]}>
+                    אני חייב
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Person Filter */}
+            {getAllPeopleInDebts().length > 0 && (
+              <View style={styles.filterSubsection}>
+                <Text style={styles.filterSubtitle}>סנן לפי אדם:</Text>
+                <View style={styles.filterRowContainer}>
+                  <TouchableOpacity
+                    style={[styles.personFilterButton, !selectedPerson && styles.selectedPersonFilterButton]}
+                    onPress={() => setSelectedPerson(null)}
+                  >
+                    <Text style={[styles.personFilterText, !selectedPerson && styles.selectedPersonFilterText]}>
+                      כולם
+                    </Text>
+                  </TouchableOpacity>
+                  {getAllPeopleInDebts().map((person, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[styles.personFilterButton, selectedPerson === person && styles.selectedPersonFilterButton]}
+                      onPress={() => setSelectedPerson(selectedPerson === person ? null : person)}
+                    >
+                      <Text style={[styles.personFilterText, selectedPerson === person && styles.selectedPersonFilterText]}>
+                        {person}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {getFilteredDebts().length > 0 ? (
               <View style={styles.debtsList}>
-                {debts.map((debt, index) => (
+                {getFilteredDebts().map((debt, index) => (
                   <View key={debt.id} style={styles.debtItemContainer}>
                     {renderDebtItem({ item: debt })}
                   </View>
@@ -1097,7 +1405,12 @@ const SummaryScreen: React.FC = () => {
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>אין התחשבנויות להצגה</Text>
+                <Text style={styles.emptyStateText}>
+                  {debts.length > 0 
+                    ? 'אין התחשבנויות התואמות לפילטר הנבחר'
+                    : 'אין התחשבנויות להצגה'
+                  }
+                </Text>
               </View>
             )}
           </View>
@@ -1208,6 +1521,208 @@ const SummaryScreen: React.FC = () => {
                 minimumDate={new Date(2020, 0, 1)}
               />
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Partial Payment Modal */}
+      <Modal
+        visible={showPartialPaymentModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowPartialPaymentModal(false);
+          setSelectedDebtor(null);
+          setPartialPaymentAmount('');
+        }}
+      >
+        <View style={styles.professionalModalOverlay}>
+          <View style={styles.professionalModalContent}>
+            {/* Header with Icon */}
+            <View style={styles.professionalModalHeader}>
+              <View style={styles.paymentIconContainer}>
+                <Text style={styles.paymentIcon}>💰</Text>
+              </View>
+              <Text style={styles.professionalModalTitle}>רישום תשלום</Text>
+              <Text style={styles.professionalModalSubtitle}>עדכון יתרת חוב</Text>
+            </View>
+
+            {selectedDebtor && (
+              <View style={styles.professionalModalBody}>
+                {/* Debtor Info Card */}
+                <View style={styles.debtorInfoCard}>
+                  <View style={styles.debtorCardHeader}>
+                    <View style={styles.debtorAvatar}>
+                      <Text style={styles.debtorAvatarText}>
+                        {selectedDebtor.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={styles.debtorInfo}>
+                      <Text style={styles.debtorName}>{selectedDebtor.name}</Text>
+                      <Text style={styles.debtorStatus}>חייב לך</Text>
+                    </View>
+                  </View>
+                  <View style={styles.debtorAmountContainer}>
+                    <Text style={styles.debtorAmountLabel}>סה"כ חוב</Text>
+                    <Text style={styles.debtorAmount}>{formatCurrencyLocal(selectedDebtor.amount)}</Text>
+                  </View>
+                </View>
+
+                {/* Payment Input */}
+                <View style={styles.paymentInputSection}>
+                  <Text style={styles.paymentInputLabel}>סכום שקיבלת</Text>
+                  <View style={styles.paymentInputContainer}>
+                    <Text style={styles.currencySymbol}>₪</Text>
+                    <TextInput
+                      style={styles.professionalPaymentInput}
+                      value={partialPaymentAmount}
+                      onChangeText={setPartialPaymentAmount}
+                      placeholder="0"
+                      placeholderTextColor="#a0a0a0"
+                      keyboardType="numeric"
+                      textAlign="center"
+                      selectionColor="#3498db"
+                    />
+                  </View>
+                </View>
+
+                {/* Info Box */}
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoTitle}>💡 מידע נוסף</Text>
+                  <Text style={styles.infoText}>
+                    המערכת תסגור קודם התחשבנויות קטנות ולאחר מכן תעדכן את הגדולה ביותר
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.professionalModalActions}>
+              <TouchableOpacity
+                style={styles.professionalCancelButton}
+                onPress={() => {
+                  setShowPartialPaymentModal(false);
+                  setSelectedDebtor(null);
+                  setPartialPaymentAmount('');
+                }}
+              >
+                <Text style={styles.professionalCancelText}>ביטול</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.professionalConfirmButton, 
+                  isProcessingPayment && styles.processingButton,
+                  !partialPaymentAmount && styles.disabledConfirmButton
+                ]}
+                onPress={handlePartialPaymentSubmit}
+                disabled={isProcessingPayment || !partialPaymentAmount}
+              >
+                {isProcessingPayment ? (
+                  <View style={styles.processingContainer}>
+                    <Text style={styles.processingDot}>•</Text>
+                    <Text style={styles.processingDot}>•</Text>
+                    <Text style={styles.processingDot}>•</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.professionalConfirmText}>✓ אישור תשלום</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSuccessModal(false);
+          setPaymentResults(null);
+        }}
+      >
+        <View style={styles.professionalModalOverlay}>
+          <View style={styles.successModalContent}>
+            {/* Success Header */}
+            <View style={styles.successHeader}>
+              <View style={styles.successIconContainer}>
+                <Text style={styles.successIcon}>✅</Text>
+              </View>
+              <Text style={styles.successTitle}>תשלום נקלט בהצלחה!</Text>
+              <Text style={styles.successSubtitle}>יתרת החוב עודכנה</Text>
+            </View>
+
+            {/* Payment Summary */}
+            {paymentResults && (
+              <View style={styles.successBody}>
+                {/* Amount processed */}
+                <View style={styles.processedAmountCard}>
+                  <Text style={styles.processedAmountLabel}>סכום שעובד</Text>
+                  <Text style={styles.processedAmount}>
+                    {formatCurrencyLocal(parseFloat(partialPaymentAmount) || 0)}
+                  </Text>
+                </View>
+
+                {/* Debts closed completely */}
+                {paymentResults.debts_closed && paymentResults.debts_closed.length > 0 && (
+                  <View style={styles.resultSection}>
+                    <View style={styles.resultHeader}>
+                      <Text style={styles.resultIcon}>🎉</Text>
+                      <Text style={styles.resultTitle}>התחשבנויות שנסגרו לגמרי</Text>
+                    </View>
+                    {paymentResults.debts_closed.map((debt: any, index: number) => (
+                      <View key={index} style={styles.resultItem}>
+                        <Text style={styles.resultDescription}>{debt.description}</Text>
+                        <Text style={styles.resultAmount}>{formatCurrencyLocal(debt.amount_paid)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Debts updated */}
+                {paymentResults.debts_updated && paymentResults.debts_updated.length > 0 && (
+                  <View style={styles.resultSection}>
+                    <View style={styles.resultHeader}>
+                      <Text style={styles.resultIcon}>📝</Text>
+                      <Text style={styles.resultTitle}>התחשבנויות שעודכנו</Text>
+                    </View>
+                    {paymentResults.debts_updated.map((debt: any, index: number) => (
+                      <View key={index} style={styles.updatedDebtItem}>
+                        <Text style={styles.resultDescription}>{debt.description}</Text>
+                        <View style={styles.updatedDebtAmounts}>
+                          <Text style={styles.paidAmountText}>
+                            שולם: {formatCurrencyLocal(debt.amount_paid)}
+                          </Text>
+                          <Text style={styles.remainingAmountText}>
+                            נותר: {formatCurrencyLocal(debt.remaining_amount)}
+                          </Text>
+                        </View>
+                        <View style={styles.progressBar}>
+                          <View 
+                            style={[
+                              styles.progressFill, 
+                              { width: `${(debt.amount_paid / debt.original_amount) * 100}%` }
+                            ]} 
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.successCloseButton}
+              onPress={() => {
+                setShowSuccessModal(false);
+                setPaymentResults(null);
+              }}
+            >
+              <Text style={styles.successCloseText}>סגור</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1339,7 +1854,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   summaryCardAmount: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#2c3e50',
     marginBottom: 4,
@@ -1445,43 +1960,63 @@ const styles = StyleSheet.create({
   },
   debtsList: {
     backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 16,
   },
   debtItemContainer: {
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    paddingVertical: 4,
   },
   debtItem: {
     backgroundColor: 'white',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#e74c3c',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   paidDebtItem: {
     borderLeftColor: '#27ae60',
-    opacity: 0.7,
+    opacity: 0.8,
   },
   debtHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  debtHeaderLeft: {
+    flex: 1,
+    marginRight: 12,
   },
   debtBoard: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#3498db',
+    marginBottom: 4,
+  },
+  debtDivider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginBottom: 12,
   },
   debtStatus: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#e74c3c',
     backgroundColor: '#fdf2f2',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    fontWeight: '500',
+    minWidth: 60,
+    textAlign: 'center',
   },
   paidStatus: {
     color: '#27ae60',
@@ -1490,62 +2025,73 @@ const styles = StyleSheet.create({
   debtDescription: {
     fontSize: 16,
     color: '#2c3e50',
-    marginBottom: 8,
+    marginBottom: 12,
+    fontWeight: '500',
+    lineHeight: 22,
   },
   debtDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    gap: 12,
   },
   debtAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#2c3e50',
+    marginBottom: 4,
+    flexWrap: 'wrap',
   },
   debtDate: {
     fontSize: 12,
     color: '#7f8c8d',
+    fontWeight: '500',
   },
   debtDirection: {
-    marginBottom: 8,
+    marginBottom: 12,
+    backgroundColor: '#f8f9fa',
+    padding: 10,
+    borderRadius: 8,
   },
   debtDirectionText: {
-    fontSize: 14,
-    color: '#7f8c8d',
+    fontSize: 13,
+    color: '#5a6c7d',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   markPaidButton: {
     backgroundColor: '#27ae60',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
+    borderRadius: 8,
+    alignSelf: 'stretch',
+    alignItems: 'center',
   },
   markPaidButtonText: {
     color: 'white',
     fontSize: 14,
     fontWeight: 'bold',
   },
-  paidFilterButton: {
-    backgroundColor: '#f8f9fa',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
+
+  infoBox: {
+    backgroundColor: '#e3f2fd',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#2196f3',
   },
-  selectedPaidFilterButton: {
-    backgroundColor: '#2ecc71',
-    borderColor: '#2ecc71',
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1976d2',
+    marginBottom: 4,
   },
-  paidFilterText: {
-    color: '#2c3e50',
+  infoText: {
     fontSize: 14,
-    fontWeight: '500',
-  },
-  selectedPaidFilterText: {
-    color: 'white',
+    color: '#1976d2',
+    lineHeight: 20,
   },
   chartSection: {
     backgroundColor: 'white',
@@ -1861,6 +2407,497 @@ const styles = StyleSheet.create({
     color: '#2c3e50',
     fontSize: 16,
     textAlign: 'center',
+  },
+  personalDebtRow: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+  },
+  personalDebtRowInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: '100%',
+  },
+  partialPaymentButton: {
+    backgroundColor: '#27ae60',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginTop: 8,
+    alignSelf: 'stretch',
+  },
+  partialPaymentButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  debtAmountContainer: {
+    flex: 1,
+    minWidth: 0, // Allow container to shrink
+  },
+  partialPaymentInfo: {
+    fontSize: 11,
+    color: '#7f8c8d',
+    fontStyle: 'italic',
+    marginTop: 4,
+    lineHeight: 16,
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  partialPaymentInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#f8f9fa',
+    textAlign: 'right',
+    fontFamily: 'System',
+  },
+  partialPaymentDebtorName: {
+    fontWeight: 'bold',
+    color: '#e74c3c',
+    fontSize: 16,
+  },
+  partialPaymentTotalAmount: {
+    fontWeight: 'bold',
+    color: '#27ae60',
+    fontSize: 16,
+  },
+  partialPaymentExplanation: {
+    fontSize: 13,
+    color: '#7f8c8d',
+    lineHeight: 18,
+    marginTop: 10,
+    textAlign: 'right',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  // Professional Modal Styles
+  professionalModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  professionalModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 0,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  professionalModalHeader: {
+    alignItems: 'center',
+    paddingTop: 30,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  paymentIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#e8f5e8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  paymentIcon: {
+    fontSize: 28,
+  },
+  professionalModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 4,
+  },
+  professionalModalSubtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  professionalModalBody: {
+    padding: 24,
+  },
+  debtorInfoCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  debtorCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  debtorAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#3498db',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  debtorAvatarText: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  debtorInfo: {
+    flex: 1,
+  },
+  debtorName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 2,
+  },
+  debtorStatus: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  debtorAmountContainer: {
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  debtorAmountLabel: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    marginBottom: 4,
+  },
+  debtorAmount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#27ae60',
+  },
+  paymentInputSection: {
+    marginBottom: 20,
+  },
+  paymentInputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  paymentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+  },
+  currencySymbol: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#3498db',
+    marginRight: 8,
+  },
+  professionalPaymentInput: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    paddingVertical: 16,
+    textAlign: 'center',
+  },
+
+  professionalModalActions: {
+    flexDirection: 'row',
+    padding: 24,
+    gap: 12,
+  },
+  professionalCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+    backgroundColor: 'white',
+  },
+  professionalCancelText: {
+    color: '#7f8c8d',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  professionalConfirmButton: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#27ae60',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledConfirmButton: {
+    backgroundColor: '#bdc3c7',
+  },
+  processingButton: {
+    backgroundColor: '#3498db',
+  },
+  professionalConfirmText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  processingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  processingDot: {
+    color: 'white',
+    fontSize: 20,
+    marginHorizontal: 2,
+    opacity: 0.7,
+  },
+  // Success Modal Styles
+  successModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 0,
+    width: '90%',
+    maxWidth: 450,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successHeader: {
+    alignItems: 'center',
+    paddingTop: 30,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  successIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#e8f5e8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  successIcon: {
+    fontSize: 32,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#27ae60',
+    marginBottom: 4,
+  },
+  successSubtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+  },
+  successBody: {
+    padding: 24,
+    maxHeight: 400,
+  },
+  processedAmountCard: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  processedAmountLabel: {
+    fontSize: 14,
+    color: '#27ae60',
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  processedAmount: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#27ae60',
+  },
+  resultSection: {
+    marginBottom: 20,
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  resultIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  resultTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  resultItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  resultDescription: {
+    flex: 1,
+    fontSize: 14,
+    color: '#2c3e50',
+    marginRight: 12,
+  },
+  resultAmount: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#27ae60',
+  },
+  updatedDebtItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  updatedDebtAmounts: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  paidAmountText: {
+    fontSize: 12,
+    color: '#27ae60',
+    fontWeight: '600',
+  },
+  remainingAmountText: {
+    fontSize: 12,
+    color: '#e74c3c',
+    fontWeight: '600',
+  },
+  progressBar: {
+    height: 4,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#27ae60',
+    borderRadius: 2,
+  },
+  successCloseButton: {
+    margin: 24,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#3498db',
+    alignItems: 'center',
+  },
+  successCloseText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // Filter Styles
+  filterSubsection: {
+    marginBottom: 16,
+  },
+  filterSubtitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 8,
+  },
+  filterRowContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  debtFilterButton: {
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  selectedDebtFilterButton: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  debtFilterText: {
+    color: '#2c3e50',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  selectedDebtFilterText: {
+    color: 'white',
+  },
+  personFilterButton: {
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 4,
+  },
+  selectedPersonFilterButton: {
+    backgroundColor: '#27ae60',
+    borderColor: '#27ae60',
+  },
+  personFilterText: {
+    color: '#2c3e50',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  selectedPersonFilterText: {
+    color: 'white',
+  },
+  paymentStatusFilterButton: {
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  selectedPaymentStatusFilterButton: {
+    backgroundColor: '#e74c3c',
+    borderColor: '#e74c3c',
+  },
+  paymentStatusFilterText: {
+    color: '#2c3e50',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  selectedPaymentStatusFilterText: {
+    color: 'white',
   },
 });
 
