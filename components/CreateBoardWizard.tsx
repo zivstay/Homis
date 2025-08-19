@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Keyboard,
-    Modal,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Keyboard,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { BOARD_TYPES, BoardType, QuickCategory } from '../constants/boardTypes';
 
@@ -42,8 +42,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
 
   const handleBoardTypeSelect = (boardType: BoardType) => {
     setSelectedBoardType(boardType);
-    // Set default categories for the selected board type
-    setSelectedCategories([...boardType.quickCategories]);
+    // Don't auto-select any categories - let user choose manually
+    setSelectedCategories([]);
   };
 
   const handleCategoryToggle = (category: QuickCategory) => {
@@ -310,7 +310,7 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
         </Text>
         
         <Text style={styles.wizardHelpText}>
-          הקטגוריות של סוג הלוח נבחרו אוטומטיית. בחר עד 7 קטגוריות נוספות.
+          בחר עד 7 קטגוריות עבור הלוח שלך. הקטגוריות של סוג הלוח מוצגות בראש הרשימה.
         </Text>
         
         <FlatList

@@ -120,7 +120,7 @@ const AddExpenseScreen: React.FC = () => {
         // Use preselected category if provided
         if (preselectedCategory) {
           setSelectedCategory(preselectedCategory);
-          setDescription(preselectedCategory); // Set description to category name
+          // Don't auto-fill description with category name
         } else {
           // Set first quick category as default if available
           if (quickCategories.length > 0) {
@@ -141,18 +141,12 @@ const AddExpenseScreen: React.FC = () => {
     if (categoryName !== 'אחר') {
       setSelectedOtherCategory('');
     }
-    // Set description to category name if description is empty
-    if (!description.trim()) {
-      setDescription(categoryName);
-    }
+    // Don't auto-fill description with category name
   };
 
   const handleOtherCategorySelect = (categoryName: string) => {
     setSelectedOtherCategory(categoryName);
-    // Update description if it was set to "אחר"
-    if (description.trim() === 'אחר' || !description.trim()) {
-      setDescription(categoryName);
-    }
+    // Don't auto-fill description with category name
   };
 
   const handleSubmit = async () => {
@@ -437,15 +431,13 @@ const AddExpenseScreen: React.FC = () => {
         </ScrollView>
         
         {selectedOtherCategory && (
-          <TouchableOpacity
-            style={styles.clearOtherCategoryButton}
-            onPress={() => {
-              setSelectedOtherCategory('');
-              if (description.trim() === selectedOtherCategory) {
-                setDescription('אחר');
-              }
-            }}
-          >
+                      <TouchableOpacity
+              style={styles.clearOtherCategoryButton}
+              onPress={() => {
+                setSelectedOtherCategory('');
+                // Don't auto-fill description
+              }}
+            >
             <Text style={styles.clearOtherCategoryText}>נקה בחירה ותשאר עם "אחר"</Text>
           </TouchableOpacity>
         )}
