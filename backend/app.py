@@ -3097,6 +3097,318 @@ def create_app(config_name='default'):
             print(f"❌ Terms acceptance update error: {e}")
             return jsonify({'error': 'Failed to update terms acceptance'}), 500
 
+    # Terms and Conditions API endpoints
+    @app.route('/terms', methods=['GET'])
+    def get_terms():
+        """Get terms and conditions in Hebrew (default)"""
+        return get_terms_html('he')
+    
+    @app.route('/terms/en', methods=['GET'])
+    def get_terms_english():
+        """Get terms and conditions in English"""
+        return get_terms_html('en')
+    
+    @app.route('/terms/he', methods=['GET'])
+    def get_terms_hebrew():
+        """Get terms and conditions in Hebrew"""
+        return get_terms_html('he')
+    
+    def get_terms_html(language='he'):
+        """Generate HTML terms and conditions based on language"""
+        if language == 'en':
+            html_content = f"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Terms of Service - Homis</title>
+                <style>
+                    body {{
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        max-width: 800px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f9f9f9;
+                    }}
+                    .container {{
+                        background: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
+                    h1 {{
+                        color: #2c3e50;
+                        text-align: center;
+                        border-bottom: 3px solid #3498db;
+                        padding-bottom: 10px;
+                    }}
+                    h2 {{
+                        color: #34495e;
+                        margin-top: 30px;
+                        margin-bottom: 15px;
+                        border-left: 4px solid #3498db;
+                        padding-left: 15px;
+                    }}
+                    p, ul {{
+                        margin-bottom: 15px;
+                        text-align: justify;
+                    }}
+                    ul {{
+                        padding-left: 20px;
+                    }}
+                    li {{
+                        margin-bottom: 8px;
+                    }}
+                    .last-updated {{
+                        text-align: center;
+                        color: #7f8c8d;
+                        font-style: italic;
+                        margin-top: 30px;
+                        padding-top: 20px;
+                        border-top: 1px solid #ecf0f1;
+                    }}
+                    .language-toggle {{
+                        text-align: center;
+                        margin-bottom: 20px;
+                    }}
+                    .language-toggle a {{
+                        display: inline-block;
+                        padding: 10px 20px;
+                        background: #3498db;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        margin: 0 10px;
+                        transition: background 0.3s;
+                    }}
+                    .language-toggle a:hover {{
+                        background: #2980b9;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="language-toggle">
+                        <a href="/api/terms/he">עברית</a>
+                        <a href="/api/terms/en" style="background: #27ae60;">English</a>
+                    </div>
+                    
+                    <h1>Terms of Service</h1>
+                    
+                    <h2>1. Acceptance of Terms</h2>
+                    <p>Using the "Shared Expenses Management" application constitutes agreement to the terms of use detailed below. If you do not agree to these terms, please do not use the application.</p>
+                    
+                    <h2>2. Service Description</h2>
+                    <p>The application allows users to manage shared household expenses, track spending, manage debts, and share financial information with family members or roommates.</p>
+                    
+                    <h2>3. Registration and User Account</h2>
+                    <ul>
+                        <li>The user must provide accurate and up-to-date information during registration</li>
+                        <li>The user is responsible for maintaining the confidentiality of their login credentials</li>
+                        <li>The user is responsible for all activity conducted under their account</li>
+                        <li>Sharing a user account with others is prohibited</li>
+                    </ul>
+                    
+                    <h2>4. Privacy and Security</h2>
+                    <ul>
+                        <li>We are committed to protecting user privacy in accordance with our privacy policy</li>
+                        <li>Financial information is stored on secure servers</li>
+                        <li>However, we cannot guarantee absolute security against breaches or technical failures</li>
+                    </ul>
+                    
+                    <h2>5. User Responsibility</h2>
+                    <ul>
+                        <li>The user is responsible for the accuracy of information entered into the system</li>
+                        <li>The user agrees not to use the application for illegal purposes</li>
+                        <li>The user will not misuse the system or harm other users</li>
+                    </ul>
+                    
+                    <h2>6. Limitation of Liability</h2>
+                    <ul>
+                        <li>The application is provided "as is" without any warranty</li>
+                        <li>We are not responsible for any direct or indirect damage that may result from using the application</li>
+                        <li>We do not guarantee that the service will be available without interruption or without errors</li>
+                    </ul>
+                    
+                    <h2>7. Service Termination</h2>
+                    <ul>
+                        <li>The application developer may decide to stop developing the application and shut down the servers at any given moment</li>
+                        <li>Users agree that they cannot claim compensation for not having access to information they stored</li>
+                        <li>Information storage is for organizational purposes only, and we do not commit to complete and long-term storage</li>
+                        <li>Users are responsible for independently backing up their important information</li>
+                    </ul>
+                    
+                    <h2>8. Changes to Terms</h2>
+                    <p>We may update the terms of use from time to time. Material changes will be communicated to users. Continued use of the application after changes constitutes agreement to the new terms.</p>
+                    
+                    <h2>9. Intellectual Property</h2>
+                    <p>All rights to the application, including code, design, and content, belong to the application developer. Copying, duplicating, or distributing the application without explicit permission is prohibited.</p>
+                    
+                    <h2>10. Governing Law</h2>
+                    <p>These terms of use are subject to the laws of the State of Israel. Any dispute will be resolved before the competent court in Israel.</p>
+                    
+                    <h2>11. Contact</h2>
+                    <p>For questions or complaints regarding the terms of use, you can contact the application developer.</p>
+                    
+                    <div class="last-updated">
+                        Last updated: {datetime.now().strftime('%B %d, %Y')}
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        else:
+            # Hebrew version
+            html_content = f"""
+            <!DOCTYPE html>
+            <html dir="rtl" lang="he">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>תנאי שימוש - Homis</title>
+                <style>
+                    body {{
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        max-width: 800px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f9f9f9;
+                    }}
+                    .container {{
+                        background: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
+                    h1 {{
+                        color: #2c3e50;
+                        text-align: center;
+                        border-bottom: 3px solid #3498db;
+                        padding-bottom: 10px;
+                    }}
+                    h2 {{
+                        color: #34495e;
+                        margin-top: 30px;
+                        margin-bottom: 15px;
+                        border-right: 4px solid #3498db;
+                        padding-right: 15px;
+                    }}
+                    p, ul {{
+                        margin-bottom: 15px;
+                        text-align: justify;
+                    }}
+                    ul {{
+                        padding-right: 20px;
+                    }}
+                    li {{
+                        margin-bottom: 8px;
+                    }}
+                    .last-updated {{
+                        text-align: center;
+                        color: #7f8c8d;
+                        font-style: italic;
+                        margin-top: 30px;
+                        padding-top: 20px;
+                        border-top: 1px solid #ecf0f1;
+                    }}
+                    .language-toggle {{
+                        text-align: center;
+                        margin-bottom: 20px;
+                    }}
+                    .language-toggle a {{
+                        display: inline-block;
+                        padding: 10px 20px;
+                        background: #3498db;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        margin: 0 10px;
+                        transition: background 0.3s;
+                    }}
+                    .language-toggle a:hover {{
+                        background: #2980b9;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="language-toggle">
+                        <a href="/terms/he" style="background: #27ae60;">עברית</a>
+                        <a href="/terms/en">English</a>
+                    </div>
+                    
+                    <h1>תנאי שימוש</h1>
+                    
+                    <h2>1. קבלת התנאים</h2>
+                    <p>השימוש באפליקציה "ניהול הוצאות משותפות" מהווה הסכמה לתנאי השימוש המפורטים להלן. אם אינך מסכים לתנאים אלה, אנא אל תשתמש באפליקציה.</p>
+                    
+                    <h2>2. תיאור השירות</h2>
+                    <p>האפליקציה מאפשרת למשתמשים לנהל הוצאות משותפות בבית, לעקוב אחר הוצאות, לנהל חובות, ולשתף מידע פיננסי עם חברי המשפחה או השותפים.</p>
+                    
+                    <h2>3. הרשמה וחשבון משתמש</h2>
+                    <ul>
+                        <li>על המשתמש לספק מידע מדויק ומעודכן בעת ההרשמה</li>
+                        <li>המשתמש אחראי לשמירת סודיות פרטי ההתחברות שלו</li>
+                        <li>המשתמש אחראי לכל הפעילות המתבצעת בחשבונו</li>
+                        <li>אסור לשתף חשבון משתמש עם אחרים</li>
+                    </ul>
+                    
+                    <h2>4. פרטיות ואבטחה</h2>
+                    <ul>
+                        <li>אנו מתחייבים להגן על פרטיות המשתמשים בהתאם למדיניות הפרטיות שלנו</li>
+                        <li>המידע הפיננסי נשמר בשרתים מאובטחים</li>
+                        <li>עם זאת, אין אנו יכולים להבטיח אבטחה מוחלטת מפני פריצות או תקלות טכניות</li>
+                    </ul>
+                    
+                    <h2>5. אחריות המשתמש</h2>
+                    <ul>
+                        <li>המשתמש אחראי לדיוק המידע שהוא מזין למערכת</li>
+                        <li>המשתמש מסכים לא להשתמש באפליקציה למטרות בלתי חוקיות</li>
+                        <li>המשתמש לא יעשה שימוש לרעה במערכת או יפגע במשתמשים אחרים</li>
+                    </ul>
+                    
+                    <h2>6. הגבלת אחריות</h2>
+                    <ul>
+                        <li>האפליקציה מסופקת "כפי שהיא" ללא כל אחריות</li>
+                        <li>אנו לא אחראים לכל נזק ישיר או עקיף שיכול להיגרם מהשימוש באפליקציה</li>
+                        <li>אנו לא מתחייבים שהשירות יהיה זמין ללא הפרעה או ללא שגיאות</li>
+                    </ul>
+                    
+                    <h2>7. הפסקת השירות</h2>
+                    <ul>
+                        <li>מפתח האפליקציה רשאי להחליט על הפסקת פיתוח האפליקציה וסגירת השרתים בכל רגע נתון</li>
+                        <li>המשתמשים מסכימים שלא יוכלו לתבוע על כך שאין להם גישה למידע ששמרו</li>
+                        <li>שמירת המידע היא לצורך סדר וארגון בלבד, ואנו איננו מתחייבים לשמירה מלאה ולאורך זמן</li>
+                        <li>המשתמשים אחראים לגיבוי המידע החשוב שלהם באופן עצמאי</li>
+                    </ul>
+                    
+                    <h2>8. שינויים בתנאים</h2>
+                    <p>אנו רשאים לעדכן את תנאי השימוש מעת לעת. שינויים מהותיים יובאו לידיעת המשתמשים. המשך השימוש באפליקציה לאחר השינויים מהווה הסכמה לתנאים החדשים.</p>
+                    
+                    <h2>9. קניין רוחני</h2>
+                    <p>כל הזכויות באפליקציה, כולל הקוד, העיצוב והתוכן, שייכות למפתח האפליקציה. אסור להעתיק, לשכפל או להפיץ את האפליקציה ללא אישור מפורש.</p>
+                    
+                    <h2>10. דין שולט</h2>
+                    <p>תנאי שימוש אלה כפופים לחוקי מדינת ישראל. כל מחלוקת תיפתר בפני בית המשפט המוסמך בישראל.</p>
+                    
+                    <h2>11. יצירת קשר</h2>
+                    <p>לשאלות או תלונות בנוגע לתנאי השימוש, ניתן ליצור קשר עם מפתח האפליקציה.</p>
+                    
+                    <div class="last-updated">
+                        עודכן לאחרונה: {datetime.now().strftime('%d/%m/%Y')}
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+        
+        return Response(html_content, mimetype='text/html')
+
     @app.route('/api/auth/delete-user', methods=['DELETE'])
     @require_auth
     def delete_user():

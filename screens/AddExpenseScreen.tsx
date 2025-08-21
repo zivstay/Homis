@@ -183,13 +183,19 @@ const AddExpenseScreen: React.FC = () => {
       setIsLoading(true);
       console.log('🎯 User agreed, showing rewarded ad...');
       
-      const adWatched = await adManager.showRewardedAdIfAllowed('expense_creation_rewarded');
+      const adResult = await adManager.showRewardedAdWithResult('expense_creation_rewarded');
       
-      if (adWatched) {
+      console.log('🎯 AddExpenseScreen: Ad result received:', {
+        success: adResult.success,
+        reason: adResult.reason,
+        message: adResult.message
+      });
+      
+      if (adResult.success && adResult.reason === 'completed') {
         console.log('🎯 User watched the full ad, creating expense...');
         // המשתמש צפה בפרסומת עד הסוף - יוצרים את ההוצאה
         await createExpense(amountValue);
-      } else {
+      } else if (adResult.reason === 'user_cancelled') {
         console.log('🎯 User did not complete the ad');
         // המשתמש לא צפה בפרסומת עד הסוף - לא יוצרים הוצאה
         setIsLoading(false);
@@ -198,6 +204,10 @@ const AddExpenseScreen: React.FC = () => {
           'כדי להוסיף את ההוצאה, אנא צפה בפרסומת עד הסוף. תוכל לנסות שוב! 😊'
         );
         return;
+      } else {
+        // שגיאה טכנית או פרסומת לא זמינה - יוצרים הוצאה בכל מקרה
+        console.log('🎯 Technical error or ad unavailable, creating expense anyway. Reason:', adResult.reason, 'Message:', adResult.message);
+        await createExpense(amountValue);
       }
     } else {
       // לא ניתן להציג פרסומת בגלל cooldown - יוצרים הוצאה ללא פרסומת

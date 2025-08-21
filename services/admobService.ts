@@ -27,8 +27,8 @@ class AdMobService {
   private isInitialized = false;
   
   // Test ad unit IDs - using the correct IDs provided by user
-  private readonly interstitialAdUnitId = 'ca-app-pub-3940256099942544/4411468910'; // Interstitial
-  private readonly rewardedAdUnitId = 'ca-app-pub-3940256099942544/1712485313'; // Rewarded
+  private readonly interstitialAdUnitId = 'ca-app-pub-4216673023528064/3076269564'; // Interstitial
+  private readonly rewardedAdUnitId = 'ca-app-pub-4216673023528064/9957388597'; // Rewarded
 
   constructor() {
     this.checkAdMobAvailability();
@@ -315,10 +315,11 @@ class AdMobService {
 
   public showRewardedAd = async (): Promise<boolean> => {
     console.log('📺 AdMob: showRewardedAd called');
+    console.log('📺 AdMob: Current state check - isAdMobAvailable:', this.isAdMobAvailable, 'isInitialized:', this.isInitialized);
     
     // Check if basic AdMob components are available
     if (!RewardedAd || !mobileAds) {
-      console.log('📺 AdMob: Required components not available for rewarded ads');
+      console.log('📺 AdMob: ❌ Required components not available for rewarded ads (likely Expo Go mode)');
       console.log('📺 AdMob: RewardedAd:', !!RewardedAd, 'mobileAds:', !!mobileAds);
       return false;
     }
@@ -329,24 +330,24 @@ class AdMobService {
       try {
         await this.initializeMobileAds();
         if (!this.isInitialized) {
-          console.log('📺 AdMob: Failed to initialize, cannot show rewarded ad');
+          console.log('📺 AdMob: ❌ Failed to initialize, cannot show rewarded ad');
           return false;
         }
       } catch (error) {
-        console.log('📺 AdMob: Error during initialization:', error);
+        console.log('📺 AdMob: ❌ Error during initialization:', error);
         return false;
       }
     }
 
     try {
       if (!this.rewardedAd) {
-        console.log('📺 AdMob: Rewarded ad not created, creating new one...');
+        console.log('📺 AdMob: ❌ Rewarded ad not created, creating new one...');
         this.createRewardedAd();
         return false;
       }
 
       if (!this.isRewardedAdLoaded) {
-        console.log('📺 AdMob: Rewarded ad not loaded yet, loading status:', this.isRewardedAdLoading);
+        console.log('📺 AdMob: ❌ Rewarded ad not loaded yet, loading status:', this.isRewardedAdLoading);
         // Try to load ad if not already loading
         if (!this.isRewardedAdLoading) {
           console.log('📺 AdMob: Starting to load rewarded ad...');

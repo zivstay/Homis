@@ -103,6 +103,19 @@ class AdManager {
    * @param adType סוג הפרסומת לזיהוי בלוגים
    */
   public async showRewardedAdIfAllowed(adType: string = 'general'): Promise<boolean> {
+    const result = await this.showRewardedAdWithResult(adType);
+    return result.success;
+  }
+
+  /**
+   * הצגת פרסומת מוטבלת עם פרטי התוצאה
+   * @param adType סוג הפרסומת לזיהוי בלוגים
+   */
+  public async showRewardedAdWithResult(adType: string = 'general'): Promise<{
+    success: boolean;
+    reason: 'completed' | 'user_cancelled' | 'technical_error' | 'cooldown_active' | 'unavailable';
+    message?: string;
+  }> {
     try {
       console.log(`🎯 AdManager: Attempting to show ${adType} rewarded ad`);
       
@@ -110,26 +123,45 @@ class AdManager {
       
       if (!canShow) {
         console.log(`🎯 AdManager: Not showing ${adType} rewarded ad - cooldown active`);
-        return false;
+        return { success: false, reason: 'cooldown_active' };
       }
 
       console.log(`🎯 AdManager: Cooldown passed, trying to show ${adType} rewarded ad`);
+      
+      // First check if AdMob is available at all
+      if (!adMobService.isAvailable()) {
+        console.log(`🎯 AdManager: AdMob not available for ${adType} rewarded ad - treating as technical error`);
+        return { success: false, reason: 'technical_error', message: 'AdMob not available (likely Expo Go mode)' };
+      }
+      
+      // Check if rewarded ad is ready
+      const isAdReady = adMobService.isRewardedAdReady();
+      console.log(`🎯 AdManager: Rewarded ad ready status: ${isAdReady}`);
+      
+      if (!isAdReady) {
+        console.log(`🎯 AdManager: Rewarded ad not ready - treating as technical error`);
+        return { success: false, reason: 'technical_error', message: 'Ad not loaded or ready' };
+      }
+      
       const adShown = await adMobService.showRewardedAd();
       
       if (adShown) {
         console.log(`🎯 AdManager: Successfully showed ${adType} rewarded ad`);
         await this.updateLastShownTime();
-        return true;
+        return { success: true, reason: 'completed' };
       } else {
-        console.log(`🎯 AdManager: Failed to show ${adType} rewarded ad - ad service returned false`);
-        return false;
+        // At this point we know AdMob is available and ad was ready, so user likely cancelled
+        console.log(`🎯 AdManager: Ad was available and ready but not completed - user likely cancelled`);
+        return { success: false, reason: 'user_cancelled' };
       }
     } catch (error) {
       console.error(`🎯 AdManager: Error showing ${adType} rewarded ad:`, error);
-      console.log(`🎯 AdManager: Returning success despite error to not fail user experience`);
-      // עדכון זמן כאילו הפרסומת הוצגה בהצלחה
-      await this.updateLastShownTime();
-      return true; // מחזיר true כדי לא להכשיל את המשתמש
+      console.log(`🎯 AdManager: Returning technical error`);
+      return { 
+        success: false, 
+        reason: 'technical_error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 

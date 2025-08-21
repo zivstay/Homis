@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    Dimensions,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { API_CONFIG } from '../config/api';
 
 interface TermsAndConditionsModalProps {
   visible: boolean;
@@ -20,6 +22,101 @@ const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = ({
   onClose,
   onDecline,
 }) => {
+  const [language, setLanguage] = useState<'he' | 'en'>('he');
+  const [termsData, setTermsData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Static content for UI elements
+  const uiContent = {
+    he: {
+      close: '✕',
+      accept: 'אני מסכים לתנאים',
+      decline: 'לא מסכים לתנאים ולא אשתמש באפליקציה',
+      langToggle: 'English',
+      loading: 'טוען תנאי שימוש...',
+      error: 'שגיאה בטעינת תנאי השימוש'
+    },
+    en: {
+      close: '✕',
+      accept: 'I agree to the terms',
+      decline: 'I do not agree to the terms and will not use the app',
+      langToggle: 'עברית',
+      loading: 'Loading terms and conditions...',
+      error: 'Error loading terms and conditions'
+    }
+  };
+
+  const currentUIContent = uiContent[language];
+
+  // Fetch terms from API
+  const fetchTerms = async (lang: 'he' | 'en') => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.TERMS_ENDPOINT}/${lang === 'en' ? 'en' : 'he'}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const htmlText = await response.text();
+      
+      // Simple HTML parsing using regex for React Native compatibility
+      const titleMatch = htmlText.match(/<h1[^>]*>([^<]+)<\/h1>/);
+      const title = titleMatch ? titleMatch[1].trim() : '';
+      
+      // Extract sections using regex
+      const sections: Array<{title: string, text: string}> = [];
+      const h2Regex = /<h2[^>]*>([^<]+)<\/h2>/g;
+      const h2Matches = [...htmlText.matchAll(h2Regex)];
+      
+      h2Matches.forEach((match, index) => {
+        const sectionTitle = match[1].trim();
+        const startIndex = match.index! + match[0].length;
+        const nextH2Index = h2Matches[index + 1]?.index || htmlText.length;
+        const sectionText = htmlText.substring(startIndex, nextH2Index)
+          .replace(/<[^>]*>/g, '') // Remove HTML tags
+          .replace(/&nbsp;/g, ' ') // Replace HTML entities
+          .trim();
+        
+        sections.push({
+          title: sectionTitle,
+          text: sectionText
+        });
+      });
+      
+      // Extract last updated
+      const lastUpdatedMatch = htmlText.match(/<div[^>]*class="last-updated"[^>]*>([^<]+)<\/div>/);
+      const lastUpdated = lastUpdatedMatch ? lastUpdatedMatch[1].trim() : '';
+      
+      setTermsData({
+        title,
+        sections,
+        lastUpdated
+      });
+      
+    } catch (err) {
+      console.error('Error fetching terms:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load terms when language changes or modal becomes visible
+  useEffect(() => {
+    if (visible) {
+      fetchTerms(language);
+    }
+  }, [visible, language]);
+
+  const toggleLanguage = () => {
+    const newLang = language === 'he' ? 'en' : 'he';
+    setLanguage(newLang);
+  };
+
   return (
     <Modal
       visible={visible}
@@ -30,95 +127,66 @@ const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = ({
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.header}>
-            <Text style={styles.title}>תנאי שימוש</Text>
+            <TouchableOpacity onPress={toggleLanguage} style={styles.languageButton}>
+              <Text style={styles.languageButtonText}>{currentUIContent.langToggle}</Text>
+            </TouchableOpacity>
+            <Text style={[styles.title, language === 'en' && styles.titleEn]}>
+              {termsData?.title || (language === 'he' ? 'תנאי שימוש' : 'Terms of Service')}
+            </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={styles.closeButtonText}>{currentUIContent.close}</Text>
             </TouchableOpacity>
           </View>
           
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            <Text style={styles.sectionTitle}>1. קבלת התנאים</Text>
-            <Text style={styles.text}>
-              השימוש באפליקציה "ניהול הוצאות משותפות" מהווה הסכמה לתנאי השימוש המפורטים להלן. אם אינך מסכים לתנאים אלה, אנא אל תשתמש באפליקציה.
-            </Text>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#3498db" />
+                <Text style={styles.loadingText}>{currentUIContent.loading}</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{currentUIContent.error}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={() => fetchTerms(language)}>
+                  <Text style={styles.retryButtonText}>
+                    {language === 'he' ? 'נסה שוב' : 'Retry'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : termsData ? (
+              <>
+                {termsData.sections.map((section: {title: string, text: string}, index: number) => (
+                  <View key={index}>
+                    <Text style={[styles.sectionTitle, language === 'en' && styles.sectionTitleEn]}>
+                      {section.title}
+                    </Text>
+                    <Text style={[styles.text, language === 'en' && styles.textEn]}>
+                      {section.text}
+                    </Text>
+                  </View>
+                ))}
 
-            <Text style={styles.sectionTitle}>2. תיאור השירות</Text>
-            <Text style={styles.text}>
-              האפליקציה מאפשרת למשתמשים לנהל הוצאות משותפות בבית, לעקוב אחר הוצאות, לנהל חובות, ולשתף מידע פיננסי עם חברי המשפחה או השותפים.
-            </Text>
-
-            <Text style={styles.sectionTitle}>3. הרשמה וחשבון משתמש</Text>
-            <Text style={styles.text}>
-              • על המשתמש לספק מידע מדויק ומעודכן בעת ההרשמה{'\n'}
-              • המשתמש אחראי לשמירת סודיות פרטי ההתחברות שלו{'\n'}
-              • המשתמש אחראי לכל הפעילות המתבצעת בחשבונו{'\n'}
-              • אסור לשתף חשבון משתמש עם אחרים
-            </Text>
-
-            <Text style={styles.sectionTitle}>4. פרטיות ואבטחה</Text>
-            <Text style={styles.text}>
-              • אנו מתחייבים להגן על פרטיות המשתמשים בהתאם למדיניות הפרטיות שלנו{'\n'}
-              • המידע הפיננסי נשמר בשרתים מאובטחים{'\n'}
-              • עם זאת, אין אנו יכולים להבטיח אבטחה מוחלטת מפני פריצות או תקלות טכניות
-            </Text>
-
-            <Text style={styles.sectionTitle}>5. אחריות המשתמש</Text>
-            <Text style={styles.text}>
-              • המשתמש אחראי לדיוק המידע שהוא מזין למערכת{'\n'}
-              • המשתמש מסכים לא להשתמש באפליקציה למטרות בלתי חוקיות{'\n'}
-              • המשתמש לא יעשה שימוש לרעה במערכת או יפגע במשתמשים אחרים
-            </Text>
-
-            <Text style={styles.sectionTitle}>6. הגבלת אחריות</Text>
-            <Text style={styles.text}>
-              • האפליקציה מסופקת "כפי שהיא" ללא כל אחריות{'\n'}
-              • אנו לא אחראים לכל נזק ישיר או עקיף שיכול להיגרם מהשימוש באפליקציה{'\n'}
-              • אנו לא מתחייבים שהשירות יהיה זמין ללא הפרעה או ללא שגיאות
-            </Text>
-
-            <Text style={styles.sectionTitle}>7. הפסקת השירות</Text>
-            <Text style={styles.text}>
-              • מפתח האפליקציה רשאי להחליט על הפסקת פיתוח האפליקציה וסגירת השרתים בכל רגע נתון{'\n'}
-              • המשתמשים מסכימים שלא יוכלו לתבוע על כך שאין להם גישה למידע ששמרו{'\n'}
-              • שמירת המידע היא לצורך סדר וארגון בלבד, ואנו איננו מתחייבים לשמירה מלאה ולאורך זמן{'\n'}
-              • המשתמשים אחראים לגיבוי המידע החשוב שלהם באופן עצמאי
-            </Text>
-
-            <Text style={styles.sectionTitle}>8. שינויים בתנאים</Text>
-            <Text style={styles.text}>
-              אנו רשאים לעדכן את תנאי השימוש מעת לעת. שינויים מהותיים יובאו לידיעת המשתמשים. המשך השימוש באפליקציה לאחר השינויים מהווה הסכמה לתנאים החדשים.
-            </Text>
-
-            <Text style={styles.sectionTitle}>9. קניין רוחני</Text>
-            <Text style={styles.text}>
-              כל הזכויות באפליקציה, כולל הקוד, העיצוב והתוכן, שייכות למפתח האפליקציה. אסור להעתיק, לשכפל או להפיץ את האפליקציה ללא אישור מפורש.
-            </Text>
-
-            <Text style={styles.sectionTitle}>10. דין שולט</Text>
-            <Text style={styles.text}>
-              תנאי שימוש אלה כפופים לחוקי מדינת ישראל. כל מחלוקת תיפתר בפני בית המשפט המוסמך בישראל.
-            </Text>
-
-            <Text style={styles.sectionTitle}>11. יצירת קשר</Text>
-            <Text style={styles.text}>
-              לשאלות או תלונות בנוגע לתנאי השימוש, ניתן ליצור קשר עם מפתח האפליקציה.
-            </Text>
-
-            <Text style={styles.lastUpdated}>
-              עודכן לאחרונה: {new Date().toLocaleDateString('he-IL')}
-            </Text>
+                <Text style={[styles.lastUpdated, language === 'en' && styles.lastUpdatedEn]}>
+                  {termsData.lastUpdated || (
+                    language === 'he' 
+                      ? `עודכן לאחרונה: ${new Date().toLocaleDateString('he-IL')}`
+                      : `Last updated: ${new Date().toLocaleDateString('en-US')}`
+                  )}
+                </Text>
+              </>
+            ) : null}
           </ScrollView>
           
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.acceptButton} onPress={onClose}>
-              <Text style={styles.acceptButtonText}>אני מסכים לתנאים</Text>
+              <Text style={styles.acceptButtonText}>{currentUIContent.accept}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
               style={styles.declineButton} 
               onPress={onDecline || onClose}
             >
-              <Text style={styles.declineButtonText}>לא מסכים לתנאים ולא אשתמש באפליקציה</Text>
+              <Text style={styles.declineButtonText}>{currentUIContent.decline}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -154,6 +222,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
+    paddingTop: 40,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
@@ -163,6 +232,23 @@ const styles = StyleSheet.create({
     color: '#2c3e50',
     textAlign: 'center',
     flex: 1,
+  },
+  titleEn: {
+    textAlign: 'center',
+  },
+  languageButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 15,
+    width: 60,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  languageButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   closeButton: {
     width: 30,
@@ -187,12 +273,18 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'right',
   },
+  sectionTitleEn: {
+    textAlign: 'left',
+  },
   text: {
     fontSize: 14,
     color: '#34495e',
     lineHeight: 20,
     marginBottom: 15,
     textAlign: 'right',
+  },
+  textEn: {
+    textAlign: 'left',
   },
   lastUpdated: {
     fontSize: 12,
@@ -201,6 +293,9 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 10,
     fontStyle: 'italic',
+  },
+  lastUpdatedEn: {
+    textAlign: 'center',
   },
   buttonContainer: {
     flexDirection: 'column',
@@ -225,6 +320,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   declineButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#e74c3c',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
