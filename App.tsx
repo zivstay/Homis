@@ -1,10 +1,12 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Keyboard, Modal, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AppTutorial from './components/AppTutorial';
 import NotificationModal from './components/NotificationModal';
+import TermsAndConditionsModal from './components/TermsAndConditionsModal';
+import { API_CONFIG } from './config/api';
 import { BOARD_TYPES, BoardType, QuickCategory } from './constants/boardTypes';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { BoardProvider, useBoard } from './contexts/BoardContext';
@@ -18,7 +20,7 @@ import LoginScreen from './screens/LoginScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SummaryScreen from './screens/SummaryScreen';
 import { adManager } from './services/adManager';
-import { Board } from './services/api';
+import { Board, apiService } from './services/api';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -778,13 +780,112 @@ function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: stri
 }
 
 function AppContent() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, logout } = useAuth();
   const { selectedBoard } = useBoard();
   const { showTutorial, currentScreen, completeTutorial, setCurrentScreen } = useTutorial();
   const [activeTab, setActiveTab] = React.useState('Home');
+  
+  // Terms and conditions modal
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [requireTermsAcceptance, setRequireTermsAcceptance] = useState(false);
+  const [termsCheckCompleted, setTermsCheckCompleted] = useState(false);
 
   console.log('🔍 AppContent - Auth status:', { isAuthenticated, isLoading, selectedBoard });
   console.log('🔍 AppContent - User object:', user);
+
+  // Check terms acceptance after login
+  const checkTermsAcceptance = useCallback(async () => {
+    console.log('🔍 AppContent: Checking terms acceptance...');
+    
+    try {
+      const authToken = apiService.getAccessToken();
+      if (!authToken) {
+        console.error('❌ AppContent: No auth token available for terms check');
+        Alert.alert('שגיאה', 'שגיאה בקבלת פרטי המשתמש. אנא נסה שוב.');
+        await apiService.logout();
+        return;
+      }
+
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.TERMS_STATUS_ENDPOINT}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('🔍 AppContent: Terms status:', result);
+        
+        if (result.requires_acceptance) {
+          console.log('⚠️ AppContent: User needs to accept new terms before proceeding');
+          setRequireTermsAcceptance(true);
+          setShowTermsModal(true);
+        } else {
+          console.log('✅ AppContent: User terms are up to date');
+          setTermsCheckCompleted(true);
+        }
+      } else {
+        console.error('❌ AppContent: Failed to check terms status:', response.status);
+        Alert.alert(
+          'שגיאה בבדיקת תנאי שימוש',
+          'לא ניתן לאמת את סטטוס תנאי השימוש. אנא נסה שוב.',
+          [
+            {
+              text: 'נסה שוב',
+              onPress: () => checkTermsAcceptance()
+            },
+            {
+              text: 'התנתק',
+              style: 'destructive',
+              onPress: async () => {
+                await apiService.logout();
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('❌ AppContent: Error checking terms acceptance:', error);
+      Alert.alert(
+        'שגיאה בבדיקת תנאי שימוש',
+        'שגיאת רשת בבדיקת תנאי השימוש. אנא בדוק את החיבור לאינטרנט.',
+        [
+          {
+            text: 'נסה שוב',
+            onPress: () => checkTermsAcceptance()
+          },
+          {
+            text: 'התנתק',
+            style: 'destructive',
+            onPress: async () => {
+              await apiService.logout();
+            }
+          }
+        ]
+      );
+    }
+  }, []);
+
+  // Handle terms acceptance
+  const handleTermsAccepted = () => {
+    console.log('✅ AppContent: Terms accepted by user');
+    setShowTermsModal(false);
+    setRequireTermsAcceptance(false);
+    setTermsCheckCompleted(true);
+  };
+
+  // Check terms when user is authenticated
+  useEffect(() => {
+    if (isAuthenticated && !termsCheckCompleted) {
+      console.log('🔍 AppContent: User authenticated, checking terms...');
+      // Add a small delay to ensure login process is complete
+      setTimeout(() => {
+        checkTermsAcceptance();
+      }, 1000);
+    }
+  }, [isAuthenticated, termsCheckCompleted, checkTermsAcceptance]);
 
   // Clear tutorial reset pending flag when app starts
   React.useEffect(() => {
@@ -861,6 +962,50 @@ function AppContent() {
         currentScreen={currentScreen}
         onNavigateToScreen={handleTutorialNavigation}
       />
+
+      {/* Terms and Conditions Modal */}
+      <TermsAndConditionsModal
+        visible={showTermsModal}
+        onClose={() => {
+          // אם נדרש אישור תנאים - לא ניתן לסגור
+          if (requireTermsAcceptance) {
+            return;
+          }
+          setShowTermsModal(false);
+        }}
+        onAccept={requireTermsAcceptance ? handleTermsAccepted : undefined}
+        requireAcceptance={requireTermsAcceptance}
+        onDecline={() => {
+          if (requireTermsAcceptance) {
+            // אם נדרש אישור תנאים - מתנתקים
+            Alert.alert(
+              'התנאים לא התקבלו',
+              'מכיוון שלא אישרת את תנאי השימוש, תתבצע התנתקות מהמערכת.',
+              [
+                {
+                  text: 'הבנתי',
+                  onPress: async () => {
+                    setShowTermsModal(false);
+                    setRequireTermsAcceptance(false);
+                    setTermsCheckCompleted(false);
+                    logout(); // השתמש ב-logout מה-AuthContext
+                  }
+                }
+              ]
+            );
+          } else {
+            setShowTermsModal(false);
+            Alert.alert(
+              'התנאים לא התקבלו',
+              'אם אינך מסכים לתנאי השימוש, לא תוכל להשתמש באפליקציה. אנא שקול שוב את החלטתך.',
+              [
+                { text: 'הבנתי', style: 'default' }
+              ]
+            );
+          }
+        }}
+      />
+
     </View>
   );
 }

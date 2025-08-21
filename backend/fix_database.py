@@ -30,7 +30,7 @@ def fix_database():
             print(f"🔍 Current columns in users table: {existing_columns}")
             
             # Check which columns are missing
-            required_columns = ['accepted_terms', 'terms_accepted_at', 'terms_version']
+            required_columns = ['accepted_terms', 'terms_accepted_at', 'terms_version_signed']
             missing_columns = [col for col in required_columns if col not in existing_columns]
             
             print(f"🔍 Missing columns in users table: {missing_columns}")
@@ -50,19 +50,29 @@ def fix_database():
             else:
                 print("✅ All required debt columns already exist!")
             
-            # Check if we need to add any columns
-            if not missing_columns and not missing_debt_columns:
-                print("✅ All required columns already exist in both tables!")
+            # Check terms_versions table
+            print("🔍 Checking terms_versions table...")
+            table_names = inspector.get_table_names()
+            terms_table_exists = 'terms_versions' in table_names
+            
+            if not terms_table_exists:
+                print("🔍 terms_versions table does not exist - needs to be created")
+            else:
+                print("✅ terms_versions table already exists!")
+            
+            # Check if we need to add any columns or tables
+            if not missing_columns and not missing_debt_columns and terms_table_exists:
+                print("✅ All required columns and tables already exist!")
                 return
             
-            if missing_columns or missing_debt_columns:
+            if missing_columns or missing_debt_columns or not terms_table_exists:
                 # Ask for confirmation
-                response = input("\n❓ Do you want to add the missing columns? (y/n): ").lower().strip()
+                response = input("\n❓ Do you want to add the missing columns/tables? (y/n): ").lower().strip()
                 if response not in ['y', 'yes']:
                     print("❌ Operation cancelled by user")
                     return
                 
-                print("🔧 Adding missing columns...")
+                print("🔧 Adding missing columns and tables...")
                 
                 # Add missing columns to users table
                 if missing_columns:
@@ -86,21 +96,21 @@ def fix_database():
                             """))
                             print("✅ Added terms_accepted_at column")
                         
-                        # Add terms_version column
-                        if 'terms_version' not in existing_columns:
-                            print("➕ Adding terms_version column...")
+                        # Add terms_version_signed column
+                        if 'terms_version_signed' not in existing_columns:
+                            print("➕ Adding terms_version_signed column...")
                             connection.execute(postgres_db.text("""
                                 ALTER TABLE users 
-                                ADD COLUMN terms_version VARCHAR(50)
+                                ADD COLUMN terms_version_signed INTEGER
                             """))
-                            print("✅ Added terms_version column")
+                            print("✅ Added terms_version_signed column")
                         
                         # Update existing users with default values
                         print("🔄 Updating existing users with default values...")
                         connection.execute(postgres_db.text("""
                             UPDATE users 
                             SET accepted_terms = FALSE, 
-                                terms_version = '1.0' 
+                                terms_version_signed = NULL 
                             WHERE accepted_terms IS NULL
                         """))
                         
@@ -142,6 +152,31 @@ def fix_database():
                         
                         print("✅ Debts table changes committed successfully!")
                 
+                # Create terms_versions table if it doesn't exist
+                if not terms_table_exists:
+                    print("🔧 Creating terms_versions table...")
+                    with postgres_db.engine.begin() as connection:
+                        connection.execute(postgres_db.text("""
+                            CREATE TABLE terms_versions (
+                                id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                                version_number INTEGER UNIQUE NOT NULL,
+                                title VARCHAR(255) NOT NULL,
+                                content_hebrew TEXT NOT NULL,
+                                content_english TEXT NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                created_by VARCHAR NOT NULL REFERENCES users(id),
+                                is_active BOOLEAN DEFAULT TRUE NOT NULL,
+                                change_description TEXT
+                            )
+                        """))
+                        
+                        # Create index on version_number
+                        connection.execute(postgres_db.text("""
+                            CREATE INDEX idx_terms_versions_version_number ON terms_versions(version_number)
+                        """))
+                        
+                        print("✅ terms_versions table created successfully!")
+                
                 # Verify all changes
                 print("🔍 Verifying all changes...")
                 
@@ -158,17 +193,23 @@ def fix_database():
                 
                 print(f"🔍 Updated columns in debts table: {updated_debts_column_names}")
                 
+                # Check terms_versions table again
+                updated_table_names = inspector.get_table_names()
+                terms_table_now_exists = 'terms_versions' in updated_table_names
+                
+                print(f"🔍 Terms table exists: {terms_table_now_exists}")
+                
                 # Check if all required columns exist now
                 all_users_required_exist = all(col in updated_users_column_names for col in required_columns)
                 all_debts_required_exist = all(col in updated_debts_column_names for col in required_debt_columns)
                 
-                if all_users_required_exist and all_debts_required_exist:
-                    print("✅ All required columns added successfully to both tables!")
+                if all_users_required_exist and all_debts_required_exist and terms_table_now_exists:
+                    print("✅ All required columns and tables added successfully!")
                     
                     # Show sample data from users
                     with postgres_db.engine.connect() as connection:
                         result = connection.execute(postgres_db.text("""
-                            SELECT id, email, accepted_terms, terms_version 
+                            SELECT id, email, accepted_terms, terms_version_signed 
                             FROM users 
                             LIMIT 3
                         """))
@@ -178,7 +219,7 @@ def fix_database():
                             print(f"   User ID: {row[0]}")
                             print(f"   Email: {row[1]}")
                             print(f"   Accepted Terms: {row[2]}")
-                            print(f"   Terms Version: {row[3]}")
+                            print(f"   Terms Version Signed: {row[3]}")
                             print("   ---")
                     
                     # Show sample data from debts
@@ -198,8 +239,31 @@ def fix_database():
                             print(f"   Is Paid: {row[4]}")
                             print("   ---")
                     
+                    # Show sample data from terms_versions if it exists and has data
+                    if terms_table_now_exists:
+                        with postgres_db.engine.connect() as connection:
+                            result = connection.execute(postgres_db.text("""
+                                SELECT id, version_number, title, created_at, is_active
+                                FROM terms_versions 
+                                ORDER BY version_number DESC
+                                LIMIT 3
+                            """))
+                            
+                            print("\n📊 Sample terms versions data:")
+                            rows = list(result)
+                            if rows:
+                                for row in rows:
+                                    print(f"   Terms ID: {row[0]}")
+                                    print(f"   Version: {row[1]}")
+                                    print(f"   Title: {row[2]}")
+                                    print(f"   Created: {row[3]}")
+                                    print(f"   Active: {row[4]}")
+                                    print("   ---")
+                            else:
+                                print("   No terms versions found - table is empty")
+                    
                     print("\n🎉 Database fix completed successfully!")
-                    print("🚀 You can now run your Flask app with the new columns!")
+                    print("🚀 You can now run your Flask app with the new columns and tables!")
                     
                 else:
                     print("❌ Some columns are still missing. Please check the database manually.")
@@ -207,6 +271,8 @@ def fix_database():
                         print(f"❌ Missing users columns: {[col for col in required_columns if col not in updated_users_column_names]}")
                     if not all_debts_required_exist:
                         print(f"❌ Missing debts columns: {[col for col in required_debt_columns if col not in updated_debts_column_names]}")
+                    if not terms_table_now_exists:
+                        print(f"❌ Missing terms_versions table")
                 
                 return
             

@@ -19,7 +19,7 @@ from functools import wraps
 
 from config import config
 from models import UserRole, BoardPermission
-from postgres_models import db as postgres_db, PostgreSQLDatabaseManager
+from postgres_models import db as postgres_db, PostgreSQLDatabaseManager, TermsVersion
 from auth import AuthManager, require_auth, require_board_access, require_board_owner, require_board_admin
 from b2_storage import create_b2_service
 
@@ -504,7 +504,7 @@ def create_app(config_name='default'):
                 'last_name': data['last_name'],
                 'accepted_terms': data.get('accepted_terms', True),
                 'terms_accepted_at': data.get('terms_accepted_at', datetime.utcnow()),
-                'terms_version': '1.0'
+                'terms_version_signed': None  # Will be set when user actually accepts terms
             }
             
             # יצירת המשתמש בבסיס הנתונים
@@ -558,7 +558,7 @@ def create_app(config_name='default'):
                     'user_id': user.id,
                     'accepted_terms': user.accepted_terms,
                     'terms_accepted_at': user.terms_accepted_at,
-                    'terms_version': user.terms_version
+                    'terms_version_signed': user.terms_version_signed
                 }
                 
                 # Add information about automatically joined boards
@@ -626,7 +626,7 @@ def create_app(config_name='default'):
                 'last_name': data['last_name'],
                 'accepted_terms': data.get('accepted_terms', True),
                 'terms_accepted_at': data.get('terms_accepted_at', datetime.utcnow()),
-                'terms_version': '1.0'
+                'terms_version_signed': None  # Will be set when user actually accepts terms
             }
             
             # יצירת המשתמש בבסיס הנתונים
@@ -670,7 +670,7 @@ def create_app(config_name='default'):
                         'user_id': user.id,
                         'accepted_terms': user.accepted_terms,
                         'terms_accepted_at': user.terms_accepted_at,
-                        'terms_version': user.terms_version,
+                        'terms_version_signed': user.terms_version_signed,
                         'boards_joined': boards_joined
                     }), 201
                 else:
@@ -1050,7 +1050,7 @@ def create_app(config_name='default'):
                 'last_name': 'User',
                 'accepted_terms': True,
                 'terms_accepted_at': datetime.utcnow(),
-                'terms_version': '1.0'
+                'terms_version_signed': None  # Will be set when user actually accepts terms
             }
             
             # Create user
@@ -3049,11 +3049,23 @@ def create_app(config_name='default'):
             if not user:
                 return jsonify({'error': 'User not found'}), 404
             
+            # Get latest terms version
+            latest_terms = get_latest_terms_version()
+            if not latest_terms:
+                return jsonify({'error': 'No active terms version found'}), 500
+            
+            # Check if user has signed the latest version
+            user_signed_version = user.terms_version_signed
+            latest_version = latest_terms.version_number
+            is_up_to_date = user_signed_version == latest_version
+            
             return jsonify({
                 'accepted_terms': user.accepted_terms,
-                'terms_accepted_at': user.terms_accepted_at.isoformat() if user.terms_accepted_at else None,
-                'terms_version': user.terms_version,
-                'current_terms_version': '1.0'  # Update this when terms change
+                'terms_accepted_at': user.terms_accepted_at if user.terms_accepted_at else None,
+                'terms_version_signed': user_signed_version,
+                'current_terms_version': latest_version,
+                'is_up_to_date': is_up_to_date,
+                'requires_acceptance': not is_up_to_date
             }), 200
             
         except Exception as e:
@@ -3075,11 +3087,16 @@ def create_app(config_name='default'):
             if not user:
                 return jsonify({'error': 'User not found'}), 404
             
+            # Get latest terms version
+            latest_terms = get_latest_terms_version()
+            if not latest_terms:
+                return jsonify({'error': 'No active terms version found'}), 500
+            
             # Update terms acceptance
             update_data = {
                 'accepted_terms': True,
                 'terms_accepted_at': datetime.utcnow(),
-                'terms_version': '1.0'
+                'terms_version_signed': latest_terms.version_number
             }
             
             success = db_manager.update_user(current_user['id'], update_data)
@@ -3088,7 +3105,7 @@ def create_app(config_name='default'):
                 return jsonify({
                     'message': 'Terms accepted successfully',
                     'accepted_at': datetime.utcnow().isoformat(),
-                    'terms_version': '1.0'
+                    'terms_version_signed': latest_terms.version_number
                 }), 200
             else:
                 return jsonify({'error': 'Failed to update terms acceptance'}), 500
@@ -3096,6 +3113,73 @@ def create_app(config_name='default'):
         except Exception as e:
             print(f"❌ Terms acceptance update error: {e}")
             return jsonify({'error': 'Failed to update terms acceptance'}), 500
+
+    @app.route('/api/auth/terms-status', methods=['GET'])
+    @require_auth
+    def get_terms_status():
+        """Get current user's terms acceptance status and latest version info"""
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            user = db_manager.get_user_by_id(current_user['id'])
+            
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            # Get latest terms version
+            latest_terms = get_latest_terms_version()
+            
+            if not latest_terms:
+                return jsonify({'error': 'No active terms version found'}), 500
+            
+            # Check if user has signed the latest version
+            user_signed_version = user.terms_version_signed
+            latest_version = latest_terms.version_number
+            is_up_to_date = user_signed_version == latest_version
+            
+            return jsonify({
+                'user_terms_status': {
+                    'accepted_terms': user.accepted_terms,
+                    'terms_accepted_at': user.terms_accepted_at if user.terms_accepted_at else None,
+                    'terms_version_signed': user_signed_version,
+                    'is_up_to_date': is_up_to_date
+                },
+                'latest_terms': {
+                    'version_number': latest_version,
+                    'title': latest_terms.title,
+                    'created_at': latest_terms.created_at.isoformat(),
+                    'change_description': latest_terms.change_description
+                },
+                'requires_acceptance': not is_up_to_date
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error getting terms status: {e}")
+            return jsonify({'error': 'Failed to get terms status'}), 500
+
+    @app.route('/api/terms/latest', methods=['GET'])
+    def get_latest_terms_info():
+        """Get information about the latest terms version (public endpoint)"""
+        try:
+            latest_terms = get_latest_terms_version()
+            
+            if not latest_terms:
+                return jsonify({'error': 'No active terms version found'}), 404
+            
+            return jsonify({
+                'version_number': latest_terms.version_number,
+                'title': latest_terms.title,
+                'created_at': latest_terms.created_at.isoformat(),
+                'change_description': latest_terms.change_description,
+                'endpoints': {
+                    'hebrew': '/terms/he',
+                    'english': '/terms/en',
+                    'default': '/terms'
+                }
+            }), 200
+            
+        except Exception as e:
+            print(f"❌ Error getting latest terms info: {e}")
+            return jsonify({'error': 'Failed to get terms information'}), 500
 
     # Terms and Conditions API endpoints
     @app.route('/terms', methods=['GET'])
@@ -3113,8 +3197,43 @@ def create_app(config_name='default'):
         """Get terms and conditions in Hebrew"""
         return get_terms_html('he')
     
+    def get_latest_terms_version():
+        """Get the latest active terms version from database"""
+        try:
+            latest_terms = TermsVersion.query.filter_by(is_active=True).order_by(TermsVersion.version_number.desc()).first()
+            return latest_terms
+        except Exception as e:
+            print(f"Error getting latest terms: {e}")
+            return None
+
     def get_terms_html(language='he'):
-        """Generate HTML terms and conditions based on language"""
+        """Get HTML terms and conditions from database based on language"""
+        # Get latest terms from database
+        latest_terms = get_latest_terms_version()
+        
+        if not latest_terms:
+            # Fallback to default message if no terms in database
+            return Response("""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Terms Not Available</title></head>
+            <body>
+                <h1>Terms and Conditions</h1>
+                <p>Terms and conditions are not available at this time. Please contact support.</p>
+            </body>
+            </html>
+            """, mimetype='text/html')
+        
+        # Get content based on language
+        if language == 'en':
+            html_content = latest_terms.content_english
+        else:
+            html_content = latest_terms.content_hebrew
+        
+        return Response(html_content, mimetype='text/html')
+
+    def get_legacy_terms_html(language='he'):
+        """Legacy function - Generate static HTML terms and conditions based on language (for reference)"""
         if language == 'en':
             html_content = f"""
             <!DOCTYPE html>

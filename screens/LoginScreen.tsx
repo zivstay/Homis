@@ -24,7 +24,7 @@ const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, register, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData, registrationError, clearRegistrationError, registrationFormData, updateRegistrationFormData, clearRegistrationFormData } = useAuth();
+  const { login, register, logout, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData, registrationError, clearRegistrationError, registrationFormData, updateRegistrationFormData, clearRegistrationFormData } = useAuth();
 
   // Remove local register form state - using registrationFormData from AuthContext
   // Email verification
@@ -38,6 +38,8 @@ const LoginScreen: React.FC = () => {
   
   // Terms and conditions modal
   const [showTermsModal, setShowTermsModal] = useState(false);
+  
+
 
   // Add effect to track when isLogin changes unexpectedly
   useEffect(() => {
@@ -95,6 +97,8 @@ const LoginScreen: React.FC = () => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+
+
   const handleVerifyCode = async () => {
     console.log('🔍 LoginScreen: handleVerifyCode called');
     console.log('🔍 LoginScreen: verificationCode:', verificationCode);
@@ -124,6 +128,7 @@ const LoginScreen: React.FC = () => {
       // Registration successful, user is now logged in
       setShowVerification(false);
       setVerificationCode('');
+      // Terms will be checked in App.tsx after navigation
       // setPendingUserData(null); // This is now handled by AuthContext
     } else {
       console.log('🔍 LoginScreen: Verification failed:', result.error);
@@ -181,9 +186,11 @@ const LoginScreen: React.FC = () => {
 
     setIsLoading(true);
     const result = await login({ email, password });
-    setIsLoading(false);
 
-    if (!result.success) {
+    if (result.success) {
+      console.log('🔍 LoginScreen: Login successful - terms will be checked in App.tsx');
+      // Login succeeded, terms will be checked in App.tsx after navigation
+    } else {
       // Handle specific error messages
       let errorMessage = result.error || 'שגיאה בהתחברות';
       
@@ -195,6 +202,8 @@ const LoginScreen: React.FC = () => {
       
       setError(errorMessage);
     }
+    
+    setIsLoading(false);
   };
 
   const handleRegister = async () => {
@@ -257,6 +266,8 @@ const LoginScreen: React.FC = () => {
   const renderLoginForm = () => (
     <View style={styles.formContainer}>
       <Text style={styles.title}>התחברות</Text>
+      
+
       
       <TouchableOpacity
         style={styles.linkButton}
@@ -652,12 +663,11 @@ const LoginScreen: React.FC = () => {
         onClose={() => setShowPasswordResetModal(false)}
       />
       
-      <TermsAndConditionsModal
+            <TermsAndConditionsModal
         visible={showTermsModal}
         onClose={() => setShowTermsModal(false)}
         onDecline={() => {
           setShowTermsModal(false);
-          // אפשר להוסיף כאן לוגיקה נוספת כמו יציאה מהאפליקציה או הצגת הודעה
           Alert.alert(
             'התנאים לא התקבלו',
             'אם אינך מסכים לתנאי השימוש, לא תוכל להשתמש באפליקציה. אנא שקול שוב את החלטתך.',
@@ -895,6 +905,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
+
 });
 
 export default LoginScreen; 

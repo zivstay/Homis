@@ -42,7 +42,20 @@ class UserDataclass:
     avatar_url: Optional[str] = None
     accepted_terms: bool = False
     terms_accepted_at: Optional[str] = None
-    terms_version: Optional[str] = None
+    terms_version_signed: Optional[int] = None
+
+
+@dataclass
+class TermsVersionDataclass:
+    id: str
+    version_number: int
+    title: str
+    content_hebrew: str
+    content_english: str
+    created_at: str
+    created_by: str
+    is_active: bool
+    change_description: Optional[str] = None
 
 
 @dataclass
@@ -193,7 +206,7 @@ class User(db.Model):
     # Add new fields for terms acceptance
     accepted_terms = Column(Boolean, default=False, nullable=False)
     terms_accepted_at = Column(DateTime, nullable=True)
-    terms_version = Column(String(50), nullable=True)  # Optional: track terms version
+    terms_version_signed = Column(Integer, nullable=True)  # Track terms version number
 
     # Relationships
     owned_boards = relationship("Board", back_populates="owner", foreign_keys="Board.owner_id")
@@ -231,13 +244,47 @@ class User(db.Model):
             'email_verified': self.email_verified,
             'avatar_url': self.avatar_url,
             'accepted_terms': self.accepted_terms,
-            'terms_accepted_at': self.terms_accepted_at.isoformat() if self.terms_accepted_at else None,
-            'terms_version': self.terms_version
+            'terms_accepted_at': self.terms_accepted_at if self.terms_accepted_at else None,
+            'terms_version_signed': self.terms_version_signed
         }
 
     def to_dataclass(self) -> UserDataclass:
         """Convert SQLAlchemy model to dataclass for compatibility"""
         return UserDataclass(**self.to_dict())
+
+
+class TermsVersion(db.Model):
+    __tablename__ = 'terms_versions'
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    version_number = Column(Integer, unique=True, nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    content_hebrew = Column(Text, nullable=False)
+    content_english = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String, ForeignKey('users.id'), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    change_description = Column(Text, nullable=True)
+
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'version_number': self.version_number,
+            'title': self.title,
+            'content_hebrew': self.content_hebrew,
+            'content_english': self.content_english,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by': self.created_by,
+            'is_active': self.is_active,
+            'change_description': self.change_description,
+        }
+
+    def to_dataclass(self) -> TermsVersionDataclass:
+        """Convert SQLAlchemy model to dataclass for compatibility"""
+        return TermsVersionDataclass(**self.to_dict())
 
 
 class Board(db.Model):
