@@ -17,21 +17,16 @@ import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import { useAuth } from '../contexts/AuthContext';
 
 const LoginScreen: React.FC = () => {
+  console.log('🔍 LoginScreen: ⚡ COMPONENT INITIALIZING ⚡');
+  console.log('🔍 LoginScreen: useState(true) called for isLogin - defaulting to LOGIN mode');
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, register, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData } = useAuth();
+  const { login, register, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData, registrationError, clearRegistrationError, registrationFormData, updateRegistrationFormData, clearRegistrationFormData } = useAuth();
 
-  // Register form
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
-  const [registerFirstName, setRegisterFirstName] = useState('');
-  const [registerLastName, setRegisterLastName] = useState('');
-  const [registerError, setRegisterError] = useState('');
-
+  // Remove local register form state - using registrationFormData from AuthContext
   // Email verification
   const [verificationCode, setVerificationCode] = useState('');
   const [verificationError, setVerificationError] = useState('');
@@ -44,15 +39,22 @@ const LoginScreen: React.FC = () => {
   // Terms and conditions modal
   const [showTermsModal, setShowTermsModal] = useState(false);
 
-  // Add new state for terms acceptance
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Add effect to track when isLogin changes unexpectedly
+  useEffect(() => {
+    console.log('🔍 LoginScreen: isLogin state changed to:', isLogin);
+    console.log('🔍 LoginScreen: Stack trace for isLogin change:');
+    console.trace();
+  }, [isLogin]);
 
   useEffect(() => {
-    setError('');
-    setRegisterError('');
-    setVerificationError('');
-    // Don't reset showVerification here - it should persist
     console.log('🔍 LoginScreen: useEffect triggered by isLogin change, isLogin:', isLogin);
+    // Only clear errors if we're INTENTIONALLY switching between forms
+    // Don't clear errors if the component is just re-rendering
+    console.log('🔍 LoginScreen: NOTE - Not clearing errors on isLogin change to prevent accidental clearing');
+    // setError('');
+    // clearRegistrationError('');
+    // setVerificationError('');
+    // Don't reset showVerification here - it should persist
   }, [isLogin]);
 
   // Add effect to monitor showVerification changes
@@ -156,8 +158,10 @@ const LoginScreen: React.FC = () => {
 
   const clearErrors = () => {
     setError('');
-    setRegisterError('');
+    clearRegistrationError(); // Clear registration error from AuthContext
     setVerificationError('');
+    // Note: We don't clear form data here to preserve user input
+    // Form data is only cleared when explicitly switching between login/register modes
   };
 
   const handleLogin = async () => {
@@ -199,56 +203,38 @@ const LoginScreen: React.FC = () => {
     console.log('🔍 LoginScreen: Starting registration process...');
     console.log('🔍 LoginScreen: Current isLogin state:', isLogin);
     
-         if (!registerEmail || !registerPassword ||
-         !registerConfirmPassword || !registerFirstName || !registerLastName) {
-       setRegisterError('נא למלא את כל השדות');
-       return;
-     }
-
-    // Check if terms are accepted
-    if (!acceptedTerms) {
-      setRegisterError('עליך לאשר את תנאי השימוש כדי להמשיך');
-      return;
-    }
-
-    if (registerPassword !== registerConfirmPassword) {
-      setRegisterError('הסיסמאות אינן תואמות');
-      return;
-    }
-
-    if (registerPassword.length < 8) {
-      setRegisterError('הסיסמה חייבת להיות לפחות 8 תווים');
-      return;
-    }
-
-    // Email validation for registration
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(registerEmail)) {
-      setRegisterError('כתובת האימייל אינה תקינה');
-      return;
-    }
+             // Note: Local validation removed - all validation now handled by backend
+    // This provides a more consistent user experience and reduces code duplication
 
     
 
          // Generate username from email (remove @domain part)
-     const username = registerEmail.split('@')[0];
+     const username = registrationFormData.registerEmail.split('@')[0];
      
      const userData = {
-       email: registerEmail,
+       email: registrationFormData.registerEmail,
        username: username,
-       password: registerPassword,
-       first_name: registerFirstName,
-       last_name: registerLastName,
-       accepted_terms: acceptedTerms, // Use the checkbox state
-       terms_accepted_at: acceptedTerms ? new Date().toISOString() : null // Only set if accepted
+       password: registrationFormData.registerPassword,
+       first_name: registrationFormData.registerFirstName,
+       last_name: registrationFormData.registerLastName,
+       accepted_terms: registrationFormData.acceptedTerms, // Use the checkbox state
+       terms_accepted_at: registrationFormData.acceptedTerms ? new Date().toISOString() : null // Only set if accepted
      };
 
+    console.log('🔍 LoginScreen: ==================== STARTING REGISTRATION ====================');
+    console.log('🔍 LoginScreen: User data:', userData);
+    console.log('🔍 LoginScreen: Current state before request - isLogin:', isLogin, 'showVerification:', showVerification);
     console.log('🔍 LoginScreen: Sending verification code for:', userData.email);
+    
     setIsLoading(true);
     const result = await sendVerificationCode(userData);
     setIsLoading(false);
 
+    console.log('🔍 LoginScreen: ==================== REGISTRATION RESULT ====================');
     console.log('🔍 LoginScreen: Verification code result:', result);
+    console.log('🔍 LoginScreen: Result type:', typeof result);
+    console.log('🔍 LoginScreen: Result success field:', result?.success);
+    console.log('🔍 LoginScreen: Result error field:', result?.error);
 
     if (result.success) {
       console.log('🔍 LoginScreen: Verification code sent successfully, showing verification screen');
@@ -259,29 +245,30 @@ const LoginScreen: React.FC = () => {
       startTimer();
       console.log('🔍 LoginScreen: State updated - showVerification should be true now');
     } else {
+      console.log('🔍 LoginScreen: ❌❌❌ REGISTRATION FAILED ❌❌❌');
       console.log('🔍 LoginScreen: Verification code failed:', result.error);
-      // Handle specific error messages
-      let errorMessage = result.error || 'שגיאה ברישום';
-      
-      if (errorMessage.includes('Email already exists')) {
-        errorMessage = 'כתובת האימייל כבר קיימת במערכת';
-      } else        if (errorMessage.includes('already exists') || errorMessage.includes('already registered')) {
-         if (errorMessage.includes('email')) {
-           errorMessage = 'כתובת האימייל כבר קיימת במערכת';
-         } else {
-           errorMessage = 'המשתמש כבר קיים במערכת';
-         }
-       } else if (errorMessage.includes('Connection failed')) {
-        errorMessage = 'שגיאת חיבור - בדוק את החיבור לאינטרנט';
-      }
-      
-      setRegisterError(errorMessage);
+      console.log('🔍 LoginScreen: Current state - isLogin:', isLogin, 'showVerification:', showVerification);
+      console.log('🔍 LoginScreen: Error handling now done in AuthContext');
+      console.log('🔍 LoginScreen: registrationError from context:', registrationError);
+      console.log('🔍 LoginScreen: Staying in register mode (isLogin should remain false)');
     }
   };
 
   const renderLoginForm = () => (
     <View style={styles.formContainer}>
       <Text style={styles.title}>התחברות</Text>
+      
+      <TouchableOpacity
+        style={styles.linkButton}
+        onPress={() => {
+          console.log('🔍 LoginScreen: User clicked "אין לך חשבון? הירשם כאן" at top - switching to register');
+          setIsLogin(false);
+          clearErrors();
+          // Don't clear form data when switching TO register mode
+        }}
+      >
+        <Text style={styles.linkText}>אין לך חשבון? הירשם כאן</Text>
+      </TouchableOpacity>
       
       <TextInput
         style={[styles.input, error ? styles.inputError : null]}
@@ -337,6 +324,7 @@ const LoginScreen: React.FC = () => {
       <TouchableOpacity
         style={styles.linkButton}
         onPress={() => {
+          console.log('🔍 LoginScreen: User clicked "הירשם כאן" - switching to register');
           setIsLogin(false);
           clearErrors();
         }}
@@ -359,13 +347,25 @@ const LoginScreen: React.FC = () => {
     <View style={styles.formContainer}>
       <Text style={styles.title}>הרשמה</Text>
       
+      <TouchableOpacity
+        style={styles.linkButton}
+        onPress={() => {
+          console.log('🔍 LoginScreen: User clicked "יש לך כבר חשבון? התחבר כאן" at top - switching to login');
+          setIsLogin(true);
+          clearErrors();
+          clearRegistrationFormData(); // Clear form data when switching TO login mode
+        }}
+      >
+        <Text style={styles.linkText}>יש לך כבר חשבון? התחבר כאן</Text>
+      </TouchableOpacity>
+      
       <TextInput
-        style={[styles.input, registerError ? styles.inputError : null]}
+        style={[styles.input, registrationError ? styles.inputError : null]}
         placeholder="שם פרטי"
-        value={registerFirstName}
+        value={registrationFormData.registerFirstName}
         onChangeText={(text) => {
-          setRegisterFirstName(text);
-          if (registerError) setRegisterError('');
+          updateRegistrationFormData({ registerFirstName: text });
+          if (registrationError) clearRegistrationError();
         }}
         returnKeyType="next"
         onSubmitEditing={() => Keyboard.dismiss()}
@@ -373,12 +373,12 @@ const LoginScreen: React.FC = () => {
       />
       
       <TextInput
-        style={[styles.input, registerError ? styles.inputError : null]}
+        style={[styles.input, registrationError ? styles.inputError : null]}
         placeholder="שם משפחה"
-        value={registerLastName}
+        value={registrationFormData.registerLastName}
         onChangeText={(text) => {
-          setRegisterLastName(text);
-          if (registerError) setRegisterError('');
+          updateRegistrationFormData({ registerLastName: text });
+          if (registrationError) clearRegistrationError();
         }}
         returnKeyType="next"
         onSubmitEditing={() => Keyboard.dismiss()}
@@ -388,12 +388,12 @@ const LoginScreen: React.FC = () => {
       
       
       <TextInput
-        style={[styles.input, registerError ? styles.inputError : null]}
+        style={[styles.input, registrationError ? styles.inputError : null]}
         placeholder="אימייל"
-        value={registerEmail}
+        value={registrationFormData.registerEmail}
         onChangeText={(text) => {
-          setRegisterEmail(text);
-          if (registerError) setRegisterError('');
+          updateRegistrationFormData({ registerEmail: text });
+          if (registrationError) clearRegistrationError();
         }}
         keyboardType="email-address"
         autoCapitalize="none"
@@ -404,12 +404,12 @@ const LoginScreen: React.FC = () => {
       />
       
       <TextInput
-        style={[styles.input, registerError ? styles.inputError : null]}
+        style={[styles.input, registrationError ? styles.inputError : null]}
         placeholder="סיסמה"
-        value={registerPassword}
+        value={registrationFormData.registerPassword}
         onChangeText={(text) => {
-          setRegisterPassword(text);
-          if (registerError) setRegisterError('');
+          updateRegistrationFormData({ registerPassword: text });
+          if (registrationError) clearRegistrationError();
         }}
         secureTextEntry
         returnKeyType="next"
@@ -418,12 +418,12 @@ const LoginScreen: React.FC = () => {
       />
       
       <TextInput
-        style={[styles.input, registerError ? styles.inputError : null]}
+        style={[styles.input, registrationError ? styles.inputError : null]}
         placeholder="אימות סיסמה"
-        value={registerConfirmPassword}
+        value={registrationFormData.registerConfirmPassword}
         onChangeText={(text) => {
-          setRegisterConfirmPassword(text);
-          if (registerError) setRegisterError('');
+          updateRegistrationFormData({ registerConfirmPassword: text });
+          if (registrationError) clearRegistrationError();
         }}
         secureTextEntry
         returnKeyType="done"
@@ -431,17 +431,29 @@ const LoginScreen: React.FC = () => {
         blurOnSubmit={true}
       />
       
-      {registerError ? (
-        <Text style={styles.errorText}>{registerError}</Text>
-      ) : null}
+      {(() => {
+        console.log('🔍 LoginScreen: 🚨 ERROR DISPLAY CHECK 🚨');
+        console.log('🔍 LoginScreen: registrationError value:', registrationError);
+        console.log('🔍 LoginScreen: registrationError type:', typeof registrationError);
+        console.log('🔍 LoginScreen: registrationError length:', registrationError?.length);
+        console.log('🔍 LoginScreen: Should show error?', !!registrationError);
+        
+        if (registrationError) {
+          console.log('🔍 LoginScreen: ✅ Showing error message:', registrationError);
+          return <Text style={styles.errorText}>{registrationError}</Text>;
+        } else {
+          console.log('🔍 LoginScreen: ❌ No error to show');
+          return null;
+        }
+      })()}
       
       {/* Add terms acceptance checkbox */}
       <View style={styles.termsCheckboxContainer}>
         <TouchableOpacity 
-          style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}
-          onPress={() => setAcceptedTerms(!acceptedTerms)}
+          style={[styles.checkbox, registrationFormData.acceptedTerms && styles.checkboxChecked]}
+          onPress={() => updateRegistrationFormData({ acceptedTerms: !registrationFormData.acceptedTerms })}
         >
-          {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+          {registrationFormData.acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
         </TouchableOpacity>
                  <View style={styles.termsTextContainer}>
            <Text style={styles.termsCheckboxText}>
@@ -457,10 +469,10 @@ const LoginScreen: React.FC = () => {
         style={[
           styles.button, 
           styles.primaryButton,
-          !acceptedTerms && styles.buttonDisabled
+          !registrationFormData.acceptedTerms && styles.buttonDisabled
         ]}
         onPress={handleRegister}
-        disabled={isLoading || !acceptedTerms}
+        disabled={isLoading || !registrationFormData.acceptedTerms}
       >
         <Text style={styles.buttonText}>
           {isLoading ? 'נרשם...' : 'הירשם'}
@@ -470,8 +482,10 @@ const LoginScreen: React.FC = () => {
              <TouchableOpacity
          style={styles.linkButton}
          onPress={() => {
+           console.log('🔍 LoginScreen: User clicked "יש לך חשבון? התחבר כאן" - switching to login');
            setIsLogin(true);
            clearErrors();
+           clearRegistrationFormData(); // Clear form data when switching TO login mode
          }}
        >
          <Text style={styles.linkText}>יש לך חשבון? התחבר כאן</Text>
@@ -480,17 +494,17 @@ const LoginScreen: React.FC = () => {
        <TouchableOpacity
          style={styles.linkButton}
          onPress={() => {
+           console.log('🔍 LoginScreen: User clicked "חזור להתחברות" - switching to login');
            setIsLogin(true);
            clearErrors();
+           clearRegistrationFormData(); // Clear form data when switching TO login mode
          }}
        >
          <Text style={styles.linkText}>חזור להתחברות</Text>
        </TouchableOpacity>
       
              <View style={styles.termsContainer}>
-         <Text style={styles.termsText}>
-           בהרשמה למערכת, אתה מסכים לתנאי השימוש שלנו
-         </Text>
+
          <TouchableOpacity onPress={() => setShowTermsModal(true)}>
            <Text style={styles.termsLink}>תנאי השימוש</Text>
          </TouchableOpacity>
@@ -606,16 +620,31 @@ const LoginScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.header}>
+        <View style={[styles.header, { gap: 2 }]}>
           <Image 
             source={require('../assets/images/main_logo.jpeg')} 
             style={styles.logoImage}
             resizeMode="contain"
           />
-          <Text style={styles.appSubtitle}>ניהול הוצאות משותפות</Text>
         </View>
         
-        {showVerification ? renderVerificationScreen() : (isLogin ? renderLoginForm() : renderRegisterForm())}
+        {(() => {
+          console.log('🔍 LoginScreen: 🎭 RENDERING DECISION 🎭');
+          console.log('🔍 LoginScreen: showVerification:', showVerification);
+          console.log('🔍 LoginScreen: isLogin:', isLogin);
+          console.log('🔍 LoginScreen: registrationError:', registrationError);
+          
+          if (showVerification) {
+            console.log('🔍 LoginScreen: → Rendering VERIFICATION screen');
+            return renderVerificationScreen();
+          } else if (isLogin) {
+            console.log('🔍 LoginScreen: → Rendering LOGIN screen');
+            return renderLoginForm();
+          } else {
+            console.log('🔍 LoginScreen: → Rendering REGISTER screen');
+            return renderRegisterForm();
+          }
+        })()}
       </ScrollView>
       
       <PasswordResetModal
@@ -659,7 +688,7 @@ const styles = StyleSheet.create({
   logoImage: {
     width: 150,
     height: 150,
-    marginBottom: 16,
+    marginBottom: 0,
   },
   form: {
     backgroundColor: 'white',

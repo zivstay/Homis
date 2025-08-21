@@ -1,5 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -58,6 +58,7 @@ interface BarChartData {
 }
 
 const SummaryScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { user } = useAuth();
   const { boards, selectedBoard } = useBoard();
   const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
@@ -140,7 +141,7 @@ const SummaryScreen: React.FC = () => {
 
   // Force load data when component first initializes
   useEffect(() => {
-    if (isInitialized && selectedPeriod && selectedBoards.length > 0) {
+    if (isInitialized && selectedPeriod) {
       console.log('🔧 SummaryScreen: Component initialized, loading initial data');
       if (activeTab === 'expenses') {
         loadSummary();
@@ -507,10 +508,17 @@ const SummaryScreen: React.FC = () => {
     setSelectedBoards(prev => {
       if (prev.includes(boardId)) {
         // If board is already selected, remove it (deselect)
-        return prev.filter(id => id !== boardId);
+        const newSelection = prev.filter(id => id !== boardId);
+        // If no boards are selected after removal, show all boards
+        return newSelection.length === 0 ? [] : newSelection;
       } else {
         // If board is not selected, add it
-        return [...prev, boardId];
+        // If currently showing all boards (empty array), switch to only this board
+        if (prev.length === 0) {
+          return [boardId];
+        } else {
+          return [...prev, boardId];
+        }
       }
     });
   };
@@ -826,18 +834,15 @@ const SummaryScreen: React.FC = () => {
     const total = data.reduce((sum, item) => sum + item.value, 0);
     
     return (
-      <View style={styles.chartSection}>
-        <Text style={styles.chartTitle}>{title}</Text>
-        <View style={styles.chartWrapper}>
-          <BarChart
-            key={`${title}-${data.length}-${JSON.stringify(data.map(d => d.value))}`}
-            data={data}
-            width={screenWidth - 40}
-            height={200}
-            showLabels={showCharts}
-            showValues={true}
-          />
-        </View>
+      <View style={styles.chartWrapper}>
+        <BarChart
+          key={`${title}-${data.length}-${JSON.stringify(data.map(d => d.value))}`}
+          data={data}
+          width={screenWidth - 40}
+          height={200}
+          showLabels={showCharts}
+          showValues={true}
+        />
       </View>
     );
   };
@@ -861,24 +866,50 @@ const SummaryScreen: React.FC = () => {
     </TouchableOpacity>
   );
 
-  const renderBoardFilter = ({ item }: { item: any }) => (
-    <TouchableOpacity
-      style={[
-        styles.boardFilterButton,
-        selectedBoards.includes(item.id) && styles.selectedBoardFilterButton,
-      ]}
-      onPress={() => handleBoardToggle(item.id)}
-    >
-      <Text
+  const renderBoardFilter = ({ item }: { item: any }) => {
+    // Handle "All Boards" special case
+    if (item.isAllBoards) {
+      const isSelected = selectedBoards.length === 0;
+      return (
+        <TouchableOpacity
+          style={[
+            styles.boardFilterButton,
+            isSelected && styles.selectedAllBoardsFilterButton,
+          ]}
+          onPress={() => setSelectedBoards([])}
+        >
+          <Text
+            style={[
+              styles.boardFilterText,
+              isSelected && styles.selectedAllBoardsFilterText,
+            ]}
+          >
+            {isSelected ? '✓ ' : ''}{item.name}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+
+    // Handle regular board
+    return (
+      <TouchableOpacity
         style={[
-          styles.boardFilterText,
-          selectedBoards.includes(item.id) && styles.selectedBoardFilterText,
+          styles.boardFilterButton,
+          selectedBoards.includes(item.id) && styles.selectedBoardFilterButton,
         ]}
+        onPress={() => handleBoardToggle(item.id)}
       >
-        {selectedBoards.includes(item.id) ? '✓ ' : ''}{item.name}
-      </Text>
-    </TouchableOpacity>
-  );
+        <Text
+          style={[
+            styles.boardFilterText,
+            selectedBoards.includes(item.id) && styles.selectedBoardFilterText,
+          ]}
+        >
+          {selectedBoards.includes(item.id) ? '✓ ' : ''}{item.name}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
 
 
@@ -978,6 +1009,26 @@ const SummaryScreen: React.FC = () => {
     }, [setCurrentScreen, checkScreenTutorial, startTutorial])
   );
 
+  // If no board is selected, show board selection screen
+  if (!selectedBoard) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.noBoardContainer}>
+          <Text style={styles.noBoardTitle}>בחר לוח לסיכום</Text>
+          <Text style={styles.noBoardSubtitle}>
+            בחר לוח קיים או צור לוח חדש כדי לראות סיכום הוצאות והתחשבנויות
+          </Text>
+          <TouchableOpacity
+            style={styles.selectBoardButton}
+            onPress={() => navigation.navigate('BoardSelection' as never)}
+          >
+            <Text style={styles.selectBoardButtonText}>בחר לוח</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -1052,11 +1103,11 @@ const SummaryScreen: React.FC = () => {
         />
       </View>
 
-      {/* Board Filters - TEMPORARILY DISABLED */}
-      {/* 
+      {/* Board Filters */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>סינון לפי לוח</Text>
-        <Text style={styles.filterHelpText}>לחץ על לוח לבחירה, לחץ שוב לביטול</Text>
+        <Text style={styles.filterHelpText}>בחר לוחות להצגה. אפשר לבחור מספר לוחות או את כולם</Text>
+        
         {boards && boards.length > 0 ? (
           <View style={styles.scrollContainer}>
             {canScrollLeft && (
@@ -1067,7 +1118,7 @@ const SummaryScreen: React.FC = () => {
             
             <FlatList
               ref={(ref) => setBoardScrollRef(ref)}
-              data={getSortedBoards()}
+              data={[{ id: 'all', name: 'כל הלוחות', isAllBoards: true }, ...getSortedBoards()]}
               renderItem={renderBoardFilter}
               keyExtractor={(item) => item.id}
               horizontal
@@ -1097,7 +1148,6 @@ const SummaryScreen: React.FC = () => {
           <Text style={styles.allBoardsSelectedText}>מציג נתונים מכל הלוחות</Text>
         )}
       </View>
-      */}
 
       {/* Paid Status Filters - Only for settlements tab */}
       {/* 
@@ -1170,8 +1220,8 @@ const SummaryScreen: React.FC = () => {
                 </View>
               )}
 
-              {/* Boards Breakdown */}
-              {Object.keys(summary.expenses_by_board).length > 0 && (
+              {/* Boards Breakdown - Only show when multiple boards are selected or all boards */}
+              {Object.keys(summary.expenses_by_board).length > 1 && (selectedBoards.length === 0 || selectedBoards.length > 1) && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>הוצאות לפי לוח</Text>
                   {showCharts ? (
@@ -1847,6 +1897,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   selectedBoardFilterText: {
+    color: 'white',
+  },
+  selectedAllBoardsFilterButton: {
+    backgroundColor: '#9b59b6',
+    borderColor: '#9b59b6',
+  },
+  selectedAllBoardsFilterText: {
     color: 'white',
   },
   summaryCards: {
@@ -2920,6 +2977,39 @@ const styles = StyleSheet.create({
   selectedPaymentStatusFilterText: {
     color: 'white',
   },
+  noBoardContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#f5f5f5',
+  },
+  noBoardTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  noBoardSubtitle: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+  },
+  selectBoardButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 8,
+  },
+  selectBoardButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
 });
 
 export default SummaryScreen; 

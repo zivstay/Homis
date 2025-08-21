@@ -2,6 +2,15 @@ import React, { createContext, ReactNode, useContext, useEffect, useState } from
 import { Alert } from 'react-native';
 import { apiService, User } from '../services/api';
 
+interface RegistrationFormData {
+  registerEmail: string;
+  registerPassword: string;
+  registerConfirmPassword: string;
+  registerFirstName: string;
+  registerLastName: string;
+  acceptedTerms: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
@@ -9,6 +18,11 @@ interface AuthContextType {
   showVerification: boolean;
   setShowVerification: (show: boolean) => void;
   pendingUserData: any | null; // Add pending user data
+  registrationError: string; // Add registration error state
+  clearRegistrationError: () => void; // Add function to clear registration error
+  registrationFormData: RegistrationFormData; // Add registration form data
+  updateRegistrationFormData: (data: Partial<RegistrationFormData>) => void; // Add function to update form data
+  clearRegistrationFormData: () => void; // Add function to clear form data
   login: (credentials: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   register: (userData: {
     email: string;
@@ -46,12 +60,23 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const defaultRegistrationFormData: RegistrationFormData = {
+  registerEmail: '',
+  registerPassword: '',
+  registerConfirmPassword: '',
+  registerFirstName: '',
+  registerLastName: '',
+  acceptedTerms: false,
+};
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isVerifying, setIsVerifying] = useState(false); // Add state for verification process
   const [showVerification, setShowVerification] = useState(false); // Add state for verification screen
   const [pendingUserData, setPendingUserData] = useState<any | null>(null); // Add pending user data state
+  const [registrationError, setRegistrationError] = useState<string>(''); // Add registration error state
+  const [registrationFormData, setRegistrationFormData] = useState<RegistrationFormData>(defaultRegistrationFormData); // Add registration form data state
 
   const isAuthenticated = !!user && !isVerifying; // Don't consider authenticated during verification
 
@@ -174,33 +199,71 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }) => {
     try {
       setIsLoading(true);
-      setIsVerifying(true); // Set verification mode
-      setShowVerification(true); // Show verification screen
       console.log('🔐 AuthContext: Sending verification code to:', userData.email);
-      console.log('🔐 AuthContext: Storing pending user data:', userData);
+      console.log('🔐 AuthContext: User data being sent:', userData);
+      console.log('🔐 AuthContext: Current state before request - isVerifying:', isVerifying, 'showVerification:', showVerification);
+      
       setPendingUserData(userData); // Store the user data for later use
       const result = await apiService.sendVerificationCode(userData);
       
-      console.log('🔐 AuthContext: sendVerificationCode result:', result);
+      console.log('🔐 AuthContext: sendVerificationCode result received:', result);
+      console.log('🔐 AuthContext: Result success:', result.success);
+      console.log('🔐 AuthContext: Result error:', result.error);
       
       if (result.success) {
-        console.log('🔐 AuthContext: Verification code sent successfully');
+        console.log('🔐 AuthContext: ✅ Verification code sent successfully');
+        setIsVerifying(true); // Set verification mode ONLY on success
+        setShowVerification(true); // Show verification screen ONLY on success
+        console.log('🔐 AuthContext: Set state - isVerifying: true, showVerification: true');
         return { success: true };
       } else {
-        console.log('🔐 AuthContext: Failed to send verification code:', result.error);
-        setIsVerifying(false); // Reset if failed
-        setShowVerification(false); // Hide verification screen if failed
+        console.log('🔐 AuthContext: ❌ Failed to send verification code');
+        console.log('🔐 AuthContext: Error details:', result.error);
+        console.log('🔐 AuthContext: Clearing states and saving error');
+        
+        // Translate error to Hebrew
+        let errorMessage = result.error || 'שגיאה ברישום';
+        if (errorMessage.includes('Email already exists')) {
+          errorMessage = 'כתובת האימייל כבר קיימת במערכת';
+        } else if (errorMessage.includes('already exists') || errorMessage.includes('already registered')) {
+           if (errorMessage.includes('email')) {
+             errorMessage = 'כתובת האימייל כבר קיימת במערכת';
+           } else {
+             errorMessage = 'המשתמש כבר קיים במערכת';
+           }
+         } else if (errorMessage.includes('Connection failed')) {
+          errorMessage = 'שגיאת חיבור - בדוק את החיבור לאינטרנט';
+        } else if (errorMessage.includes('Password must be at least')) {
+          errorMessage = 'הסיסמה חייבת להיות לפחות 8 תווים';
+        } else if (errorMessage.includes('Invalid email address')) {
+          errorMessage = 'כתובת האימייל אינה תקינה';
+        } else if (errorMessage.includes('First name')) {
+          errorMessage = 'שם פרטי הוא שדה חובה';
+        } else if (errorMessage.includes('Last name')) {
+          errorMessage = 'שם משפחה הוא שדה חובה';
+        }
+        
+        console.log('🔐 AuthContext: Translated error:', errorMessage);
+        console.log('🔐 AuthContext: Saving error to persistent state');
+        setRegistrationError(errorMessage); // Save error to persistent state
+        
+        setIsVerifying(false); // Ensure verification mode is off
+        setShowVerification(false); // Ensure verification screen is hidden
         setPendingUserData(null); // Clear pending data if failed
-        return { success: false, error: result.error || 'Failed to send verification code' };
+        console.log('🔐 AuthContext: Set state - isVerifying: false, showVerification: false');
+        return { success: false, error: errorMessage };
       }
     } catch (error) {
-      console.error('🔐 AuthContext: Send verification code error:', error);
+      console.error('🔐 AuthContext: ❌ Send verification code exception:', error);
+      const errorMessage = 'שגיאת רשת - בדוק את החיבור לאינטרנט';
+      setRegistrationError(errorMessage); // Save network error to persistent state
       setIsVerifying(false); // Reset if error
       setShowVerification(false); // Hide verification screen if error
       setPendingUserData(null); // Clear pending data if error
-      return { success: false, error: 'Network error occurred' };
+      return { success: false, error: errorMessage };
     } finally {
       setIsLoading(false);
+      console.log('🔐 AuthContext: Request completed, isLoading set to false');
     }
   };
 
@@ -244,6 +307,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsVerifying(false);
     setShowVerification(false);
     setPendingUserData(null); // Clear pending data when resetting verification
+    setRegistrationError(''); // Clear registration error when resetting verification
+  };
+
+  const clearRegistrationError = () => {
+    console.log('🔐 AuthContext: Clearing registration error');
+    setRegistrationError('');
+  };
+
+  const updateRegistrationFormData = (data: Partial<RegistrationFormData>) => {
+    console.log('🔐 AuthContext: Updating registration form data:', data);
+    setRegistrationFormData(prev => ({ ...prev, ...data }));
+  };
+
+  const clearRegistrationFormData = () => {
+    console.log('🔐 AuthContext: Clearing registration form data');
+    setRegistrationFormData(defaultRegistrationFormData);
   };
 
   const requestPasswordReset = async (email: string) => {
@@ -307,6 +386,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     showVerification,
     setShowVerification,
     pendingUserData, // Add pendingUserData to the context value
+    registrationError, // Add registration error to the context value
+    clearRegistrationError, // Add clear function to the context value
+    registrationFormData, // Add registration form data to the context value
+    updateRegistrationFormData, // Add update function to the context value
+    clearRegistrationFormData, // Add clear function to the context value
     login,
     register,
     logout,

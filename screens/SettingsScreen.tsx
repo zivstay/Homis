@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -22,6 +22,7 @@ import { adMobService } from '../services/admobService';
 import { BoardMember, apiService } from '../services/api';
 
 const SettingsScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { selectedBoard, boardMembers, inviteMember, removeMember } = useBoard();
   const { user, logout } = useAuth();
   const { startTutorial, forceStartTutorial, resetTutorial, setCurrentScreen, checkScreenTutorial, clearAllTutorialData } = useTutorial();
@@ -409,41 +410,58 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container}>
-      {renderBoardInfo()}
-      
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>חברי הלוח ({boardMembers.length})</Text>
-          {canManageMembers() && (
-            <TouchableOpacity
-              style={styles.inviteButton}
-              onPress={() => setShowInviteModal(true)}
-            >
-              <Text style={styles.inviteButtonText}>+ הזמן</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        
-        <FlatList
-          data={boardMembers}
-          renderItem={renderMemberItem}
-          keyExtractor={(item) => item.id}
-          scrollEnabled={false}
-        />
-      </View>
+      {selectedBoard ? (
+        <>
+          {renderBoardInfo()}
+          
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>חברי הלוח ({boardMembers.length})</Text>
+              {canManageMembers() && (
+                <TouchableOpacity
+                  style={styles.inviteButton}
+                  onPress={() => setShowInviteModal(true)}
+                >
+                  <Text style={styles.inviteButtonText}>+ הזמן</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            <FlatList
+              data={boardMembers}
+              renderItem={renderMemberItem}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+            />
+          </View>
 
-      {/* Board Settings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>הגדרות לוח</Text>
-        
-        <TouchableOpacity
-          style={styles.settingButton}
-          onPress={() => setShowCategoryManager(true)}
-        >
-          <Text style={styles.settingButtonText}>🏷️ נהל קטגוריות</Text>
-          <Text style={styles.settingButtonSubtext}>ערוך את הקטגוריות הזמינות בלוח</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Board Settings */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>הגדרות לוח</Text>
+            
+            <TouchableOpacity
+              style={styles.settingButton}
+              onPress={() => setShowCategoryManager(true)}
+            >
+              <Text style={styles.settingButtonText}>🏷️ נהל קטגוריות</Text>
+              <Text style={styles.settingButtonSubtext}>ערוך את הקטגוריות הזמינות בלוח</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      ) : (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>אין לוח נבחר</Text>
+          <Text style={styles.noBoardMessage}>
+            הגדרות הלוח זמינות רק כשיש לוח נבחר. בחר לוח או צור חדש כדי לגשת להגדרות הלוח.
+          </Text>
+          <TouchableOpacity
+            style={styles.selectBoardButton}
+            onPress={() => navigation.navigate('BoardSelection' as never)}
+          >
+            <Text style={styles.selectBoardButtonText}>בחר לוח</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Account Settings */}
       <View style={styles.section}>
@@ -852,6 +870,25 @@ const styles = StyleSheet.create({
   },
   deleteUserButtonDisabled: {
     opacity: 0.7,
+  },
+  noBoardMessage: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  selectBoardButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  selectBoardButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

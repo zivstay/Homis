@@ -843,14 +843,13 @@ function AppContent() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
-        ) : !selectedBoard ? (
-          <Stack.Screen name="BoardSelection" component={BoardSelectionScreen} />
         ) : (
           <>
             <Stack.Screen name="Main">
               {() => <TabNavigatorWithTutorial activeTab={activeTab} setActiveTab={setActiveTab} />}
             </Stack.Screen>
             <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
+            <Stack.Screen name="BoardSelection" component={BoardSelectionScreen} />
           </>
         )}
       </Stack.Navigator>

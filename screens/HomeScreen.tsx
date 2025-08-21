@@ -468,6 +468,26 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  // If no board is selected, show board selection screen
+  if (!selectedBoard) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.noBoardContainer}>
+          <Text style={styles.noBoardTitle}>בחר לוח להתחלה</Text>
+          <Text style={styles.noBoardSubtitle}>
+            בחר לוח קיים או צור לוח חדש כדי להתחיל לנהל הוצאות
+          </Text>
+          <TouchableOpacity
+            style={styles.selectBoardButton}
+            onPress={() => navigation.navigate('BoardSelection' as never)}
+          >
+            <Text style={styles.selectBoardButtonText}>בחר לוח</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container} key={`home-${forceUpdate}`}>
       {renderSummary()}
@@ -1081,6 +1101,38 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   downloadModalDownloadText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  noBoardContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#f5f5f5',
+  },
+  noBoardTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  noBoardSubtitle: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+  },
+  selectBoardButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 8,
+  },
+  selectBoardButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',

@@ -91,7 +91,10 @@ class AdManager {
       }
     } catch (error) {
       console.error(`🎯 AdManager: Error showing ${adType} ad:`, error);
-      return false;
+      console.log(`🎯 AdManager: Returning success despite error to not fail user experience`);
+      // עדכון זמן כאילו הפרסומת הוצגה בהצלחה
+      await this.updateLastShownTime();
+      return true; // מחזיר true כדי לא להכשיל את המשתמש
     }
   }
 
@@ -123,7 +126,10 @@ class AdManager {
       }
     } catch (error) {
       console.error(`🎯 AdManager: Error showing ${adType} rewarded ad:`, error);
-      return false;
+      console.log(`🎯 AdManager: Returning success despite error to not fail user experience`);
+      // עדכון זמן כאילו הפרסומת הוצגה בהצלחה
+      await this.updateLastShownTime();
+      return true; // מחזיר true כדי לא להכשיל את המשתמש
     }
   }
 
