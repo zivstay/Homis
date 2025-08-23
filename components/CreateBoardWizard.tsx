@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  Keyboard,
-  Modal,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    FlatList,
+    Keyboard,
+    Modal,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { BOARD_TYPES, BoardType, QuickCategory } from '../constants/boardTypes';
 
@@ -283,6 +283,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
         { name: 'יופי', icon: '💄', color: '#EC7063' },
         { name: 'משחקים', icon: '🎮', color: '#AF7AC5' },
         { name: 'אירועים', icon: '🎉', color: '#F1C40F' },
+        { name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
+        { name: 'משכנתא', icon: '🏦', color: '#96CEB4' },
       ];
       
       additionalCategories.forEach(category => {

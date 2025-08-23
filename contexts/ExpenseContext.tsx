@@ -67,11 +67,12 @@ const ExpenseContext = createContext<ExpenseContextType | undefined>(undefined);
 
 // Default quick categories (fallback when no board is selected)
 const DEFAULT_QUICK_CATEGORIES: QuickCategory[] = [
-  { id: '1', name: 'חשמל', icon: 'flash', color: '#FFD700' },
-  { id: '2', name: 'מים', icon: 'water', color: '#00BFFF' },
-  { id: '3', name: 'ארנונה', icon: 'home', color: '#32CD32' },
-  { id: '4', name: 'סופר', icon: 'cart', color: '#FF6347' },
-  { id: '5', name: 'אחר', icon: 'ellipsis-horizontal', color: '#9370DB' },
+  { id: '1', name: 'חשמל', icon: '⚡', color: '#FFD700' },
+  { id: '2', name: 'מים', icon: '💧', color: '#00BFFF' },
+  { id: '3', name: 'ארנונה', icon: '🏘️', color: '#32CD32' },
+  { id: '4', name: 'קניות בית', icon: '🛒', color: '#FF69B4' },
+  { id: '5', name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
+  { id: '6', name: 'אחר', icon: '📋', color: '#9370DB' },
 ];
 
 export function ExpenseProvider({ children }: { children: ReactNode }) {

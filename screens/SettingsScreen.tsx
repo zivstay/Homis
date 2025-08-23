@@ -24,7 +24,7 @@ import { BoardMember, apiService } from '../services/api';
 const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
   const { selectedBoard, boardMembers, inviteMember, removeMember } = useBoard();
-  const { user, logout, isGuestMode } = useAuth();
+  const { user, logout, isGuestMode, clearGuestData } = useAuth();
   const { startTutorial, forceStartTutorial, resetTutorial, setCurrentScreen, checkScreenTutorial, clearAllTutorialData } = useTutorial();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -64,29 +64,51 @@ const SettingsScreen: React.FC = () => {
 
     setIsDeleting(true);
     try {
-      console.log('🗑️ Starting user deletion...');
-      
-      // Use the API service to delete user
-      const result = await apiService.deleteUser();
-      
-      if (result.success) {
-        console.log('✅ User deletion successful');
-        Alert.alert('הצלחה', 'המשתמש נמחק בהצלחה', [
-          {
-            text: 'אישור',
-            onPress: () => {
-              setShowDeleteModal(false);
-              setDeleteConfirmation('');
-              logout();
+      if (isGuestMode) {
+        // In guest mode, clear local data instead of deleting user account
+        console.log('🗑️ Starting guest data deletion...');
+        const result = await clearGuestData();
+        
+        if (result.success) {
+          console.log('✅ Guest data deletion successful');
+          Alert.alert('הצלחה', 'כל הנתונים נמחקו בהצלחה', [
+            {
+              text: 'אישור',
+              onPress: () => {
+                setShowDeleteModal(false);
+                setDeleteConfirmation('');
+                logout();
+              },
             },
-          },
-        ]);
+          ]);
+        } else {
+          console.error('❌ Guest data deletion failed:', result.error);
+          Alert.alert('שגיאה', result.error || 'שגיאה במחיקת הנתונים');
+        }
       } else {
-        console.error('❌ User deletion failed:', result.error);
-        Alert.alert('שגיאה', result.error || 'שגיאה במחיקת המשתמש');
+        // Regular user account deletion
+        console.log('🗑️ Starting user deletion...');
+        const result = await apiService.deleteUser();
+        
+        if (result.success) {
+          console.log('✅ User deletion successful');
+          Alert.alert('הצלחה', 'המשתמש נמחק בהצלחה', [
+            {
+              text: 'אישור',
+              onPress: () => {
+                setShowDeleteModal(false);
+                setDeleteConfirmation('');
+                logout();
+              },
+            },
+          ]);
+        } else {
+          console.error('❌ User deletion failed:', result.error);
+          Alert.alert('שגיאה', result.error || 'שגיאה במחיקת המשתמש');
+        }
       }
     } catch (error) {
-      console.error('❌ Error deleting user:', error);
+      console.error('❌ Error during deletion:', error);
       Alert.alert('שגיאה', 'שגיאה בתקשורת עם השרת');
     } finally {
       setIsDeleting(false);
@@ -308,6 +330,8 @@ const SettingsScreen: React.FC = () => {
     );
   };
 
+
+
   const renderBoardInfo = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>מידע על הלוח</Text>
@@ -485,8 +509,15 @@ const SettingsScreen: React.FC = () => {
           style={[styles.settingButton, styles.deleteUserButton]}
           onPress={() => setShowDeleteModal(true)}
         >
-          <Text style={styles.deleteUserButtonText}>⚠️ מחק חשבון</Text>
-          <Text style={styles.deleteUserButtonSubtext}>פעולה זו תמחק את החשבון שלך לצמיתות ולא ניתן לשחזר</Text>
+          <Text style={styles.deleteUserButtonText}>
+            {isGuestMode ? '⚠️ מחק נתונים' : '⚠️ מחק חשבון'}
+          </Text>
+          <Text style={styles.deleteUserButtonSubtext}>
+            {isGuestMode 
+              ? 'פעולה זו תמחק את כל הנתונים המקומיים ולא ניתן לשחזר'
+              : 'פעולה זו תמחק את החשבון שלך לצמיתות ולא ניתן לשחזר'
+            }
+          </Text>
         </TouchableOpacity>
         
         <TouchableOpacity
@@ -496,6 +527,8 @@ const SettingsScreen: React.FC = () => {
           <Text style={styles.resetTutorialButtonText}>🔄 אפס מדריך</Text>
           <Text style={styles.tutorialButtonSubtext}>המדריך יופיע בכניסה הבאה</Text>
         </TouchableOpacity>
+        
+
       </View>
 
 
@@ -516,9 +549,14 @@ const SettingsScreen: React.FC = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>🗑️ מחיקת חשבון</Text>
+            <Text style={styles.modalTitle}>
+              {isGuestMode ? '🗑️ מחיקת נתונים' : '🗑️ מחיקת חשבון'}
+            </Text>
             <Text style={styles.modalText}>
-              האם אתה בטוח שאתה רוצה למחוק את המשתמש? לא תוכל לשחזר את המשתמש אחר כך.
+              {isGuestMode 
+                ? 'האם אתה בטוח שאתה רוצה למחוק את כל הנתונים המקומיים? לא תוכל לשחזר אותם אחר כך.'
+                : 'האם אתה בטוח שאתה רוצה למחוק את המשתמש? לא תוכל לשחזר את המשתמש אחר כך.'
+              }
             </Text>
             <Text style={styles.modalText}>
               להשלמת הפעולה רשום "מחיקה" בתיבת הטקסט למטה:
@@ -567,7 +605,7 @@ const SettingsScreen: React.FC = () => {
                 disabled={isDeleting || deleteConfirmation.trim() !== 'מחיקה'}
               >
                 <Text style={styles.deleteUserButtonText}>
-                  {isDeleting ? 'מחיקה...' : 'מחק חשבון'}
+                  {isDeleting ? 'מחיקה...' : (isGuestMode ? 'מחק נתונים' : 'מחק חשבון')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -870,6 +908,7 @@ const styles = StyleSheet.create({
     color: 'white',
     opacity: 0.9,
   },
+
   noBoardMessage: {
     fontSize: 14,
     color: '#7f8c8d',

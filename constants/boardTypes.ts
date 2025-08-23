@@ -40,7 +40,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'ארנונה', icon: '🏘️', color: '#32CD32' },
       { name: 'גז', icon: '🔥', color: '#FF6347' },
       { name: 'אינטרנט', icon: '🌐', color: '#9370DB' },
-      { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
+      { name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
       { name: 'קניות בית', icon: '🛒', color: '#FF69B4' },
       { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
@@ -88,7 +88,7 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'בריאות', icon: '🏥', color: '#FF6B6B' },
       { name: 'בילויים', icon: '🎉', color: '#FF69B4' },
       { name: 'קניות', icon: '🛍️', color: '#DDA0DD' },
-      { name: 'ספורט', icon: '🏃', color: '#96CEB4' },
+      { name: 'משכנתא', icon: '🏦', color: '#96CEB4' },
       { name: 'תחבורה', icon: '🚌', color: '#98D8C8' },
       { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
@@ -117,17 +117,19 @@ export const getBoardTypeById = (id: string): BoardType | undefined => {
 
 // Get all unique categories from all board types
 export const getAllAvailableCategories = (): QuickCategory[] => {
-  const categoriesMap = new Map<string, QuickCategory>();
+  const allCategories: QuickCategory[] = [];
+  const addedNames = new Set<string>();
   
   BOARD_TYPES.forEach(boardType => {
     boardType.quickCategories.forEach(category => {
-      if (!categoriesMap.has(category.name)) {
-        categoriesMap.set(category.name, category);
+      if (!addedNames.has(category.name)) {
+        allCategories.push(category);
+        addedNames.add(category.name);
       }
     });
   });
   
-  return Array.from(categoriesMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  return allCategories.sort((a, b) => a.name.localeCompare(b.name));
 };
 
 export const getBoardTypeDisplayName = (id: string): string => {

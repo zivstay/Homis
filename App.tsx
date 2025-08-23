@@ -490,6 +490,8 @@ function BoardSwitcherHeader() {
         { name: 'יופי', icon: '💄', color: '#EC7063' },
         { name: 'משחקים', icon: '🎮', color: '#AF7AC5' },
         { name: 'אירועים', icon: '🎉', color: '#F1C40F' },
+        { name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
+        { name: 'משכנתא', icon: '🏦', color: '#96CEB4' },
       ];
       
       additionalCategories.forEach(category => {

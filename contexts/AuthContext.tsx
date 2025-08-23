@@ -34,6 +34,7 @@ interface AuthContextType {
   }) => Promise<{ success: boolean; error?: string }>;
   loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
+  clearGuestData: () => Promise<{ success: boolean; error?: string }>;
   sendVerificationCode: (userData: {
     email: string;
     username: string;
@@ -209,7 +210,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             { name: 'ארנונה', icon: '🏘️', color: '#32CD32' },
             { name: 'גז', icon: '🔥', color: '#FF6347' },
             { name: 'אינטרנט', icon: '🌐', color: '#9370DB' },
-            { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
+            { name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
             { name: 'קניות בית', icon: '🛒', color: '#FF69B4' },
             { name: 'אחר', icon: '📋', color: '#95A5A6' },
           ],
@@ -223,10 +224,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async () => {
     try {
       if (isGuestMode) {
-        // Clear guest data when logging out from guest mode
-        const { localStorageService } = await import('../services/localStorageService');
-        await localStorageService.clearAllData();
-        console.log('🔐 AuthContext: Cleared guest data on logout');
+        // In guest mode, don't clear data - just reset the state
+        // Guest data should persist between sessions
+        console.log('🔐 AuthContext: Guest mode logout - preserving local data');
       } else {
         await apiService.logout();
       }
@@ -234,6 +234,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsGuestMode(false);
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  };
+
+  const clearGuestData = async () => {
+    try {
+      if (isGuestMode) {
+        const { localStorageService } = await import('../services/localStorageService');
+        await localStorageService.clearAllData();
+        console.log('🔐 AuthContext: Cleared guest data on user request');
+        return { success: true };
+      } else {
+        return { success: false, error: 'לא במצב אורח' };
+      }
+    } catch (error) {
+      console.error('Error clearing guest data:', error);
+      return { success: false, error: 'שגיאה במחיקת הנתונים' };
     }
   };
 
@@ -443,6 +459,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     register,
     loginAsGuest,
     logout,
+    clearGuestData,
     sendVerificationCode,
     verifyCodeAndRegister,
     resetVerification,
