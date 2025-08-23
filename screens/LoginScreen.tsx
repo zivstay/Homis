@@ -24,7 +24,7 @@ const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const { login, register, logout, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData, registrationError, clearRegistrationError, registrationFormData, updateRegistrationFormData, clearRegistrationFormData } = useAuth();
+  const { login, register, loginAsGuest, logout, sendVerificationCode, verifyCodeAndRegister, resetVerification, showVerification, setShowVerification, pendingUserData, registrationError, clearRegistrationError, registrationFormData, updateRegistrationFormData, clearRegistrationFormData } = useAuth();
 
   // Remove local register form state - using registrationFormData from AuthContext
   // Email verification
@@ -206,6 +206,29 @@ const LoginScreen: React.FC = () => {
     setIsLoading(false);
   };
 
+  const handleGuestLogin = async () => {
+    console.log('🔍 LoginScreen: Guest login initiated');
+    
+    Alert.alert(
+      'התחברות כאורח',
+      '⚠️ במצב אורח, הנתונים יישמרו רק על המכשיר ויימחקו עם הסרת האפליקציה, בנוסף לא תוכל לצפות במסכי הסיכום.\n\nהאם אתה בטוח שברצונך להמשיך?',
+      [
+        {
+          text: 'הרשם/התחבר',
+          style: 'cancel',
+        },
+        {
+          text: 'המשך כאורח',
+          onPress: async () => {
+            setIsLoading(true);
+            await loginAsGuest();
+            setIsLoading(false);
+          },
+        },
+      ]
+    );
+  };
+
   const handleRegister = async () => {
     clearErrors();
     
@@ -329,19 +352,19 @@ const LoginScreen: React.FC = () => {
         style={styles.linkButton}
         onPress={() => setShowPasswordResetModal(true)}
       >
-        <Text style={styles.linkText}>שכחת סיסמה?</Text>
+        <Text style={styles.linkText}>שכחתי סיסמה</Text>
       </TouchableOpacity>
       
       <TouchableOpacity
         style={styles.linkButton}
-        onPress={() => {
-          console.log('🔍 LoginScreen: User clicked "הירשם כאן" - switching to register');
-          setIsLogin(false);
-          clearErrors();
-        }}
+        onPress={handleGuestLogin}
+        disabled={isLoading}
       >
-        <Text style={styles.linkText}>אין לך חשבון? הירשם כאן</Text>
+        <Text style={styles.guestLinkText}>
+          {isLoading ? 'נכנס כאורח...' : 'התחבר כאורח'}
+        </Text>
       </TouchableOpacity>
+
       
              <View style={styles.termsContainer}>
          <Text style={styles.termsText}>
@@ -904,6 +927,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+
+  guestLinkText: {
+    color: '#000000',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 
 });

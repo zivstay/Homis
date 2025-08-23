@@ -3,6 +3,8 @@ import { Expense } from '@/components/ExpenseCard';
 import { OnboardingConfig } from '@/components/OnboardingModal';
 import { apiService, Category } from '@/services/api';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { localStorageService } from '../services/localStorageService';
+import { useAuth } from './AuthContext';
 import { useBoard } from './BoardContext';
 
 interface QuickCategory {
@@ -74,6 +76,7 @@ const DEFAULT_QUICK_CATEGORIES: QuickCategory[] = [
 
 export function ExpenseProvider({ children }: { children: ReactNode }) {
   const { selectedBoard } = useBoard();
+  const { isGuestMode } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<Expense[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
@@ -104,6 +107,23 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (isGuestMode) {
+      // For guest mode, use the board's custom categories if available
+      if (selectedBoard.custom_categories && selectedBoard.custom_categories.length > 0) {
+        const guestCategories: QuickCategory[] = selectedBoard.custom_categories.map((category, index) => ({
+          id: `guest_${index}`,
+          name: category.name,
+          icon: category.icon,
+          color: category.color,
+        }));
+        console.log('✅ Loaded', guestCategories.length, 'guest categories for board');
+        setQuickCategories(guestCategories);
+      } else {
+        setQuickCategories(DEFAULT_QUICK_CATEGORIES);
+      }
+      return;
+    }
+
     try {
       console.log('🔄 Loading categories for board:', selectedBoard.id);
       const result = await apiService.getBoardCategories(selectedBoard.id);
@@ -127,7 +147,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       console.error('Error loading board categories:', error);
       setQuickCategories(DEFAULT_QUICK_CATEGORIES);
     }
-  }, [selectedBoard]);
+  }, [selectedBoard, isGuestMode]);
 
   // Add some mock data for previous months
   const [mockExpenses] = useState<Expense[]>([
@@ -298,12 +318,30 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
   }, [recurringExpenses]);
 
   // Expense functions
-  const addExpense = useCallback((expenseData: Omit<Expense, 'id' | 'date'>) => {
+  const addExpense = useCallback(async (expenseData: Omit<Expense, 'id' | 'date'>) => {
     const newExpense: Expense = {
       ...expenseData,
       id: Date.now().toString(),
       date: new Date(),
     };
+
+    if (isGuestMode && selectedBoard) {
+      // For guest mode, save to local storage
+      try {
+        await localStorageService.saveExpense({
+          board_id: selectedBoard.id,
+          amount: newExpense.amount,
+          description: newExpense.description || '',
+          category: newExpense.category,
+          date: newExpense.date.toISOString(),
+          payer_id: 'guest',
+          split_type: 'equal',
+          split_data: {},
+        });
+      } catch (error) {
+        console.error('Error saving guest expense:', error);
+      }
+    }
 
     if (expenseData.isRecurring) {
       // Store as recurring template only
@@ -313,7 +351,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       // Create debts for the new expense
       addExpenseAndCreateDebts(newExpense);
     }
-  }, [addExpenseAndCreateDebts]);
+  }, [addExpenseAndCreateDebts, isGuestMode, selectedBoard]);
 
   const updateExpense = useCallback((expenseId: string, updatedData: Partial<Expense>) => {
     const updateExpenseInList = (expenseList: Expense[]) => 
@@ -538,6 +576,16 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (isGuestMode) {
+      // For guest mode, just add locally
+      const newCategory: QuickCategory = {
+        id: Date.now().toString(),
+        ...category,
+      };
+      setQuickCategories(prev => [...prev, newCategory]);
+      return;
+    }
+
     try {
       // Add category to the board via API
       const result = await apiService.createCategory(selectedBoard.id, {
@@ -568,7 +616,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
       };
       setQuickCategories(prev => [...prev, newCategory]);
     }
-  }, [selectedBoard, refreshBoardCategories]);
+  }, [selectedBoard, refreshBoardCategories, isGuestMode]);
 
   // Note: Update and delete functions work locally only for now
   // TODO: Add API endpoints for updating and deleting categories

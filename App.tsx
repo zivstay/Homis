@@ -29,6 +29,7 @@ function BoardSwitcherHeader() {
   const { boards, selectedBoard, selectBoard, createBoard, setDefaultBoard, clearDefaultBoard, deleteBoard, refreshBoardData } = useBoard();
   const { unreadCount } = useNotifications();
   const { refreshBoardCategories } = useExpenses();
+  const { isGuestMode, logout } = useAuth();
   const [showBoardModal, setShowBoardModal] = useState(false);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -683,13 +684,36 @@ function BoardSwitcherHeader() {
             
             <View style={styles.boardSwitcherModalButtons}>
               <TouchableOpacity
-                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCreateNewButton]}
+                style={[
+                  styles.boardSwitcherModalButton, 
+                  styles.boardSwitcherCreateNewButton,
+                  { opacity: isGuestMode ? 0.5 : 1 }
+                ]}
                 onPress={() => {
-                  setShowBoardModal(false);
-                  setShowCreateWizard(true);
+                  if (isGuestMode) {
+                    Alert.alert(
+                      'פונקציה נעולה',
+                      'כדי ליצור לוחות נוספים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
+                      [
+                        { text: 'אולי מאוחר יותר', style: 'cancel' },
+                        { 
+                          text: 'התחבר עכשיו', 
+                          onPress: () => {
+                            setShowBoardModal(false);
+                            logout();
+                          }
+                        }
+                      ]
+                    );
+                  } else {
+                    setShowBoardModal(false);
+                    setShowCreateWizard(true);
+                  }
                 }}
               >
-                <Text style={styles.boardSwitcherCreateNewText}>+ צור לוח חדש</Text>
+                <Text style={styles.boardSwitcherCreateNewText}>
+                  + צור לוח חדש {isGuestMode ? '🔒' : ''}
+                </Text>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -715,6 +739,7 @@ function BoardSwitcherHeader() {
 
 function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: string, setActiveTab: (tab: string) => void }) {
   const { setCurrentScreen } = useTutorial();
+  const { isGuestMode, logout } = useAuth();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
@@ -746,15 +771,40 @@ function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: stri
           name="Summary" 
           component={SummaryScreen}
           options={{
-            tabBarLabel: 'סיכום',
+            tabBarLabel: ({ color }) => (
+              <View style={{ opacity: isGuestMode ? 0.5 : 1, alignItems: 'center' }}>
+                <Text style={{ color, fontSize: 12 }}>
+                  סיכום {isGuestMode ? '🔒' : ''}
+                </Text>
+              </View>
+            ),
             tabBarIcon: ({ color, size }) => (
-              <Text style={{ color, fontSize: size }}>📊</Text>
+              <View style={{ opacity: isGuestMode ? 0.5 : 1 }}>
+                <Text style={{ color, fontSize: size }}>📊</Text>
+              </View>
             ),
           }}
           listeners={{
-            focus: () => {
-              setCurrentScreen('Summary');
-              setActiveTab('Summary');
+            tabPress: (e) => {
+              if (isGuestMode) {
+                e.preventDefault();
+                Alert.alert(
+                  'פונקציה נעולה',
+                  'כדי לגשת לסיכומים מתקדמים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
+                  [
+                    { text: 'אולי מאוחר יותר', style: 'cancel' },
+                    { 
+                      text: 'התחבר עכשיו', 
+                      onPress: () => {
+                        logout();
+                      }
+                    }
+                  ]
+                );
+              } else {
+                setCurrentScreen('Summary');
+                setActiveTab('Summary');
+              }
             },
           }}
         />
@@ -780,7 +830,7 @@ function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: stri
 }
 
 function AppContent() {
-  const { isAuthenticated, isLoading, user, logout } = useAuth();
+  const { isAuthenticated, isLoading, user, logout, isGuestMode } = useAuth();
   const { selectedBoard } = useBoard();
   const { showTutorial, currentScreen, completeTutorial, setCurrentScreen } = useTutorial();
   const [activeTab, setActiveTab] = React.useState('Home');
@@ -876,16 +926,20 @@ function AppContent() {
     setTermsCheckCompleted(true);
   };
 
-  // Check terms when user is authenticated
+  // Check terms when user is authenticated (but not for guest users)
   useEffect(() => {
-    if (isAuthenticated && !termsCheckCompleted) {
+    if (isAuthenticated && !isGuestMode && !termsCheckCompleted) {
       console.log('🔍 AppContent: User authenticated, checking terms...');
       // Add a small delay to ensure login process is complete
       setTimeout(() => {
         checkTermsAcceptance();
       }, 1000);
+    } else if (isGuestMode) {
+      // Skip terms check for guest users
+      console.log('🔍 AppContent: Guest mode - skipping terms check');
+      setTermsCheckCompleted(true);
     }
-  }, [isAuthenticated, termsCheckCompleted, checkTermsAcceptance]);
+  }, [isAuthenticated, isGuestMode, termsCheckCompleted, checkTermsAcceptance]);
 
   // Clear tutorial reset pending flag when app starts
   React.useEffect(() => {

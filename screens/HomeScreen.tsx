@@ -3,15 +3,15 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  InteractionManager,
-  Modal,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    FlatList,
+    InteractionManager,
+    Modal,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
@@ -27,7 +27,8 @@ const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses } = useBoard();
   const { user } = useAuth();
-  const { refreshBoardCategories } = useExpenses();
+  const { refreshBoardCategories, quickCategories } = useExpenses();
+  const { isGuestMode } = useAuth();
   const { setCurrentScreen, checkScreenTutorial, startTutorial, forceStartTutorial } = useTutorial();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -148,7 +149,27 @@ const HomeScreen: React.FC = () => {
 
   // Get categories selected in board settings (max 7)
   const getSelectedCategories = () => {
-    // Only show categories that are configured for this board
+    // In guest mode, use quickCategories from ExpenseContext
+    if (isGuestMode) {
+      if (quickCategories.length === 0) {
+        return [];
+      }
+      
+      // Limit to max 7 categories (keeping space for "אחר" button)
+      const maxCategories = 7;
+      const selectedCategories = quickCategories
+        .filter(cat => cat.name !== 'אחר') // Exclude "אחר" as it's added separately
+        .slice(0, maxCategories)
+        .map(cat => ({
+          name: cat.name,
+          icon: cat.icon,
+          color: cat.color,
+        }));
+
+      return selectedCategories;
+    }
+
+    // For authenticated users, use API categories
     if (categories.length === 0) {
       return [];
     }
@@ -169,12 +190,19 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleDeleteExpense = async (expense: Expense) => {
-    if (!selectedBoard || !user) return;
+    if (!selectedBoard) return;
     
-    // Check if user can delete this expense (only the creator can delete)
-    if (expense.created_by !== user.id) {
-      Alert.alert('שגיאה', 'ניתן למחוק רק הוצאות שיצרת בעצמך');
-      return;
+    // In guest mode, allow deleting any expense
+    if (isGuestMode) {
+      // Guest mode deletion logic will be handled below
+    } else if (!user) {
+      return; // No user and not guest mode
+    } else {
+      // Check if user can delete this expense (only the creator can delete)
+      if (expense.created_by !== user.id) {
+        Alert.alert('שגיאה', 'ניתן למחוק רק הוצאות שיצרת בעצמך');
+        return;
+      }
     }
 
     Alert.alert(
@@ -214,6 +242,10 @@ const HomeScreen: React.FC = () => {
   };
 
   const calculateMyExpenses = () => {
+    if (isGuestMode) {
+      // In guest mode, all expenses are "mine"
+      return boardExpenses.reduce((total, expense) => total + expense.amount, 0);
+    }
     if (!user) return 0;
     return boardExpenses.reduce((total, expense) => {
       if (expense.paid_by === user.id) {

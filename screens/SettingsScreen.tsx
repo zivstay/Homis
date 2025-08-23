@@ -24,7 +24,7 @@ import { BoardMember, apiService } from '../services/api';
 const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
   const { selectedBoard, boardMembers, inviteMember, removeMember } = useBoard();
-  const { user, logout } = useAuth();
+  const { user, logout, isGuestMode } = useAuth();
   const { startTutorial, forceStartTutorial, resetTutorial, setCurrentScreen, checkScreenTutorial, clearAllTutorialData } = useTutorial();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -280,7 +280,13 @@ const SettingsScreen: React.FC = () => {
   };
 
   const canManageMembers = () => {
-    if (!selectedBoard || !user) return false;
+    if (!selectedBoard) return false;
+    
+    // In guest mode, user is always owner of their boards, but can't invite members
+    if (isGuestMode) return false; // Guest can't manage members
+    
+    if (!user) return false; // No user, can't manage members
+    
     const currentMember = boardMembers.find(m => m.user_id === user.id);
     return currentMember?.role === 'owner' || currentMember?.role === 'admin';
   };
@@ -342,9 +348,9 @@ const SettingsScreen: React.FC = () => {
     <View style={styles.memberItem}>
       <View style={styles.memberInfo}>
         <Text style={styles.memberName}>
-          {item.user.first_name} {item.user.last_name}
+          {item.user ? `${item.user.first_name} ${item.user.last_name}` : 'אורח'}
         </Text>
-        <Text style={styles.memberEmail}>{item.user.email}</Text>
+        <Text style={styles.memberEmail}>{item.user ? item.user.email : 'guest@local'}</Text>
         <View style={styles.roleBadge}>
           <Text style={styles.roleBadgeText}>{getRoleDisplayName(item.role)}</Text>
         </View>
@@ -468,52 +474,31 @@ const SettingsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>הגדרות חשבון</Text>
         
         <TouchableOpacity
+          style={[styles.settingButton, styles.logoutSettingButton]}
+          onPress={handleLogout}
+        >
+          <Text style={styles.logoutSettingButtonText}>🚪 התנתק</Text>
+          <Text style={styles.logoutSettingButtonSubtext}>התנתק מהחשבון הנוכחי</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
           style={[styles.settingButton, styles.deleteUserButton]}
           onPress={() => setShowDeleteModal(true)}
         >
           <Text style={styles.deleteUserButtonText}>⚠️ מחק חשבון</Text>
           <Text style={styles.deleteUserButtonSubtext}>פעולה זו תמחק את החשבון שלך לצמיתות ולא ניתן לשחזר</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Tutorial Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>מדריך ועזרה</Text>
-        <View style={styles.tutorialContainer}>
-          <TouchableOpacity
-            style={[styles.tutorialButton, styles.resetTutorialButton]}
-            onPress={handleResetTutorial}
-          >
-            <Text style={styles.resetTutorialButtonText}>🔄 אפס מדריך</Text>
-            <Text style={styles.tutorialButtonSubtext}>המדריך יופיע בכניסה הבאה</Text>
-          </TouchableOpacity>
-          
-          {/* <TouchableOpacity
-            style={[styles.tutorialButton, { backgroundColor: '#f39c12' }]}
-            onPress={handleResetAdCooldown}
-          >
-            <Text style={styles.resetTutorialButtonText}>📺 אפס זמן פרסומות</Text>
-            <Text style={styles.tutorialButtonSubtext}>הפרסומת הבאה תוצג מיד (לבדיקות)</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.tutorialButton, { backgroundColor: '#9b59b6' }]}
-            onPress={handleCheckAdStatus}
-          >
-            <Text style={styles.resetTutorialButtonText}>🔍 בדוק מצב פרסומות</Text>
-            <Text style={styles.tutorialButtonSubtext}>הצג מידע על מצב הפרסומות (דיבאג)</Text>
-          </TouchableOpacity> */}
-        </View>
-      </View>
-
-      <View style={styles.section}>
+        
         <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={handleLogout}
+          style={[styles.tutorialButton, styles.resetTutorialButton]}
+          onPress={handleResetTutorial}
         >
-          <Text style={styles.logoutButtonText}>התנתק</Text>
+          <Text style={styles.resetTutorialButtonText}>🔄 אפס מדריך</Text>
+          <Text style={styles.tutorialButtonSubtext}>המדריך יופיע בכניסה הבאה</Text>
         </TouchableOpacity>
       </View>
+
+
 
       {renderInviteModal()}
       
@@ -870,6 +855,20 @@ const styles = StyleSheet.create({
   },
   deleteUserButtonDisabled: {
     opacity: 0.7,
+  },
+  logoutSettingButton: {
+    backgroundColor: '#f39c12',
+  },
+  logoutSettingButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  logoutSettingButtonSubtext: {
+    fontSize: 12,
+    color: 'white',
+    opacity: 0.9,
   },
   noBoardMessage: {
     fontSize: 14,

@@ -1,6 +1,7 @@
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { QuickCategory } from '../constants/boardTypes';
 import { apiService, Board, BoardMember, Expense } from '../services/api';
+import { localStorageService } from '../services/localStorageService';
 import { useAuth } from './AuthContext';
 
 interface BoardContextType {
@@ -45,7 +46,7 @@ interface BoardProviderProps {
 }
 
 export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isGuestMode } = useAuth();
   const [boards, setBoards] = useState<Board[]>([]);
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null);
   const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
@@ -63,32 +64,43 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
   }, [selectedBoard]);
 
   const refreshBoards = useCallback(async () => {
-    if (!isAuthenticated || isRefreshingBoards.current) return;
+    if ((!isAuthenticated && !isGuestMode) || isRefreshingBoards.current) return;
     
     isRefreshingBoards.current = true;
     setIsLoading(true);
     
     try {
-      const response = await apiService.getBoards();
-      if (response.success && response.data) {
-        const boardsData = response.data.boards || [];
-        setBoards(boardsData);
-        
-        // If no board is currently selected and we have boards
-        if (!selectedBoard && boardsData.length > 0) {
-          // First try to select the default board if one exists
-          const defaultBoard = boardsData.find(board => board.is_default_board);
-          if (defaultBoard) {
-            console.log('🔄 Board: Auto-selecting default board:', defaultBoard.name);
-            setSelectedBoard(defaultBoard);
-          } else {
-            // If no default board is set, select the first one
-            console.log('🔄 Board: Auto-selecting first board:', boardsData[0].name);
-            setSelectedBoard(boardsData[0]);
-          }
-        }
+      let boardsData: Board[] = [];
+      
+      if (isGuestMode) {
+        // Load boards from local storage for guest mode
+        const guestBoards = await localStorageService.getBoards();
+        boardsData = guestBoards;
+        console.log('🔄 Board: Loaded guest boards from local storage:', boardsData.length);
       } else {
-        console.error('Failed to fetch boards:', response.error);
+        // Load boards from API for authenticated users
+        const response = await apiService.getBoards();
+        if (response.success && response.data) {
+          boardsData = response.data.boards || [];
+        } else {
+          console.error('Failed to fetch boards:', response.error);
+        }
+      }
+      
+      setBoards(boardsData);
+      
+      // If no board is currently selected and we have boards
+      if (!selectedBoard && boardsData.length > 0) {
+        // First try to select the default board if one exists
+        const defaultBoard = boardsData.find(board => board.is_default_board);
+        if (defaultBoard) {
+          console.log('🔄 Board: Auto-selecting default board:', defaultBoard.name);
+          setSelectedBoard(defaultBoard);
+        } else {
+          // If no default board is set, select the first one
+          console.log('🔄 Board: Auto-selecting first board:', boardsData[0].name);
+          setSelectedBoard(boardsData[0]);
+        }
       }
     } catch (error) {
       console.error('Error fetching boards:', error);
@@ -96,7 +108,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
       setIsLoading(false);
       isRefreshingBoards.current = false;
     }
-  }, [isAuthenticated, selectedBoard]);
+  }, [isAuthenticated, isGuestMode, selectedBoard]);
 
   const refreshBoardMembers = useCallback(async () => {
     if (!selectedBoard || isRefreshingMembers.current) {
@@ -105,25 +117,42 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
 
     try {
       isRefreshingMembers.current = true;
-      let result = await apiService.getBoardMembers(selectedBoard.id);
       
-      // Handle retry if token was refreshed
-      if (!result.success && result.needsRetry) {
-        console.log('🔄 BoardContext: Retrying getBoardMembers after token refresh');
-        result = await apiService.getBoardMembers(selectedBoard.id);
-      }
-      
-      if (result.success && result.data) {
-        setBoardMembers(result.data.members);
+      if (isGuestMode) {
+        // For guest mode, create a fake member representing the guest user
+        const guestMember: BoardMember = {
+          id: 'guest',
+          board_id: selectedBoard.id,
+          user_id: 'guest',
+          email: 'guest@local',
+          first_name: 'אורח',
+          last_name: '',
+          role: 'owner',
+          status: 'active',
+          joined_at: new Date().toISOString(),
+        };
+        setBoardMembers([guestMember]);
       } else {
-        console.error('🔴 BoardContext: Failed to refresh board members:', result.error);
+        let result = await apiService.getBoardMembers(selectedBoard.id);
+        
+        // Handle retry if token was refreshed
+        if (!result.success && result.needsRetry) {
+          console.log('🔄 BoardContext: Retrying getBoardMembers after token refresh');
+          result = await apiService.getBoardMembers(selectedBoard.id);
+        }
+        
+        if (result.success && result.data) {
+          setBoardMembers(result.data.members);
+        } else {
+          console.error('🔴 BoardContext: Failed to refresh board members:', result.error);
+        }
       }
     } catch (error) {
       console.error('Error refreshing board members:', error);
     } finally {
       isRefreshingMembers.current = false;
     }
-  }, [selectedBoard]);
+  }, [selectedBoard, isGuestMode]);
 
   const refreshBoardExpenses = useCallback(async () => {
     if (!selectedBoard || isRefreshingExpenses.current) {
@@ -133,40 +162,49 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     try {
       isRefreshingExpenses.current = true;
       console.log('🏠 BoardContext: Fetching board expenses for board:', selectedBoard.id);
-      let result = await apiService.getBoardExpenses(selectedBoard.id);
       
-      // Handle retry if token was refreshed
-      if (!result.success && result.needsRetry) {
-        console.log('🔄 BoardContext: Retrying getBoardExpenses after token refresh');
-        result = await apiService.getBoardExpenses(selectedBoard.id);
-      }
-      
-      if (result.success && result.data) {
-        console.log('🏠 BoardContext: Board expenses loaded:', result.data.expenses.length, 'expenses');
-        setBoardExpenses(result.data.expenses);
+      if (isGuestMode) {
+        // Load expenses from local storage for guest mode
+        const guestExpenses = await localStorageService.getBoardExpenses(selectedBoard.id);
+        console.log('🏠 BoardContext: Guest board expenses loaded:', guestExpenses.length, 'expenses');
+        setBoardExpenses(guestExpenses as Expense[]);
       } else {
-        console.log('🏠 BoardContext: Failed to load board expenses:', result.error);
+        let result = await apiService.getBoardExpenses(selectedBoard.id);
+        
+        // Handle retry if token was refreshed
+        if (!result.success && result.needsRetry) {
+          console.log('🔄 BoardContext: Retrying getBoardExpenses after token refresh');
+          result = await apiService.getBoardExpenses(selectedBoard.id);
+        }
+        
+        if (result.success && result.data) {
+          console.log('🏠 BoardContext: Board expenses loaded:', result.data.expenses.length, 'expenses');
+          setBoardExpenses(result.data.expenses);
+        } else {
+          console.log('🏠 BoardContext: Failed to load board expenses:', result.error);
+        }
       }
     } catch (error) {
       console.error('🏠 BoardContext: Error refreshing board expenses:', error);
     } finally {
       isRefreshingExpenses.current = false;
     }
-  }, [selectedBoard]);
+  }, [selectedBoard, isGuestMode]);
 
   // Effect for authentication changes
   useEffect(() => {
-    if (isAuthenticated) {
-      console.log('🏠 BoardContext: User authenticated, refreshing boards');
+    if (isAuthenticated || isGuestMode) {
+      console.log('🏠 BoardContext: User authenticated or in guest mode, refreshing boards');
       // Add a small delay to prevent rapid successive calls
       refreshTimeoutRef.current = setTimeout(() => {
         refreshBoards();
       }, 100);
     } else {
-      console.log('🏠 BoardContext: User not authenticated, clearing boards');
+      console.log('🏠 BoardContext: User not authenticated and not in guest mode, clearing boards');
       setBoards([]);
       setSelectedBoard(null);
       setBoardMembers([]);
+      setBoardExpenses([]);
     }
     
     // Cleanup timeout on unmount or dependency change
@@ -176,39 +214,59 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
         refreshTimeoutRef.current = null;
       }
     };
-  }, [selectedBoard, isAuthenticated]);
+  }, [selectedBoard, isAuthenticated, isGuestMode]);
 
   const setDefaultBoard = useCallback(async (boardId: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await apiService.setDefaultBoard(boardId);
-      if (response.success) {
-        // Refresh boards to get updated default status
-        await refreshBoards();
-        return { success: true };
+      if (isGuestMode) {
+        const success = await localStorageService.setDefaultBoard(boardId);
+        if (success) {
+          await refreshBoards();
+          return { success: true };
+        } else {
+          return { success: false, error: 'Failed to set default board' };
+        }
       } else {
-        return { success: false, error: response.error || 'Failed to set default board' };
+        const response = await apiService.setDefaultBoard(boardId);
+        if (response.success) {
+          // Refresh boards to get updated default status
+          await refreshBoards();
+          return { success: true };
+        } else {
+          return { success: false, error: response.error || 'Failed to set default board' };
+        }
       }
     } catch (error) {
       console.error('Error setting default board:', error);
       return { success: false, error: 'Network error' };
     }
-  }, [refreshBoards]);
+  }, [refreshBoards, isGuestMode]);
 
   const clearDefaultBoard = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await apiService.clearDefaultBoard();
-      if (response.success) {
-        // Refresh boards to get updated default status
-        await refreshBoards();
-        return { success: true };
+      if (isGuestMode) {
+        const success = await localStorageService.clearDefaultBoard();
+        if (success) {
+          await refreshBoards();
+          return { success: true };
+        } else {
+          return { success: false, error: 'Failed to clear default board' };
+        }
       } else {
-        return { success: false, error: response.error || 'Failed to clear default board' };
+        const response = await apiService.clearDefaultBoard();
+        if (response.success) {
+          // Refresh boards to get updated default status
+          await refreshBoards();
+          return { success: true };
+        } else {
+          return { success: false, error: response.error || 'Failed to clear default board' };
+        }
       }
     } catch (error) {
       console.error('Error clearing default board:', error);
       return { success: false, error: 'Network error' };
     }
-  }, [refreshBoards]);
+  }, [refreshBoards, isGuestMode]);
 
   // Effect for board selection changes - add a small delay to prevent race conditions
   useEffect(() => {
@@ -244,27 +302,36 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     }
   ) => {
     try {
-      let result = await apiService.createBoard(boardData);
-      
-      // Handle retry if token was refreshed
-      if (!result.success && result.needsRetry) {
-        console.log('🔄 BoardContext: Retrying createBoard after token refresh');
-        result = await apiService.createBoard(boardData);
-      }
-      
-      if (result.success && result.data) {
-        const newBoard = result.data;
-        console.log('✅ Board created successfully:', newBoard.id);
-        
-        // השרת כבר מטפל ביצירת הקטגוריות המותאמות אישית
-        // אין צורך לשמור אותן שוב כאן כדי למנוע כפילות
-        console.log('📋 Categories handled by server, no need to save separately');
+      if (isGuestMode) {
+        const newBoard = await localStorageService.createBoard(boardData);
+        console.log('✅ Guest board created successfully:', newBoard.id);
         
         // Refresh boards to get the updated list
         await refreshBoards();
         return { success: true, board: newBoard };
       } else {
-        return { success: false, error: result.error || 'Failed to create board' };
+        let result = await apiService.createBoard(boardData);
+        
+        // Handle retry if token was refreshed
+        if (!result.success && result.needsRetry) {
+          console.log('🔄 BoardContext: Retrying createBoard after token refresh');
+          result = await apiService.createBoard(boardData);
+        }
+        
+        if (result.success && result.data) {
+          const newBoard = result.data;
+          console.log('✅ Board created successfully:', newBoard.id);
+          
+          // השרת כבר מטפל ביצירת הקטגוריות המותאמות אישית
+          // אין צורך לשמור אותן שוב כאן כדי למנוע כפילות
+          console.log('📋 Categories handled by server, no need to save separately');
+          
+          // Refresh boards to get the updated list
+          await refreshBoards();
+          return { success: true, board: newBoard };
+        } else {
+          return { success: false, error: result.error || 'Failed to create board' };
+        }
       }
     } catch (error) {
       console.error('Error creating board:', error);
@@ -322,6 +389,10 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
       return { success: false, error: 'No board selected' };
     }
 
+    if (isGuestMode) {
+      return { success: false, error: 'לא ניתן להזמין חברים במצב אורח' };
+    }
+
     try {
       let result = await apiService.inviteMember(selectedBoard.id, { email, role });
       
@@ -349,6 +420,10 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
       return { success: false, error: 'No board selected' };
     }
 
+    if (isGuestMode) {
+      return { success: false, error: 'לא ניתן להסיר חברים במצב אורח' };
+    }
+
     try {
       let result = await apiService.removeMember(selectedBoard.id, userId);
       
@@ -372,25 +447,43 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
   };
 
   const deleteBoard = async (boardId: string): Promise<{ success: boolean; error?: string }> => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !isGuestMode) {
       return { success: false, error: 'User not authenticated' };
     }
 
     try {
-      const response = await apiService.deleteBoard(boardId);
-      if (response.success) {
-        // Check if the deleted board was the currently selected board
-        if (selectedBoard && selectedBoard.id === boardId) {
-          console.log('🗑️ BoardContext: Deleted board was the selected board, clearing selection');
-          setSelectedBoard(null);
-          setBoardMembers([]);
-          setBoardExpenses([]);
+      if (isGuestMode) {
+        const success = await localStorageService.deleteBoard(boardId);
+        if (success) {
+          // Check if the deleted board was the currently selected board
+          if (selectedBoard && selectedBoard.id === boardId) {
+            console.log('🗑️ BoardContext: Deleted board was the selected board, clearing selection');
+            setSelectedBoard(null);
+            setBoardMembers([]);
+            setBoardExpenses([]);
+          }
+          
+          await refreshBoards();
+          return { success: true };
+        } else {
+          return { success: false, error: 'Failed to delete board' };
         }
-        
-        await refreshBoards();
-        return { success: true };
       } else {
-        return { success: false, error: response.error || 'Failed to delete board' };
+        const response = await apiService.deleteBoard(boardId);
+        if (response.success) {
+          // Check if the deleted board was the currently selected board
+          if (selectedBoard && selectedBoard.id === boardId) {
+            console.log('🗑️ BoardContext: Deleted board was the selected board, clearing selection');
+            setSelectedBoard(null);
+            setBoardMembers([]);
+            setBoardExpenses([]);
+          }
+          
+          await refreshBoards();
+          return { success: true };
+        } else {
+          return { success: false, error: response.error || 'Failed to delete board' };
+        }
       }
     } catch (error) {
       console.error('Error deleting board:', error);

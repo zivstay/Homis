@@ -26,13 +26,14 @@ import { useTutorial } from '../contexts/TutorialContext';
 import { adManager } from '../services/adManager';
 import { adMobService } from '../services/admobService';
 import { apiService, Category } from '../services/api';
+import { localStorageService } from '../services/localStorageService';
 
 const AddExpenseScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { selectedBoard, boardMembers, refreshBoardExpenses } = useBoard();
-  const { user } = useAuth();
-  const { refreshBoardCategories } = useExpenses();
+  const { user, isGuestMode } = useAuth();
+  const { refreshBoardCategories, quickCategories: expenseQuickCategories } = useExpenses();
   const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
   
   const [amount, setAmount] = useState('');
@@ -95,7 +96,7 @@ const AddExpenseScreen: React.FC = () => {
     if (selectedBoard) {
       loadCategories();
       // Always set current user as payer - user can only add expenses for themselves
-      if (user) {
+      if (user && !isGuestMode) {
         setSelectedPaidBy(user.id);
       }
     }
@@ -109,24 +110,63 @@ const AddExpenseScreen: React.FC = () => {
     });
   }, [selectedBoard, user, preselectedCategory]);
 
+  // Separate useEffect for guest mode categories to avoid infinite loops
+  useEffect(() => {
+    if (isGuestMode && selectedBoard && expenseQuickCategories.length > 0) {
+      loadCategories();
+    }
+  }, [isGuestMode, expenseQuickCategories.length]); // Only depend on length to avoid infinite loops
+
   const loadCategories = async () => {
     if (!selectedBoard) return;
 
     try {
-      const result = await apiService.getBoardCategories(selectedBoard.id);
-      if (result.success && result.data) {
-        setCategories(result.data.categories);
-        
-        // Use preselected category if provided
-        if (preselectedCategory) {
-          setSelectedCategory(preselectedCategory);
-          // Don't auto-fill description with category name
-        } else {
-          // Set first quick category as default if available
-          if (quickCategories.length > 0) {
-            setSelectedCategory(quickCategories[0].name);
-          } else if (result.data.categories.length > 0) {
-            setSelectedCategory(result.data.categories[0].name);
+      if (isGuestMode) {
+        // In guest mode, use quickCategories from ExpenseContext
+        if (expenseQuickCategories.length > 0) {
+          // Convert quickCategories to Category format
+          const guestCategories = expenseQuickCategories.map(cat => ({
+            id: cat.id || cat.name,
+            name: cat.name,
+            icon: cat.icon,
+            color: cat.color,
+            board_id: selectedBoard.id,
+            created_by: 'guest',
+            created_at: new Date().toISOString(),
+            is_default: false,
+            is_active: true,
+          }));
+          
+          setCategories(guestCategories);
+          
+          // Use preselected category if provided
+          if (preselectedCategory) {
+            setSelectedCategory(preselectedCategory);
+          } else {
+            // Set first category as default (excluding "אחר")
+            const firstCategory = guestCategories.find(cat => cat.name !== 'אחר');
+            if (firstCategory) {
+              setSelectedCategory(firstCategory.name);
+            }
+          }
+        }
+      } else {
+        // Regular mode - use API
+        const result = await apiService.getBoardCategories(selectedBoard.id);
+        if (result.success && result.data) {
+          setCategories(result.data.categories);
+          
+          // Use preselected category if provided
+          if (preselectedCategory) {
+            setSelectedCategory(preselectedCategory);
+            // Don't auto-fill description with category name
+          } else {
+            // Set first quick category as default if available
+            if (quickCategories.length > 0) {
+              setSelectedCategory(quickCategories[0].name);
+            } else if (result.data.categories.length > 0) {
+              setSelectedCategory(result.data.categories[0].name);
+            }
           }
         }
       }
@@ -150,9 +190,20 @@ const AddExpenseScreen: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!selectedBoard || !user) return;
+    console.log('🔍 AddExpenseScreen: handleSubmit called, isGuestMode:', isGuestMode);
+    
+    if (!selectedBoard) {
+      console.log('🔍 AddExpenseScreen: No selected board');
+      return;
+    }
 
-    if (!amount || !selectedCategory || !selectedPaidBy) {
+    // For guest mode, we don't need a user object
+    if (!isGuestMode && !user) {
+      console.log('🔍 AddExpenseScreen: No user and not in guest mode');
+      return;
+    }
+
+    if (!amount || !selectedCategory) {
       Alert.alert('שגיאה', 'נא למלא את כל השדות הנדרשים');
       return;
     }
@@ -163,7 +214,7 @@ const AddExpenseScreen: React.FC = () => {
       return;
     }
 
-    // בדוק אם ניתן להציג פרסומת
+    // בדוק אם ניתן להציג פרסומת (גם במצב אורח)
     const canShowAd = await adManager.checkCanShowAd();
     
     if (canShowAd) {
@@ -211,7 +262,7 @@ const AddExpenseScreen: React.FC = () => {
       }
     } else {
       // לא ניתן להציג פרסומת בגלל cooldown - יוצרים הוצאה ללא פרסומת
-      console.log('🎯 Cannot show ad due to cooldown, creating expense without ad');
+      console.log('🎯 Cannot show ad due to cooldown, creating expense without ad (isGuestMode:', isGuestMode, ')');
       setIsLoading(true);
       await createExpense(amountValue);
     }
@@ -219,58 +270,109 @@ const AddExpenseScreen: React.FC = () => {
 
   // פונקציה ליצירת ההוצאה
   const createExpense = async (amountValue: number) => {
-    if (!selectedBoard) return; // בדיקת בטיחות נוספת
+    console.log('🔍 AddExpenseScreen: createExpense called, isGuestMode:', isGuestMode, 'selectedBoard:', selectedBoard?.id);
+    
+    if (!selectedBoard) {
+      console.log('🔍 AddExpenseScreen: No selected board in createExpense');
+      return;
+    }
     
     try {
-      // Upload image if selected
-      let imageUrl = null;
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage);
-        if (selectedImage && !imageUrl) {
-          // Upload failed, but continue without image
-          Alert.alert('הודעה', 'העלאת התמונה נכשלה, ההוצאה תישמר ללא תמונה');
-        }
-      }
-
       // Determine the final category to use
       const finalCategory = selectedCategory === 'אחר' && selectedOtherCategory 
         ? selectedOtherCategory 
         : selectedCategory;
 
-      const expenseData = {
-        amount: amountValue,
-        category: finalCategory,
-        description: description.trim(),
-        paid_by: selectedPaidBy,
-        date: new Date().toISOString(),
-        is_recurring: isRecurring,
-        frequency: 'monthly',
-        tags: [],
-        image_url: imageUrl,
-      };
+      console.log('🔍 AddExpenseScreen: Final category:', finalCategory, 'Amount:', amountValue);
 
-      const result = await apiService.createExpense(selectedBoard.id, expenseData);
-      
-      if (result.success) {
-        // Refresh board expenses to get the updated list
-        await refreshBoardExpenses();
-        
-        // הצג הודעת הצלחה ונחזור למסך הקודם
-        Alert.alert('', 'ההוצאה נוספה בהצלחה! 🎉', [
-          { 
-            text: 'מעולה!', 
-            onPress: () => {
-              navigation.goBack();
+      if (isGuestMode) {
+        console.log('🔍 AddExpenseScreen: Guest mode - saving to local storage');
+        // Guest mode - save to local storage
+        try {
+          const expenseData = {
+            board_id: selectedBoard.id,
+            amount: amountValue,
+            description: description.trim(),
+            category: finalCategory,
+            date: new Date().toISOString(),
+            payer_id: 'guest',
+            split_type: 'equal',
+            split_data: {},
+          };
+          
+          console.log('🔍 AddExpenseScreen: Saving expense data:', expenseData);
+          
+          await localStorageService.saveExpense(expenseData);
+          
+          console.log('🔍 AddExpenseScreen: Expense saved successfully, refreshing board expenses');
+          
+          // Refresh board expenses to get the updated list
+          await refreshBoardExpenses();
+          
+          console.log('🔍 AddExpenseScreen: Board expenses refreshed, showing success alert');
+          
+          // הצג הודעת הצלחה ונחזור למסך הקודם
+          Alert.alert('', 'ההוצאה נוספה בהצלחה! 🎉', [
+            { 
+              text: 'מעולה!', 
+              onPress: () => {
+                console.log('🔍 AddExpenseScreen: User pressed OK, navigating back');
+                navigation.goBack();
+              }
             }
-          }
-        ]);
+          ]);
+        } catch (error) {
+          console.error('🔍 AddExpenseScreen: Error saving guest expense:', error);
+          Alert.alert('שגיאה', 'שגיאה בשמירת ההוצאה במצב אורח');
+        }
       } else {
-        Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
+        // Regular mode - use API
+        // Upload image if selected
+        let imageUrl = null;
+        if (selectedImage) {
+          imageUrl = await uploadImage(selectedImage);
+          if (selectedImage && !imageUrl) {
+            // Upload failed, but continue without image
+            Alert.alert('הודעה', 'העלאת התמונה נכשלה, ההוצאה תישמר ללא תמונה');
+          }
+        }
+
+        const expenseData = {
+          amount: amountValue,
+          category: finalCategory,
+          description: description.trim(),
+          paid_by: selectedPaidBy,
+          date: new Date().toISOString(),
+          is_recurring: isRecurring,
+          frequency: 'monthly',
+          tags: [],
+          image_url: imageUrl,
+        };
+
+        const result = await apiService.createExpense(selectedBoard.id, expenseData);
+        
+        if (result.success) {
+          // Refresh board expenses to get the updated list
+          await refreshBoardExpenses();
+          
+          // הצג הודעת הצלחה ונחזור למסך הקודם
+          Alert.alert('', 'ההוצאה נוספה בהצלחה! 🎉', [
+            { 
+              text: 'מעולה!', 
+              onPress: () => {
+                navigation.goBack();
+              }
+            }
+          ]);
+        } else {
+          Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
+        }
       }
     } catch (error) {
-      console.error('Error creating expense:', error);
+      console.error('🔍 AddExpenseScreen: Error creating expense:', error);
       Alert.alert('שגיאה', 'שגיאה בהוספת ההוצאה');
     } finally {
+      console.log('🔍 AddExpenseScreen: Setting isLoading to false');
       setIsLoading(false);
     }
   };

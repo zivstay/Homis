@@ -15,6 +15,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isGuestMode: boolean;
   showVerification: boolean;
   setShowVerification: (show: boolean) => void;
   pendingUserData: any | null; // Add pending user data
@@ -31,6 +32,7 @@ interface AuthContextType {
     first_name: string;
     last_name: string;
   }) => Promise<{ success: boolean; error?: string }>;
+  loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   sendVerificationCode: (userData: {
     email: string;
@@ -72,13 +74,14 @@ const defaultRegistrationFormData: RegistrationFormData = {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGuestMode, setIsGuestMode] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false); // Add state for verification process
   const [showVerification, setShowVerification] = useState(false); // Add state for verification screen
   const [pendingUserData, setPendingUserData] = useState<any | null>(null); // Add pending user data state
   const [registrationError, setRegistrationError] = useState<string>(''); // Add registration error state
   const [registrationFormData, setRegistrationFormData] = useState<RegistrationFormData>(defaultRegistrationFormData); // Add registration form data state
 
-  const isAuthenticated = !!user && !isVerifying; // Don't consider authenticated during verification
+  const isAuthenticated = (!!user && !isVerifying) || isGuestMode; // Consider guest mode as authenticated
 
   useEffect(() => {
     console.log('🔐 AuthContext: isAuthenticated changed to:', isAuthenticated, 'user:', !!user, 'isVerifying:', isVerifying);
@@ -181,10 +184,54 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginAsGuest = async () => {
+    try {
+      console.log('🔐 AuthContext: Logging in as guest');
+      setIsGuestMode(true);
+      setUser(null); // Guest has no user object
+      setIsLoading(false);
+      
+      // Create a default board for the guest user if none exists
+      const { localStorageService } = await import('../services/localStorageService');
+      const existingBoards = await localStorageService.getBoards();
+      
+      if (existingBoards.length === 0) {
+        console.log('🔐 AuthContext: Creating default roommates board for guest user');
+        await localStorageService.createBoard({
+          name: 'לוח שותפים',
+          description: 'לוח ברירת מחדל לניהול הוצאות משותפות',
+          currency: 'ILS',
+          timezone: 'Asia/Jerusalem',
+          board_type: 'roommates',
+          custom_categories: [
+            { name: 'חשמל', icon: '⚡', color: '#FFD700' },
+            { name: 'מים', icon: '💧', color: '#00BFFF' },
+            { name: 'ארנונה', icon: '🏘️', color: '#32CD32' },
+            { name: 'גז', icon: '🔥', color: '#FF6347' },
+            { name: 'אינטרנט', icon: '🌐', color: '#9370DB' },
+            { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
+            { name: 'קניות בית', icon: '🛒', color: '#FF69B4' },
+            { name: 'אחר', icon: '📋', color: '#95A5A6' },
+          ],
+        });
+      }
+    } catch (error) {
+      console.error('Guest login error:', error);
+    }
+  };
+
   const logout = async () => {
     try {
-      await apiService.logout();
+      if (isGuestMode) {
+        // Clear guest data when logging out from guest mode
+        const { localStorageService } = await import('../services/localStorageService');
+        await localStorageService.clearAllData();
+        console.log('🔐 AuthContext: Cleared guest data on logout');
+      } else {
+        await apiService.logout();
+      }
       setUser(null);
+      setIsGuestMode(false);
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -383,6 +430,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     isLoading,
     isAuthenticated,
+    isGuestMode,
     showVerification,
     setShowVerification,
     pendingUserData, // Add pendingUserData to the context value
@@ -393,6 +441,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearRegistrationFormData, // Add clear function to the context value
     login,
     register,
+    loginAsGuest,
     logout,
     sendVerificationCode,
     verifyCodeAndRegister,
