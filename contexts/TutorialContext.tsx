@@ -90,6 +90,12 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         return false;
       }
       
+      // אם זה לא מסך BoardSelection ואין לוח נבחר - אל תציג tutorial
+      if (screen !== 'BoardSelection' && !selectedBoard) {
+        console.log('🎓 TutorialContext: No selected board for screen', screen, '- not showing tutorial');
+        return false;
+      }
+      
       // Check if user has completed tutorial for this specific screen
       const screenTutorialKey = `tutorial_completed_${screen}`;
       const globalTutorialKey = 'tutorial_completed';
@@ -104,7 +110,8 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         globalCompleted,
         userId: user?.id,
         screenTutorialKey,
-        globalTutorialKey
+        globalTutorialKey,
+        hasSelectedBoard: !!selectedBoard
       });
 
       // If user hasn't completed tutorial for this screen, show it

@@ -1,3 +1,4 @@
+import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import {
   FlatList,
@@ -7,12 +8,14 @@ import {
   View,
 } from 'react-native';
 import CreateBoardWizard from '../components/CreateBoardWizard';
+import GuestDisclaimer from '../components/GuestDisclaimer';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useTutorial } from '../contexts/TutorialContext';
 import { Board } from '../services/api';
 
 const BoardSelectionScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { user, logout } = useAuth();
   const { boards, selectedBoard, selectBoard, createBoard, refreshBoards, isLoading } = useBoard();
   const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
@@ -23,6 +26,12 @@ const BoardSelectionScreen: React.FC = () => {
   useEffect(() => {
     console.log('🎓 BoardSelectionScreen: Setting tutorial screen to BoardSelection');
     setCurrentScreen('BoardSelection');
+    
+    // If no boards exist, automatically show create wizard
+    if (boards.length === 0) {
+      console.log('🎯 BoardSelectionScreen: No boards exist, auto-showing create wizard');
+      setShowCreateWizard(true);
+    }
     
     // Check if we should show tutorial for this screen
     const checkAndStartTutorial = async () => {
@@ -46,7 +55,7 @@ const BoardSelectionScreen: React.FC = () => {
     setTimeout(() => {
       checkAndStartTutorial();
     }, 500);
-  }, [setCurrentScreen, checkScreenTutorial, startTutorial]);
+  }, [setCurrentScreen, checkScreenTutorial, startTutorial, boards.length]);
 
   const [pendingBoardSelection, setPendingBoardSelection] = useState<string | null>(null);
 
@@ -63,6 +72,9 @@ const BoardSelectionScreen: React.FC = () => {
   }, [boards, pendingBoardSelection, selectBoard]);
 
   const handleBoardCreated = async (newBoard?: any) => {
+    // Close the create wizard
+    setShowCreateWizard(false);
+    
     // Refresh boards after creation
     if (refreshBoards) {
       await refreshBoards();
@@ -107,6 +119,7 @@ const BoardSelectionScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <GuestDisclaimer />
       <View style={styles.header}>
         <View>
           <Text style={styles.welcomeText}>שלום, {user?.first_name}!</Text>
@@ -118,7 +131,7 @@ const BoardSelectionScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {boards.length === 0 ? (
+      {boards.length === 0 && !showCreateWizard ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateTitle}>אין לך לוחות עדיין</Text>
           <Text style={styles.emptyStateSubtitle}>
@@ -131,7 +144,7 @@ const BoardSelectionScreen: React.FC = () => {
             <Text style={styles.createFirstButtonText}>צור לוח ראשון</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      ) : boards.length > 0 && (
         <>
           <FlatList
             data={boards}
@@ -152,7 +165,14 @@ const BoardSelectionScreen: React.FC = () => {
 
       <CreateBoardWizard
         isVisible={showCreateWizard}
-        onClose={() => setShowCreateWizard(false)}
+        onClose={() => {
+          setShowCreateWizard(false);
+          // If no boards exist and user cancels, go back to HomeScreen
+          if (boards.length === 0) {
+            // Navigate back to HomeScreen
+            navigation.goBack();
+          }
+        }}
         onBoardCreated={handleBoardCreated}
         createBoard={createBoard}
       />

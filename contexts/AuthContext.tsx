@@ -122,12 +122,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.log('🔐 AuthContext: Token invalid, clearing...');
           // Token is invalid, clear it
           await apiService.logout();
+          // After clearing invalid token, enter guest mode
+          console.log('🔐 AuthContext: Entering guest mode after invalid token');
+          await loginAsGuest();
         }
       } else {
-        console.log('🔐 AuthContext: No token found');
+        console.log('🔐 AuthContext: No token found - entering guest mode by default');
+        // No token found - enter guest mode by default
+        await loginAsGuest();
       }
     } catch (error) {
       console.error('🔐 AuthContext: Error checking auth status:', error);
+      // On error, also enter guest mode
+      console.log('🔐 AuthContext: Error occurred - entering guest mode');
+      await loginAsGuest();
     } finally {
       setIsLoading(false);
       console.log('🔐 AuthContext: Auth check complete, isLoading set to false');

@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Keyboard, Modal, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AppTutorial from './components/AppTutorial';
+import GuestDisclaimer from './components/GuestDisclaimer';
 import NotificationModal from './components/NotificationModal';
 import TermsAndConditionsModal from './components/TermsAndConditionsModal';
 import { API_CONFIG } from './config/api';
@@ -746,6 +747,7 @@ function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: stri
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: 'white' }}>
       <BoardSwitcherHeader />
+      <GuestDisclaimer />
       <Tab.Navigator
         screenOptions={{
           tabBarActiveTintColor: '#007AFF',
@@ -833,7 +835,7 @@ function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: stri
 
 function AppContent() {
   const { isAuthenticated, isLoading, user, logout, isGuestMode } = useAuth();
-  const { selectedBoard } = useBoard();
+  const { selectedBoard, boards } = useBoard();
   const { showTutorial, currentScreen, completeTutorial, setCurrentScreen } = useTutorial();
   const [activeTab, setActiveTab] = React.useState('Home');
   
@@ -1017,6 +1019,8 @@ function AppContent() {
         onComplete={completeTutorial}
         currentScreen={currentScreen}
         onNavigateToScreen={handleTutorialNavigation}
+        hasSelectedBoard={!!selectedBoard}
+        boardsCount={boards.length}
       />
 
       {/* Terms and Conditions Modal */}

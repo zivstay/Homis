@@ -3197,6 +3197,12 @@ def create_app(config_name='default'):
         """Get terms and conditions in Hebrew"""
         return get_terms_html('he')
     
+    @app.route('/app-ads.txt', methods=['GET'])
+    def get_app_ads_txt():
+        """Return app-ads.txt content for Google AdMob verification"""
+        app_ads_content = "google.com, pub-4216673023528064, DIRECT, f08c47fec0942fa0"
+        return Response(app_ads_content, mimetype='text/plain')
+    
     def get_latest_terms_version():
         """Get the latest active terms version from database"""
         try:

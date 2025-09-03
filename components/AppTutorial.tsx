@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -32,6 +32,8 @@ interface AppTutorialProps {
   onComplete: () => void;
   currentScreen: string;
   onNavigateToScreen?: (screen: string) => void;
+  hasSelectedBoard?: boolean; // חדש: האם יש לוח נבחר
+  boardsCount?: number; // חדש: מספר הלוחות הקיימים
 }
 
 const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
@@ -46,10 +48,18 @@ const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
       highlightColor: '#2196F3',
     },
     {
+      id: 'no_boards_message',
+      title: 'אין לכם לוחות עדיין 📋',
+      description: 'נראה שזו הפעם הראשונה שלכם באפליקציה. בואו ניצור את הלוח הראשון שלכם כדי להתחיל!',
+      position: { x: 20, y: 150, width: screenWidth - 40, height: 120 },
+      arrowDirection: 'top',
+      highlightColor: '#FF9800',
+    },
+    {
       id: 'board_explanation',
       title: 'מהו לוח הוצאות? 📋',
       description: 'לוח הוצאות הוא מרחב משותף לקבוצה. כל לוח יכול להכיל חברים שונים ולעקוב אחר הוצאות משותפות.',
-      position: { x: 20, y: 150, width: screenWidth - 40, height: 120 },
+      position: { x: 20, y: 200, width: screenWidth - 40, height: 120 },
       arrowDirection: 'top',
     },
     {
@@ -65,7 +75,7 @@ const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
       id: 'board_types',
       title: 'סוגי לוחות זמינים 🏷️',
       description: 'ישנם סוגי לוחות שונים: משפחתי, חברים, נסיעות, דירה משותפת ועוד. כל סוג מותאם לצרכים ספציפיים.',
-      position: { x: 20, y: 200, width: screenWidth - 40, height: 100 },
+      position: { x: 20, y: 250, width: screenWidth - 40, height: 100 },
       arrowDirection: 'top',
     },
     {
@@ -373,24 +383,47 @@ const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
   ],
 };
 
-const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, currentScreen, onNavigateToScreen }) => {
+const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, currentScreen, onNavigateToScreen, hasSelectedBoard = true, boardsCount = 0 }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [tooltipOpacity] = useState(new Animated.Value(0));
   const [highlightScale] = useState(new Animated.Value(0));
 
-  const currentSteps = TUTORIAL_STEPS[currentScreen] || [];
+  // קבלת השלבים המתאימים למסך הנוכחי
+  const getCurrentSteps = () => {
+    const baseSteps = TUTORIAL_STEPS[currentScreen] || [];
+    
+    // אם זה מסך BoardSelection ויש לוחות - הסר את השלב של "אין לוחות"
+    if (currentScreen === 'BoardSelection' && boardsCount > 0) {
+      return baseSteps.filter(step => step.id !== 'no_boards_message');
+    }
+    
+    return baseSteps;
+  };
+
+  const currentSteps = getCurrentSteps();
   const currentStep = currentSteps[currentStepIndex];
+
+  // בדיקה אם צריך להציג את ה-Tutorial
+  const shouldShowTutorial = isVisible && currentStep && (
+    // אם זה מסך BoardSelection - תמיד הצג
+    currentScreen === 'BoardSelection' ||
+    // אם זה מסך אחר - הצג רק אם יש לוח נבחר
+    (currentScreen !== 'BoardSelection' && hasSelectedBoard)
+  );
 
   console.log('🎓 AppTutorial render:', {
     isVisible,
     currentScreen,
     currentStepIndex,
     totalSteps: currentSteps.length,
-    currentStep: currentStep?.id
+    currentStep: currentStep?.id,
+    hasSelectedBoard,
+    boardsCount,
+    shouldShowTutorial
   });
 
   useEffect(() => {
-    if (isVisible && currentStep) {
+    if (shouldShowTutorial && currentStep) {
       Animated.timing(tooltipOpacity, {
         toValue: 1,
         duration: 300,
@@ -404,7 +437,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
         useNativeDriver: true,
       }).start();
     }
-  }, [isVisible, currentStepIndex]);
+  }, [shouldShowTutorial, currentStepIndex]);
 
   // Reset step index when screen changes
   useEffect(() => {
@@ -634,7 +667,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
     return { top: tooltipY, left: tooltipX };
   };
 
-  if (!isVisible || !currentStep) return null;
+  if (!shouldShowTutorial) return null;
 
   const tooltipPosition = getTooltipPosition();
 

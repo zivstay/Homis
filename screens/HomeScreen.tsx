@@ -3,15 +3,15 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    InteractionManager,
-    Modal,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  InteractionManager,
+  Modal,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
@@ -25,7 +25,7 @@ import { formatCurrency } from '../utils/currencyUtils';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses } = useBoard();
+  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses, boards } = useBoard();
   const { user } = useAuth();
   const { refreshBoardCategories, quickCategories } = useExpenses();
   const { isGuestMode } = useAuth();
@@ -505,15 +505,22 @@ const HomeScreen: React.FC = () => {
     return (
       <View style={styles.container}>
         <View style={styles.noBoardContainer}>
-          <Text style={styles.noBoardTitle}>בחר לוח להתחלה</Text>
+          <Text style={styles.noBoardTitle}>
+            {boards.length === 0 ? 'צור לוח ראשון' : 'בחר לוח להתחלה'}
+          </Text>
           <Text style={styles.noBoardSubtitle}>
-            בחר לוח קיים או צור לוח חדש כדי להתחיל לנהל הוצאות
+            {boards.length === 0 
+              ? 'צור לוח חדש כדי להתחיל לנהל הוצאות משותפות'
+              : 'בחר לוח קיים או צור לוח חדש כדי להתחיל לנהל הוצאות'
+            }
           </Text>
           <TouchableOpacity
             style={styles.selectBoardButton}
             onPress={() => navigation.navigate('BoardSelection' as never)}
           >
-            <Text style={styles.selectBoardButtonText}>בחר לוח</Text>
+            <Text style={styles.selectBoardButtonText}>
+              {boards.length === 0 ? 'צור לוח חדש' : 'בחר לוח'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

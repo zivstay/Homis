@@ -2,16 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  Keyboard,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    FlatList,
+    Keyboard,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import CategoryManager from '../components/CategoryManager';
 import { useAuth } from '../contexts/AuthContext';
@@ -314,20 +314,25 @@ const SettingsScreen: React.FC = () => {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'התנתקות',
-      'האם אתה בטוח שברצונך להתנתק?',
-      [
-        { text: 'ביטול', style: 'cancel' },
-        {
-          text: 'התנתק',
-          style: 'destructive',
-          onPress: () => {
-            logout();
+    if (isGuestMode) {
+      // ישירות למסך התחברות ללא הודעה
+      logout();
+    } else {
+      Alert.alert(
+        'התנתקות',
+        'האם אתה בטוח שברצונך להתנתק?',
+        [
+          { text: 'ביטול', style: 'cancel' },
+          {
+            text: 'התנתק',
+            style: 'destructive',
+            onPress: () => {
+              logout();
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
 
@@ -497,13 +502,23 @@ const SettingsScreen: React.FC = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>הגדרות חשבון</Text>
         
-        <TouchableOpacity
-          style={[styles.settingButton, styles.logoutSettingButton]}
-          onPress={handleLogout}
-        >
-          <Text style={styles.logoutSettingButtonText}>🚪 התנתק</Text>
-          <Text style={styles.logoutSettingButtonSubtext}>התנתק מהחשבון הנוכחי</Text>
-        </TouchableOpacity>
+        {isGuestMode ? (
+          <TouchableOpacity
+            style={[styles.settingButton, styles.loginSettingButton]}
+            onPress={handleLogout}
+          >
+            <Text style={styles.loginSettingButtonText}>🔑 התחבר</Text>
+            <Text style={styles.loginSettingButtonSubtext}>התחבר עם חשבון משתמש</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.settingButton, styles.logoutSettingButton]}
+            onPress={handleLogout}
+          >
+            <Text style={styles.logoutSettingButtonText}>🚪 התנתק</Text>
+            <Text style={styles.logoutSettingButtonSubtext}>התנתק מהחשבון הנוכחי</Text>
+          </TouchableOpacity>
+        )}
         
         <TouchableOpacity
           style={[styles.settingButton, styles.deleteUserButton]}
@@ -904,6 +919,21 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   logoutSettingButtonSubtext: {
+    fontSize: 12,
+    color: 'white',
+    opacity: 0.9,
+  },
+
+  loginSettingButton: {
+    backgroundColor: '#3498db',
+  },
+  loginSettingButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  loginSettingButtonSubtext: {
     fontSize: 12,
     color: 'white',
     opacity: 0.9,

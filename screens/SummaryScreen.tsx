@@ -2,17 +2,17 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    FlatList,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import BarChart from '../components/BarChart';
 import { useAuth } from '../contexts/AuthContext';
