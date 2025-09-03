@@ -741,7 +741,7 @@ class PostgreSQLDatabaseManager:
             last_name=user_data['last_name'],
             accepted_terms=user_data.get('accepted_terms', False),
             terms_accepted_at=user_data.get('terms_accepted_at'),
-            terms_version=user_data.get('terms_version', '1.0')
+            terms_version_signed=user_data.get('terms_version_signed')
         )
         self.db.session.add(user)
         self.db.session.commit()
@@ -1459,6 +1459,10 @@ class PostgreSQLDatabaseManager:
                 for board_id in owned_board_ids:
                     print(f"🗑️ Deleting data from board {board_id}")
 
+                    # Delete invitations for this board first (to avoid foreign key constraint)
+                    invitations_deleted = Invitation.query.filter_by(board_id=board_id).delete()
+                    print(f"   Deleted {invitations_deleted} invitation(s)")
+
                     # Delete debts in this board
                     debts_deleted = Debt.query.filter_by(board_id=board_id).delete()
                     print(f"   Deleted {debts_deleted} debt(s)")
@@ -1505,9 +1509,9 @@ class PostgreSQLDatabaseManager:
             ).delete()
             print(f"🗑️ Deleted {notifications_deleted} notification(s)")
 
-            # Delete user's invitations
+            # Delete user's invitations (only those sent by the user, not board invitations)
             invitations_deleted = Invitation.query.filter_by(invited_by=user_id).delete()
-            print(f"🗑️ Deleted {invitations_deleted} invitation(s)")
+            print(f"🗑️ Deleted {invitations_deleted} invitation(s) sent by user")
 
             # Remove user from board memberships in other boards
             board_members_deleted = BoardMember.query.filter_by(user_id=user_id).delete()

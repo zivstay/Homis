@@ -2,7 +2,7 @@
   "expo": {
     "name": "Homeis - מנהל ההוצאות שלך",
     "slug": "home-expense-manager",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/main_logo_icon.jpeg",
     "scheme": "home-expense-manager",

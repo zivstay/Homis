@@ -4,7 +4,9 @@ import { adMobService } from './admobService';
 class AdManager {
   private static instance: AdManager;
   private readonly AD_COOLDOWN_KEY = 'ad_last_shown_time';
-  private readonly COOLDOWN_MINUTES = 5; // 30 שניות (לבדיקה)
+  private readonly FIRST_LAUNCH_KEY = 'app_first_launch_time';
+  private readonly COOLDOWN_MINUTES = 20; // 30 שניות (לבדיקה)
+  private readonly GRACE_PERIOD_HOURS = 0.25; // 6 שעות ללא פרסומות למשתמשים חדשים
 
   public static getInstance(): AdManager {
     if (!AdManager.instance) {
@@ -14,32 +16,90 @@ class AdManager {
   }
 
   /**
-   * בדיקה אם ניתן להציג פרסומת (לא הוצגה פרסומת ב-5 דקות האחרונות)
+   * אתחול זמן השימוש הראשון באפליקציה אם לא קיים
+   */
+  private async initializeFirstLaunchTime(): Promise<void> {
+    try {
+      const firstLaunchTime = await AsyncStorage.getItem(this.FIRST_LAUNCH_KEY);
+      
+      if (!firstLaunchTime) {
+        const currentTime = Date.now();
+        await AsyncStorage.setItem(this.FIRST_LAUNCH_KEY, currentTime.toString());
+        console.log(`🎯 AdManager: First launch time set to ${new Date(currentTime).toLocaleString()}`);
+      }
+    } catch (error) {
+      console.error('🎯 AdManager: Error initializing first launch time:', error);
+    }
+  }
+
+  /**
+   * בדיקה אם עברה תקופת החסד של 6 שעות מההשקה הראשונה
+   */
+  private async hasGracePeriodPassed(): Promise<boolean> {
+    try {
+      await this.initializeFirstLaunchTime(); // וודא שזמן השקה ראשונה קיים
+      
+      const firstLaunchTime = await AsyncStorage.getItem(this.FIRST_LAUNCH_KEY);
+      
+      if (!firstLaunchTime) {
+        console.log('🎯 AdManager: No first launch time found, grace period active');
+        return false; // אם אין זמן השקה, אל תציג פרסומות
+      }
+
+      const firstLaunch = parseInt(firstLaunchTime, 10);
+      const currentTime = Date.now();
+      const timeDiff = currentTime - firstLaunch;
+      const gracePeriodMs = this.GRACE_PERIOD_HOURS * 60 * 60 * 1000; // 6 שעות במילישניות
+
+      const hoursAgo = Math.round(timeDiff / (1000 * 60 * 60));
+      console.log(`🎯 AdManager: First launch was ${hoursAgo} hours ago (need ${this.GRACE_PERIOD_HOURS}+ hours)`);
+      
+      const gracePassed = timeDiff >= gracePeriodMs;
+      console.log(`🎯 AdManager: Grace period passed: ${gracePassed}`);
+      
+      return gracePassed;
+    } catch (error) {
+      console.error('🎯 AdManager: Error checking grace period:', error);
+      return false; // במקרה של שגיאה, אל תציג פרסומות
+    }
+  }
+
+  /**
+   * בדיקה אם ניתן להציג פרסומת (עברה תקופת החסד של 6 שעות ולא הוצגה פרסומת בזמן האחרון)
    */
   private async canShowAd(): Promise<boolean> {
     try {
+      // בדיקה ראשונה: האם עברה תקופת החסד של 6 שעות
+      const gracePeriodPassed = await this.hasGracePeriodPassed();
+      
+      if (!gracePeriodPassed) {
+        console.log('🎯 AdManager: Cannot show ad - still in 6-hour grace period');
+        return false;
+      }
+
+      // בדיקה שנייה: בדיקת הקירור הרגיל בין פרסומות
       const lastShownTime = await AsyncStorage.getItem(this.AD_COOLDOWN_KEY);
       
       if (!lastShownTime) {
-        console.log('🎯 AdManager: No previous ad shown, can show ad');
-        return true; // אם לא הוצגה פרסומת מעולם
+        console.log('🎯 AdManager: Grace period passed and no previous ad shown, can show ad');
+        return true; // אם עברה תקופת החסד ולא הוצגה פרסומת מעולם
       }
 
       const lastShown = parseInt(lastShownTime, 10);
       const currentTime = Date.now();
       const timeDiff = currentTime - lastShown;
-      const cooldownMs = this.COOLDOWN_MINUTES * 60 * 1000; // 30 שניות במילישניות
+      const cooldownMs = this.COOLDOWN_MINUTES * 60 * 1000; // קירור במילישניות
 
       const secondsAgo = Math.round(timeDiff / 1000);
       console.log(`🎯 AdManager: Last ad shown ${secondsAgo} seconds ago (need ${this.COOLDOWN_MINUTES * 60}+ seconds)`);
       
       const canShow = timeDiff >= cooldownMs;
-      console.log(`🎯 AdManager: Can show ad: ${canShow}`);
+      console.log(`🎯 AdManager: Grace period passed, cooldown check: ${canShow}`);
       
       return canShow;
     } catch (error) {
       console.error('🎯 AdManager: Error checking ad cooldown:', error);
-      return true; // במקרה של שגיאה, אפשר להציג פרסומת
+      return false; // במקרה של שגיאה, אל תציג פרסומות (בטיחות)
     }
   }
 
@@ -187,6 +247,93 @@ class AdManager {
     } catch (error) {
       console.error('Error getting last ad time:', error);
       return null;
+    }
+  }
+
+  /**
+   * קבלת זמן השקה ראשונה של האפליקציה (לבדיקות)
+   */
+  public async getFirstLaunchTime(): Promise<number | null> {
+    try {
+      const firstLaunchTime = await AsyncStorage.getItem(this.FIRST_LAUNCH_KEY);
+      return firstLaunchTime ? parseInt(firstLaunchTime, 10) : null;
+    } catch (error) {
+      console.error('🎯 AdManager: Error getting first launch time:', error);
+      return null;
+    }
+  }
+
+  /**
+   * בדיקה פומבית אם תקופת החסד עדיין פעילה
+   */
+  public async isInGracePeriod(): Promise<boolean> {
+    const gracePassed = await this.hasGracePeriodPassed();
+    return !gracePassed;
+  }
+
+  /**
+   * קבלת מידע מפורט על סטטוס הפרסומות (לבדיקות ודיבוג)
+   */
+  public async getAdStatus(): Promise<{
+    firstLaunchTime: number | null;
+    firstLaunchDate: string | null;
+    hoursFromFirstLaunch: number;
+    isInGracePeriod: boolean;
+    lastAdTime: number | null;
+    lastAdDate: string | null;
+    minutesFromLastAd: number | null;
+    canShowAd: boolean;
+  }> {
+    try {
+      const firstLaunchTime = await this.getFirstLaunchTime();
+      const lastAdTime = await this.getLastAdTime();
+      const currentTime = Date.now();
+      
+      const hoursFromFirstLaunch = firstLaunchTime 
+        ? Math.round((currentTime - firstLaunchTime) / (1000 * 60 * 60))
+        : 0;
+      
+      const minutesFromLastAd = lastAdTime 
+        ? Math.round((currentTime - lastAdTime) / (1000 * 60))
+        : null;
+
+      const isInGracePeriod = await this.isInGracePeriod();
+      const canShowAd = await this.canShowAd();
+
+      return {
+        firstLaunchTime,
+        firstLaunchDate: firstLaunchTime ? new Date(firstLaunchTime).toLocaleString('he-IL') : null,
+        hoursFromFirstLaunch,
+        isInGracePeriod,
+        lastAdTime,
+        lastAdDate: lastAdTime ? new Date(lastAdTime).toLocaleString('he-IL') : null,
+        minutesFromLastAd,
+        canShowAd
+      };
+    } catch (error) {
+      console.error('🎯 AdManager: Error getting ad status:', error);
+      return {
+        firstLaunchTime: null,
+        firstLaunchDate: null,
+        hoursFromFirstLaunch: 0,
+        isInGracePeriod: true,
+        lastAdTime: null,
+        lastAdDate: null,
+        minutesFromLastAd: null,
+        canShowAd: false
+      };
+    }
+  }
+
+  /**
+   * איפוס זמן השקה ראשונה (לבדיקות בלבד!)
+   */
+  public async resetFirstLaunchTime(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(this.FIRST_LAUNCH_KEY);
+      console.log('🎯 AdManager: First launch time reset - grace period will restart on next app use');
+    } catch (error) {
+      console.error('🎯 AdManager: Error resetting first launch time:', error);
     }
   }
 }

@@ -99,7 +99,7 @@ class AuthManager:
             'last_name': user_data['last_name'],
             'accepted_terms': True,
             'terms_accepted_at': datetime.now(timezone.utc),
-            'terms_version': '1.0'  # You can update this when terms change
+            'terms_version_signed': None  # Will be set when user actually accepts terms
         })
 
         # Generate tokens
@@ -552,7 +552,7 @@ class AuthManager:
             'attempts': 0,
             'accepted_terms': user_data.get('accepted_terms', True),
             'terms_accepted_at': user_data.get('terms_accepted_at', datetime.now().isoformat()),
-            'terms_version': '1.0'
+            'terms_version_signed': None  # Will be set when user actually accepts terms
         })
 
         # Send verification email
@@ -637,7 +637,7 @@ class AuthManager:
             'last_name': pending_reg.last_name,
             'accepted_terms': getattr(pending_reg, 'accepted_terms', True),
             'terms_accepted_at': getattr(pending_reg, 'terms_accepted_at', datetime.now(timezone.utc)),
-            'terms_version': getattr(pending_reg, 'terms_version', '1.0')
+            'terms_version_signed': None  # Will be set when user actually accepts terms
         })
 
         # Clean up pending registration

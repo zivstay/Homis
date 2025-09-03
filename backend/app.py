@@ -3203,6 +3203,162 @@ def create_app(config_name='default'):
         app_ads_content = "google.com, pub-4216673023528064, DIRECT, f08c47fec0942fa0"
         return Response(app_ads_content, mimetype='text/plain')
     
+    @app.route('/', methods=['GET'])
+    def get_homepage():
+        """Return homepage with information about HOMIS application"""
+        html_content = """
+        <!DOCTYPE html>
+        <html lang="he" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>HOMIS - ניהול הוצאות משותפות</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    margin: 0;
+                    padding: 0;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                .header {
+                    text-align: center;
+                    color: white;
+                    padding: 60px 0 40px 0;
+                }
+                .header h1 {
+                    font-size: 3.5rem;
+                    margin-bottom: 20px;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+                }
+                .header p {
+                    font-size: 1.3rem;
+                    margin-bottom: 30px;
+                    opacity: 0.9;
+                }
+                .content {
+                    background: white;
+                    border-radius: 15px;
+                    padding: 40px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                    margin-bottom: 30px;
+                }
+                .features {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 30px;
+                    margin: 40px 0;
+                }
+                .feature {
+                    background: #f8f9fa;
+                    padding: 25px;
+                    border-radius: 10px;
+                    border-left: 4px solid #667eea;
+                }
+                .feature h3 {
+                    color: #667eea;
+                    margin-bottom: 15px;
+                }
+                .cta {
+                    text-align: center;
+                    background: #667eea;
+                    color: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    margin-top: 30px;
+                }
+                .cta h2 {
+                    margin-bottom: 20px;
+                }
+                .cta p {
+                    font-size: 1.1rem;
+                    margin-bottom: 25px;
+                }
+                .download-btn {
+                    display: inline-block;
+                    background: #28a745;
+                    color: white;
+                    padding: 15px 30px;
+                    text-decoration: none;
+                    border-radius: 25px;
+                    font-weight: bold;
+                    transition: all 0.3s ease;
+                }
+                .download-btn:hover {
+                    background: #218838;
+                    transform: translateY(-2px);
+                    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+                }
+                .footer {
+                    text-align: center;
+                    color: white;
+                    padding: 20px 0;
+                    opacity: 0.8;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🏠 HOMIS</h1>
+                    <p>הפתרון המושלם לניהול הוצאות משותפות</p>
+                </div>
+                
+                <div class="content">
+                    <h2>מה זה HOMIS?</h2>
+                    <p>HOMIS היא אפליקציה חכמה לניהול הוצאות משותפות בין חברים, משפחה או שותפים לדירה. 
+                    האפליקציה מאפשרת לכם לעקוב אחר הוצאות משותפות, לחשב חובות ולשמור על שקיפות מלאה.</p>
+                    
+                    <div class="features">
+                        <div class="feature">
+                            <h3>📊 ניהול הוצאות</h3>
+                            <p>הוסיפו הוצאות בקלות, קטגרו אותן ועקבו אחר ההוצאות המשותפות שלכם.</p>
+                        </div>
+                        <div class="feature">
+                            <h3>💰 חישוב חובות</h3>
+                            <p>המערכת מחשבת אוטומטית מי חייב למי ומציגה את החובות בצורה ברורה.</p>
+                        </div>
+                        <div class="feature">
+                            <h3>👥 ניהול קבוצות</h3>
+                            <p>צרו קבוצות עם חברים או שותפים וניהולו הוצאות משותפות בקלות.</p>
+                        </div>
+                        <div class="feature">
+                            <h3>📱 גישה נוחה</h3>
+                            <p>גישה לאפליקציה מכל מכשיר - טלפון, טאבלט או מחשב.</p>
+                        </div>
+                        <div class="feature">
+                            <h3>🔒 אבטחה מתקדמת</h3>
+                            <p>המידע שלכם מוגן ומאובטח עם מערכת אבטחה מתקדמת.</p>
+                        </div>
+                        <div class="feature">
+                            <h3>📈 דוחות מפורטים</h3>
+                            <p>קבלו דוחות מפורטים על ההוצאות והחובות שלכם.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="cta">
+                        <h2>מוכנים להתחיל?</h2>
+                        <p>הורידו את האפליקציה עכשיו והתחילו לנהל את ההוצאות המשותפות שלכם בצורה חכמה!</p>
+                        <a href="#" class="download-btn">📱 הורדת האפליקציה</a>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p>&copy; 2024 HOMIS - כל הזכויות שמורות</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return Response(html_content, mimetype='text/html')
+    
     def get_latest_terms_version():
         """Get the latest active terms version from database"""
         try:
