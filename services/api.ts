@@ -5,8 +5,8 @@ import { QuickCategory } from '../constants/boardTypes';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-// const API_BASE_URL = 'http://192.168.7.7:5000/api';   // <-- your IP
-const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
+const API_BASE_URL = 'http://192.168.7.7:5000/api';   // <-- your IP
+// const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
 
 // Types
 export interface User {
@@ -35,6 +35,23 @@ export interface Board {
   member_count?: number;
   user_role?: string;
   is_default_board?: boolean;
+  budget_amount?: number | null;
+  budget_alerts?: number[];
+}
+
+export interface BudgetStatus {
+  has_budget: boolean;
+  budget_amount: number | null;
+  current_expenses: number;
+  percentage_used: number;
+  alerts: number[];
+  triggered_alerts: Array<{
+    percentage: number;
+    current_percentage: number;
+    budget_amount: number;
+    current_expenses: number;
+    is_exceeded?: boolean; // Special flag for budget exceeded (100%+)
+  }>;
 }
 
 export interface BoardMember {
@@ -830,10 +847,12 @@ class ApiService {
   }
 
   async inviteMember(boardId: string, inviteData: {
-    email: string;
+    email?: string;
+    first_name?: string;
+    last_name?: string;
     role: string;
-  }): Promise<ApiResponse<{ message: string; member_id?: string; invitation_id?: string }>> {
-    return this.makeAuthenticatedRequest<{ message: string; member_id?: string; invitation_id?: string }>(
+  }): Promise<ApiResponse<{ message: string; member_id?: string; invitation_id?: string; is_virtual?: boolean }>> {
+    return this.makeAuthenticatedRequest<{ message: string; member_id?: string; invitation_id?: string; is_virtual?: boolean }>(
       `${API_BASE_URL}/boards/${boardId}/members`,
       {
         method: 'POST',
@@ -1313,6 +1332,17 @@ class ApiService {
         method: 'DELETE',
       }
     );
+  }
+
+  // Budget management
+  async getBoardBudgetStatus(boardId: string): Promise<ApiResponse<BudgetStatus>> {
+    console.log('🔵 API: Getting budget status for board:', boardId);
+    const response = await fetch(`${API_BASE_URL}/boards/${boardId}/budget/status`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse<BudgetStatus>(response);
   }
 }
 

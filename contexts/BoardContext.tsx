@@ -24,7 +24,7 @@ interface BoardContextType {
   refreshBoardMembers: () => Promise<void>;
   refreshBoardExpenses: () => Promise<void>;
   refreshBoardData: () => Promise<void>;
-  inviteMember: (email: string, role: string) => Promise<{ success: boolean; error?: string }>;
+  inviteMember: (email: string | null, role: string, firstName?: string, lastName?: string) => Promise<{ success: boolean; error?: string }>;
   removeMember: (userId: string) => Promise<{ success: boolean; error?: string }>;
   setDefaultBoard: (boardId: string) => Promise<{ success: boolean; error?: string }>;
   clearDefaultBoard: () => Promise<{ success: boolean; error?: string }>;
@@ -384,7 +384,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     }
   }, []);
 
-  const inviteMember = async (email: string, role: string) => {
+  const inviteMember = async (email: string | null, role: string, firstName?: string, lastName?: string) => {
     if (!selectedBoard) {
       return { success: false, error: 'No board selected' };
     }
@@ -394,12 +394,25 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     }
 
     try {
-      let result = await apiService.inviteMember(selectedBoard.id, { email, role });
+      let inviteData: any = { role };
+      
+      if (email) {
+        // Email-based invitation
+        inviteData.email = email;
+      } else if (firstName && lastName) {
+        // Virtual member invitation
+        inviteData.first_name = firstName;
+        inviteData.last_name = lastName;
+      } else {
+        return { success: false, error: 'Either email or first_name and last_name are required' };
+      }
+      
+      let result = await apiService.inviteMember(selectedBoard.id, inviteData);
       
       // Handle retry if token was refreshed
       if (!result.success && result.needsRetry) {
         console.log('🔄 BoardContext: Retrying inviteMember after token refresh');
-        result = await apiService.inviteMember(selectedBoard.id, { email, role });
+        result = await apiService.inviteMember(selectedBoard.id, inviteData);
       }
       
       if (result.success) {

@@ -43,6 +43,7 @@ class UserDataclass:
     accepted_terms: bool = False
     terms_accepted_at: Optional[str] = None
     terms_version_signed: Optional[int] = None
+    is_virtual: bool = False
 
 
 @dataclass
@@ -71,6 +72,8 @@ class BoardDataclass:
     currency: str = "ILS"
     timezone: str = "Asia/Jerusalem"
     board_type: str = "general"
+    budget_amount: Optional[float] = None
+    budget_alerts: List[int] = None  # List of percentages [50, 75, 90]
 
 
 @dataclass
@@ -207,6 +210,9 @@ class User(db.Model):
     accepted_terms = Column(Boolean, default=False, nullable=False)
     terms_accepted_at = Column(DateTime, nullable=True)
     terms_version_signed = Column(Integer, nullable=True)  # Track terms version number
+    
+    # Virtual user field - for users added without email/account
+    is_virtual = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     owned_boards = relationship("Board", back_populates="owner", foreign_keys="Board.owner_id")
@@ -245,7 +251,8 @@ class User(db.Model):
             'avatar_url': self.avatar_url,
             'accepted_terms': self.accepted_terms,
             'terms_accepted_at': self.terms_accepted_at if self.terms_accepted_at else None,
-            'terms_version_signed': self.terms_version_signed
+            'terms_version_signed': self.terms_version_signed,
+            'is_virtual': self.is_virtual
         }
 
     def to_dataclass(self) -> UserDataclass:
@@ -301,6 +308,8 @@ class Board(db.Model):
     currency = Column(String(10), default='ILS')
     timezone = Column(String(50), default='Asia/Jerusalem')
     board_type = Column(String(50), default='general')
+    budget_amount = Column(Float, nullable=True)
+    budget_alerts = Column(JSON, default=lambda: [])
 
     # Relationships
     owner = relationship("User", back_populates="owned_boards", foreign_keys=[owner_id])
@@ -321,7 +330,9 @@ class Board(db.Model):
             'settings': self.settings or {},
             'currency': self.currency,
             'timezone': self.timezone,
-            'board_type': self.board_type
+            'board_type': self.board_type,
+            'budget_amount': self.budget_amount,
+            'budget_alerts': self.budget_alerts or []
         }
 
     def to_dataclass(self) -> BoardDataclass:
@@ -746,6 +757,27 @@ class PostgreSQLDatabaseManager:
         self.db.session.add(user)
         self.db.session.commit()
         return user.to_dataclass()
+    
+    def create_virtual_user(self, first_name: str, last_name: str) -> UserDataclass:
+        """Create a virtual user for board members without real accounts"""
+        user_id = generate_uuid()
+        virtual_email = f"virtual_user_{user_id}@virtual.local"
+        virtual_username = f"virtual_{user_id[:8]}"
+        
+        user = User(
+            email=virtual_email,
+            username=virtual_username,
+            password_hash="virtual_user_no_password",  # Virtual users can't login
+            first_name=first_name,
+            last_name=last_name,
+            is_virtual=True,
+            email_verified=False,
+            accepted_terms=True,  # Virtual users auto-accept terms
+            is_active=True
+        )
+        self.db.session.add(user)
+        self.db.session.commit()
+        return user.to_dataclass()
 
     def get_user_by_id(self, user_id: str) -> Optional[UserDataclass]:
         user = User.query.get(user_id)
@@ -833,17 +865,38 @@ class PostgreSQLDatabaseManager:
         return boards
 
     def update_board(self, board_id: str, update_data: Dict) -> bool:
+        print(f"💰 Updating board {board_id} with data: {update_data}")
         board = Board.query.get(board_id)
         if not board:
+            print(f"💰 Board {board_id} not found")
             return False
+
+        print(f"💰 Board found, current budget_amount: {getattr(board, 'budget_amount', 'N/A')}")
+        print(f"💰 Board found, current budget_alerts: {getattr(board, 'budget_alerts', 'N/A')}")
 
         for key, value in update_data.items():
             if hasattr(board, key):
+                print(f"💰 Setting {key} = {value}")
                 setattr(board, key, value)
+            else:
+                print(f"💰 Board does not have attribute: {key}")
 
         board.updated_at = datetime.utcnow()
-        self.db.session.commit()
-        return True
+        
+        try:
+            self.db.session.commit()
+            print(f"💰 Board updated successfully")
+            
+            # Verify the update
+            updated_board = Board.query.get(board_id)
+            print(f"💰 After update - budget_amount: {getattr(updated_board, 'budget_amount', 'N/A')}")
+            print(f"💰 After update - budget_alerts: {getattr(updated_board, 'budget_alerts', 'N/A')}")
+            
+            return True
+        except Exception as e:
+            print(f"💰 Error committing board update: {e}")
+            self.db.session.rollback()
+            return False
 
     def delete_board(self, board_id: str) -> bool:
         try:
@@ -1676,6 +1729,24 @@ class PostgreSQLDatabaseManager:
             return True
 
         return permission in (member.permissions or [])
+    
+    def is_board_creator(self, user_id: str, board_id: str) -> bool:
+        """Check if user is the original creator of the board"""
+        board = Board.query.get(board_id)
+        return board and board.owner_id == user_id
+    
+    def can_modify_member(self, current_user_id: str, board_id: str, target_user_id: str) -> bool:
+        """Check if current user can modify target user's membership"""
+        # Can't modify yourself
+        if current_user_id == target_user_id:
+            return False
+            
+        # Can't modify the board creator
+        if self.is_board_creator(target_user_id, board_id):
+            return False
+            
+        # Only admins and owners can modify members
+        return self.user_has_permission(current_user_id, board_id, BoardPermission.ADMIN.value)
 
     def _parse_date(self, date_str: str) -> Optional[datetime]:
         """Parse date string to datetime object"""

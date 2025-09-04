@@ -64,6 +64,8 @@ const NotificationModal: React.FC<NotificationModalProps> = ({ visible, onClose 
     switch (notification.type) {
       case 'expense_added':
         return `${notification.created_by_name} הוסיף הוצאה של ₪${notification.amount} - ${notification.expense_description}`;
+      case 'expense_added_for_you':
+        return `${notification.created_by_name} הוסיף הוצאה בשמך עבור ${notification.expense_description} על סך ₪${notification.amount}`;
       case 'expense_updated':
         return `${notification.created_by_name} עדכן הוצאה - ${notification.expense_description}`;
       case 'expense_deleted':

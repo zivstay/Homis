@@ -18,6 +18,8 @@ interface ExpenseDetailsModalProps {
   expense: Expense | null;
   getMemberName: (userId: string) => string;
   getCategoryColor: (categoryName: string) => string;
+  onDelete?: (expense: Expense) => void;
+  canDelete?: boolean;
 }
 
 export function ExpenseDetailsModal({
@@ -26,6 +28,8 @@ export function ExpenseDetailsModal({
   expense,
   getMemberName,
   getCategoryColor,
+  onDelete,
+  canDelete = false,
 }: ExpenseDetailsModalProps) {
   if (!expense) return null;
 
@@ -54,6 +58,14 @@ export function ExpenseDetailsModal({
       default:
         return 'חודשי';
     }
+  };
+
+  const handleDelete = () => {
+    if (!expense || !onDelete) return;
+    
+    // Close modal first, then call parent delete handler
+    onClose();
+    onDelete(expense);
   };
 
   return (
@@ -123,12 +135,28 @@ export function ExpenseDetailsModal({
               </ThemedText>
             </View>
             <View style={styles.detailRow}>
+              <ThemedText style={styles.detailLabel}>נוצר על ידי:</ThemedText>
+              <ThemedText style={styles.detailValue}>
+                {getMemberName(expense.created_by)}
+              </ThemedText>
+            </View>
+            <View style={styles.detailRow}>
               <ThemedText style={styles.detailLabel}>תאריך:</ThemedText>
               <ThemedText style={styles.detailValue}>
                 {formatDate(expense.date)}
               </ThemedText>
             </View>
           </View>
+
+          {/* כפתור מחיקה */}
+          {canDelete && onDelete && (
+            <View style={styles.deleteSection}>
+              <TouchableOpacity onPress={handleDelete} style={styles.deleteButtonBottom}>
+                <Ionicons name="trash" size={20} color="#FF3B30" />
+                <ThemedText style={styles.deleteButtonText}>מחק הוצאה</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* הוצאה קבועה */}
           {expense.is_recurring && (
@@ -177,26 +205,6 @@ export function ExpenseDetailsModal({
             </View>
           )}
 
-          {/* מידע נוסף */}
-          <View style={styles.section}>
-            <ThemedText type="subtitle" style={styles.sectionTitle}>
-              מידע נוסף
-            </ThemedText>
-            <View style={styles.detailRow}>
-              <ThemedText style={styles.detailLabel}>נוצר ב:</ThemedText>
-              <ThemedText style={styles.detailValue}>
-                {formatDate(expense.created_at)}
-              </ThemedText>
-            </View>
-            {expense.updated_at !== expense.created_at && (
-              <View style={styles.detailRow}>
-                <ThemedText style={styles.detailLabel}>עודכן ב:</ThemedText>
-                <ThemedText style={styles.detailValue}>
-                  {formatDate(expense.updated_at)}
-                </ThemedText>
-              </View>
-            )}
-          </View>
         </ScrollView>
       </ThemedView>
     </Modal>
@@ -206,119 +214,218 @@ export function ExpenseDetailsModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f8f9fa',
   },
   header: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse', // RTL support
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   closeButton: {
-    padding: 4,
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+  },
+  deleteButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff5f5',
   },
   title: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#212529',
+    textAlign: 'center',
   },
   placeholder: {
-    width: 32,
+    width: 40,
   },
   content: {
     flex: 1,
     paddingHorizontal: 20,
+    paddingTop: 8,
   },
   imageSection: {
-    marginVertical: 20,
-    borderRadius: 12,
+    marginVertical: 16,
+    borderRadius: 16,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   expenseImage: {
     width: '100%',
-    height: 200,
+    height: 220,
   },
   section: {
-    marginBottom: 24,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#2c3e50',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+    color: '#495057',
+    textAlign: 'right',
+    borderBottomWidth: 2,
+    borderBottomColor: '#e9ecef',
+    paddingBottom: 8,
   },
   amountContainer: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse', // RTL support
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
+    paddingVertical: 16,
+    minHeight: 60,
   },
   amount: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#e74c3c',
+    fontWeight: '800',
+    color: '#dc3545',
+    textAlign: 'right',
+    lineHeight: 40,
   },
   categoryBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   categoryText: {
     color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   description: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#555',
+    fontSize: 17,
+    lineHeight: 26,
+    color: '#495057',
+    textAlign: 'right',
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    borderRightWidth: 4,
+    borderRightColor: '#6c757d',
   },
   detailRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse', // RTL support
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
   },
   detailLabel: {
     fontSize: 16,
-    color: '#666',
+    color: '#6c757d',
+    fontWeight: '600',
+    textAlign: 'right',
+    flex: 1,
   },
   detailValue: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  recurringBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E3F2FD',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-  },
-  recurringText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  tag: {
-    backgroundColor: '#f0f0f0',
+    fontWeight: '700',
+    color: '#212529',
+    textAlign: 'left',
+    flex: 1,
+    backgroundColor: '#f8f9fa',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
+    borderRadius: 8,
+  },
+  recurringBadge: {
+    flexDirection: 'row-reverse', // RTL support
+    alignItems: 'center',
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    alignSelf: 'flex-end', // RTL alignment
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#bbdefb',
+  },
+  recurringText: {
+    fontSize: 15,
+    color: '#1976d2',
+    fontWeight: '700',
+    marginRight: 8, // RTL spacing
+    textAlign: 'right',
+  },
+  tagsContainer: {
+    flexDirection: 'row-reverse', // RTL support
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end', // RTL alignment
+  },
+  tag: {
+    backgroundColor: '#e9ecef',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginLeft: 8, // RTL spacing
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
   },
   tagText: {
     fontSize: 14,
-    color: '#666',
+    color: '#495057',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  deleteSection: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  deleteButtonBottom: {
+    flexDirection: 'row-reverse', // RTL support
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff5f5',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ffebee',
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    color: '#FF3B30',
+    fontWeight: '700',
+    marginRight: 8, // RTL spacing
+    textAlign: 'center',
   },
 }); 

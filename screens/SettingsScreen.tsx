@@ -2,16 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Keyboard,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Keyboard,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import CategoryManager from '../components/CategoryManager';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,8 +28,11 @@ const SettingsScreen: React.FC = () => {
   const { startTutorial, forceStartTutorial, resetTutorial, setCurrentScreen, checkScreenTutorial, clearAllTutorialData } = useTutorial();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [isInviting, setIsInviting] = useState(false);
+  const [inviteMode, setInviteMode] = useState<'email' | 'virtual'>('email');
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
@@ -142,29 +145,59 @@ const SettingsScreen: React.FC = () => {
   );
 
   const handleInviteMember = async () => {
-    if (!inviteEmail.trim()) {
-      Alert.alert('שגיאה', 'נא להזין כתובת אימייל');
-      return;
+    if (inviteMode === 'email') {
+      if (!inviteEmail.trim()) {
+        Alert.alert('שגיאה', 'נא להזין כתובת אימייל');
+        return;
+      }
+    } else {
+      if (!inviteFirstName.trim() || !inviteLastName.trim()) {
+        Alert.alert('שגיאה', 'נא להזין שם פרטי ושם משפחה');
+        return;
+      }
     }
 
     setIsInviting(true);
-    // Always invite as 'member' role
-    const result = await inviteMember(inviteEmail.trim(), 'member');
+    
+    let result;
+    if (inviteMode === 'email') {
+      // Email-based invitation with selected role
+      result = await inviteMember(inviteEmail.trim(), inviteRole);
+    } else {
+      // Virtual member invitation (always member role)
+      result = await inviteMember(null, 'member', inviteFirstName.trim(), inviteLastName.trim());
+    }
+    
     setIsInviting(false);
 
     if (result.success) {
       setShowInviteModal(false);
       setInviteEmail('');
+      setInviteFirstName('');
+      setInviteLastName('');
       setInviteRole('member');
-      Alert.alert('הצלחה', 'ההזמנה נשלחה בהצלחה');
+      setInviteMode('email');
+      
+      if (inviteMode === 'email') {
+        const roleText = inviteRole === 'owner' ? 'בעלים' : 'חבר';
+        Alert.alert('הצלחה', `ההזמנה נשלחה בהצלחה. המשתמש יתווסף כ${roleText} בלוח.`);
+      } else {
+        Alert.alert('הצלחה', 'החבר נוסף בהצלחה');
+      }
     } else {
-      Alert.alert('שגיאה', result.error || 'שגיאה בשליחת ההזמנה');
+      Alert.alert('שגיאה', result.error || 'שגיאה בהוספת החבר');
     }
   };
 
   const handleRemoveMember = (member: BoardMember) => {
     if (member.user_id === user?.id) {
       Alert.alert('שגיאה', 'לא ניתן להסיר את עצמך מהלוח');
+      return;
+    }
+
+    const isBoardCreator = selectedBoard && member.user_id === selectedBoard.owner_id;
+    if (isBoardCreator) {
+      Alert.alert('שגיאה', 'לא ניתן להסיר את יוצר הלוח. יוצר הלוח הוא הבעלים הקבוע של הלוח.');
       return;
     }
 
@@ -301,6 +334,21 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  const getRoleBadgeStyle = (role: string) => {
+    switch (role) {
+      case 'owner':
+        return { ...styles.roleBadge, backgroundColor: '#e74c3c' }; // Red for owner
+      case 'admin':
+        return { ...styles.roleBadge, backgroundColor: '#f39c12' }; // Orange for admin
+      case 'member':
+        return { ...styles.roleBadge, backgroundColor: '#3498db' }; // Blue for member
+      case 'viewer':
+        return { ...styles.roleBadge, backgroundColor: '#95a5a6' }; // Gray for viewer
+      default:
+        return styles.roleBadge;
+    }
+  };
+
   const canManageMembers = () => {
     if (!selectedBoard) return false;
     
@@ -373,28 +421,50 @@ const SettingsScreen: React.FC = () => {
     </View>
   );
 
-  const renderMemberItem = ({ item }: { item: BoardMember }) => (
-    <View style={styles.memberItem}>
-      <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>
-          {item.user ? `${item.user.first_name} ${item.user.last_name}` : 'אורח'}
-        </Text>
-        <Text style={styles.memberEmail}>{item.user ? item.user.email : 'guest@local'}</Text>
-        <View style={styles.roleBadge}>
-          <Text style={styles.roleBadgeText}>{getRoleDisplayName(item.role)}</Text>
+  const renderMemberItem = ({ item }: { item: BoardMember }) => {
+    const isVirtual = item.user && item.user.email?.includes('@virtual.local');
+    const isBoardCreator = selectedBoard && item.user_id === selectedBoard.owner_id;
+    const canRemoveThisMember = canManageMembers() && item.user_id !== user?.id && !isBoardCreator;
+    
+    return (
+      <View style={styles.memberItem}>
+        <View style={styles.memberInfo}>
+          <View style={styles.memberNameContainer}>
+            <Text style={styles.memberName}>
+              {item.user ? `${item.user.first_name} ${item.user.last_name}` : 'אורח'}
+            </Text>
+            {isBoardCreator && (
+              <View style={styles.creatorBadge}>
+                <Text style={styles.creatorBadgeText}>👑</Text>
+              </View>
+            )}
+            {isVirtual && (
+              <View style={styles.virtualBadge}>
+                <Text style={styles.virtualBadgeText}>👤</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.memberEmail}>
+            {isBoardCreator ? 'יוצר הלוח' : 
+             (isVirtual ? 'חבר ללא אימייל' : (item.user ? item.user.email : 'guest@local'))
+            }
+          </Text>
+          <View style={getRoleBadgeStyle(item.role)}>
+            <Text style={styles.roleBadgeText}>{getRoleDisplayName(item.role)}</Text>
+          </View>
         </View>
+        
+        {canRemoveThisMember && (
+          <TouchableOpacity
+            style={styles.removeButton}
+            onPress={() => handleRemoveMember(item)}
+          >
+            <Text style={styles.removeButtonText}>הסר</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      
-      {canManageMembers() && item.user_id !== user?.id && (
-        <TouchableOpacity
-          style={styles.removeButton}
-          onPress={() => handleRemoveMember(item)}
-        >
-          <Text style={styles.removeButtonText}>הסר</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
+    );
+  };
 
   const renderInviteModal = () => (
     <Modal
@@ -407,23 +477,145 @@ const SettingsScreen: React.FC = () => {
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>הזמן חבר חדש</Text>
           
-          <TextInput
-            style={styles.modalInput}
-            placeholder="כתובת אימייל"
-            value={inviteEmail}
-            onChangeText={setInviteEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            textAlign="right"
-            returnKeyType="done"
-            onSubmitEditing={() => Keyboard.dismiss()}
-            blurOnSubmit={true}
-          />
+          {/* Mode Toggle */}
+          <View style={styles.inviteModeContainer}>
+            <TouchableOpacity
+              style={[
+                styles.modeButton,
+                inviteMode === 'email' && styles.modeButtonActive
+              ]}
+              onPress={() => setInviteMode('email')}
+            >
+              <Text style={[
+                styles.modeButtonText,
+                inviteMode === 'email' && styles.modeButtonTextActive
+              ]}>
+                📧 עם אימייל
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.modeButton,
+                inviteMode === 'virtual' && styles.modeButtonActive
+              ]}
+              onPress={() => setInviteMode('virtual')}
+            >
+              <Text style={[
+                styles.modeButtonText,
+                inviteMode === 'virtual' && styles.modeButtonTextActive
+              ]}>
+                👤 ללא אימייל
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          {inviteMode === 'email' ? (
+            <>
+              <Text style={styles.modeDescription}>
+                שלח הזמנה לחבר עם אימייל - הוא יוכל להתחבר לאפליקציה
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="כתובת אימייל"
+                value={inviteEmail}
+                onChangeText={setInviteEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+              
+              {/* Role Selection for Email Invites */}
+              <Text style={styles.roleSelectionTitle}>תפקיד בלוח:</Text>
+              <Text style={styles.roleSelectionSubtitle}>
+                בחר את הרמת ההרשאות שהמשתמש יקבל בלוח
+              </Text>
+              <View style={styles.roleSelectionContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.roleButton,
+                    inviteRole === 'member' && styles.roleButtonActive
+                  ]}
+                  onPress={() => setInviteRole('member')}
+                >
+                  <Text style={[
+                    styles.roleButtonText,
+                    inviteRole === 'member' && styles.roleButtonTextActive
+                  ]}>
+                    👤 חבר
+                  </Text>
+                  <Text style={[
+                    styles.roleButtonSubtext,
+                    inviteRole === 'member' && styles.roleButtonSubtextActive
+                  ]}>
+                    יכול להוסיף הוצאות ולראות נתונים
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.roleButton,
+                    inviteRole === 'owner' && styles.roleButtonActive
+                  ]}
+                  onPress={() => setInviteRole('owner')}
+                >
+                  <Text style={[
+                    styles.roleButtonText,
+                    inviteRole === 'owner' && styles.roleButtonTextActive
+                  ]}>
+                    👑 בעלים
+                  </Text>
+                  <Text style={[
+                    styles.roleButtonSubtext,
+                    inviteRole === 'owner' && styles.roleButtonSubtextActive
+                  ]}>
+                    יכול לנהל לוח, קטגוריות וחברים
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.modeDescription}>
+                הוסף חבר ללא אימייל - תוכל להוסיף הוצאות בשמו
+              </Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="שם פרטי"
+                value={inviteFirstName}
+                onChangeText={setInviteFirstName}
+                textAlign="right"
+                returnKeyType="next"
+                blurOnSubmit={false}
+              />
+              
+              <TextInput
+                style={styles.modalInput}
+                placeholder="שם משפחה"
+                value={inviteLastName}
+                onChangeText={setInviteLastName}
+                textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+            </>
+          )}
           
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => setShowInviteModal(false)}
+              onPress={() => {
+                setShowInviteModal(false);
+                setInviteEmail('');
+                setInviteFirstName('');
+                setInviteLastName('');
+                setInviteRole('member');
+                setInviteMode('email');
+              }}
             >
               <Text style={styles.cancelButtonText}>ביטול</Text>
             </TouchableOpacity>
@@ -434,7 +626,7 @@ const SettingsScreen: React.FC = () => {
               disabled={isInviting}
             >
               <Text style={styles.inviteButtonText}>
-                {isInviting ? 'שולח...' : 'הזמן'}
+                {isInviting ? 'מוסיף...' : (inviteMode === 'email' ? 'שלח הזמנה' : 'הוסף חבר')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -692,11 +884,37 @@ const styles = StyleSheet.create({
   memberInfo: {
     flex: 1,
   },
+  memberNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   memberName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#2c3e50',
-    marginBottom: 4,
+  },
+  creatorBadge: {
+    marginLeft: 8,
+    backgroundColor: '#f39c12',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  creatorBadgeText: {
+    fontSize: 12,
+    color: 'white',
+  },
+  virtualBadge: {
+    marginLeft: 8,
+    backgroundColor: '#9b59b6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  virtualBadgeText: {
+    fontSize: 12,
+    color: 'white',
   },
   memberEmail: {
     fontSize: 14,
@@ -957,6 +1175,93 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  
+  // Invite mode styles
+  inviteModeContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    padding: 4,
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  modeButtonActive: {
+    backgroundColor: '#3498db',
+  },
+  modeButtonText: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    fontWeight: '500',
+  },
+  modeButtonTextActive: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  modeDescription: {
+    fontSize: 13,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  
+  // Role selection styles
+  roleSelectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'right',
+  },
+  roleSelectionSubtitle: {
+    fontSize: 13,
+    color: '#7f8c8d',
+    textAlign: 'right',
+    marginBottom: 12,
+  },
+  roleSelectionContainer: {
+    flexDirection: 'column',
+    gap: 8,
+    marginBottom: 16,
+  },
+  roleButton: {
+    borderWidth: 2,
+    borderColor: '#ecf0f1',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+  },
+  roleButtonActive: {
+    borderColor: '#3498db',
+    backgroundColor: '#e3f2fd',
+  },
+  roleButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#7f8c8d',
+    textAlign: 'right',
+    marginBottom: 4,
+  },
+  roleButtonTextActive: {
+    color: '#3498db',
+  },
+  roleButtonSubtext: {
+    fontSize: 13,
+    color: '#95a5a6',
+    textAlign: 'right',
+    lineHeight: 16,
+  },
+  roleButtonSubtextActive: {
+    color: '#2980b9',
   },
 });
 

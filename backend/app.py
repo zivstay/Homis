@@ -277,6 +277,28 @@ def normalize_expense_date(expense_date):
         return datetime.now(timezone.utc)
 
 
+# Budget helper functions
+def check_budget_alerts(board_id, board_budget_amount, board_budget_alerts, total_expenses):
+    """Check if any budget alerts should be triggered - return only the highest triggered alert"""
+    if not board_budget_amount or not board_budget_alerts:
+        return []
+    
+    expense_percentage = (total_expenses / board_budget_amount) * 100
+    highest_triggered_alert = None
+    
+    # Find the highest percentage that was triggered
+    for alert_percentage in sorted(board_budget_alerts, reverse=True):  # Sort descending
+        if expense_percentage >= alert_percentage:
+            highest_triggered_alert = {
+                'percentage': alert_percentage,
+                'current_percentage': expense_percentage,
+                'budget_amount': board_budget_amount,
+                'current_expenses': total_expenses
+            }
+            break  # Take only the highest triggered alert
+    
+    return [highest_triggered_alert] if highest_triggered_alert else []
+
 
 def create_app(config_name='default'):
     """Application factory pattern"""
@@ -341,6 +363,88 @@ def create_app(config_name='default'):
         db_manager.migrate_existing_debts_to_new_format()
     
     app.db_manager = db_manager
+    
+    # Budget helper functions (moved inside create_app to access db_manager)
+    def calculate_board_total_expenses(board_id):
+        """Calculate total expenses for a board"""
+        try:
+            expenses = db_manager.get_board_expenses(board_id)
+            return sum(expense.amount for expense in expenses)
+        except Exception as e:
+            print(f"Error calculating board total expenses: {e}")
+            return 0.0
+
+    def get_budget_status(board_id):
+        """Get budget status for a board including alerts"""
+        try:
+            print(f"💰 Getting budget status for board: {board_id}")
+            board = db_manager.get_board_by_id(board_id)
+            print(f"💰 Board data: {board}")
+            
+            if board:
+                print(f"💰 Board budget_amount: {board.budget_amount}")
+                print(f"💰 Board budget_alerts: {board.budget_alerts}")
+            
+            if not board or not board.budget_amount:
+                print(f"💰 No budget found for board {board_id}")
+                return {
+                    'has_budget': False,
+                    'budget_amount': None,
+                    'current_expenses': 0.0,
+                    'percentage_used': 0.0,
+                    'alerts': [],
+                    'triggered_alerts': []
+                }
+            
+            total_expenses = calculate_board_total_expenses(board_id)
+            print(f"💰 Total expenses: {total_expenses}")
+            percentage_used = (total_expenses / board.budget_amount) * 100 if board.budget_amount > 0 else 0
+            print(f"💰 Percentage used: {percentage_used}%")
+            
+            triggered_alerts = check_budget_alerts(
+                board_id, 
+                board.budget_amount, 
+                board.budget_alerts or [], 
+                total_expenses
+            )
+            
+            # Add budget exceeded alert if over 100%
+            if percentage_used >= 100:
+                print(f"💰 Budget exceeded! Replacing all alerts with exceeded alert...")
+                # Clear all previous alerts and show only the exceeded alert
+                triggered_alerts = [{
+                    'percentage': 100,
+                    'current_percentage': percentage_used,
+                    'budget_amount': board.budget_amount,
+                    'current_expenses': total_expenses,
+                    'is_exceeded': True  # Special flag for exceeded budget
+                }]
+                print(f"💰 Showing only exceeded alert")
+            
+            print(f"💰 Triggered alerts: {triggered_alerts}")
+            
+            result = {
+                'has_budget': True,
+                'budget_amount': board.budget_amount,
+                'current_expenses': total_expenses,
+                'percentage_used': percentage_used,
+                'alerts': board.budget_alerts or [],
+                'triggered_alerts': triggered_alerts
+            }
+            print(f"💰 Final budget status: {result}")
+            return result
+        except Exception as e:
+            print(f"Error getting budget status for board {board_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'has_budget': False,
+                'budget_amount': None,
+                'current_expenses': 0.0,
+                'percentage_used': 0.0,
+                'alerts': [],
+                'triggered_alerts': []
+            }
     
     # Initialize auth
     auth_manager = AuthManager(db_manager)
@@ -1280,6 +1384,8 @@ def create_app(config_name='default'):
                     'currency': board.currency,
                     'timezone': board.timezone,
                     'board_type': board.board_type,
+                    'budget_amount': board.budget_amount,
+                    'budget_alerts': board.budget_alerts or [],
                     'is_default_board': getattr(board, 'is_default_board', False),
                     'user_role': getattr(board, 'user_role', 'member')
                 }
@@ -1376,6 +1482,8 @@ def create_app(config_name='default'):
             'timezone': board.timezone,
             'board_type': board.board_type,
             'settings': board.settings,
+            'budget_amount': board.budget_amount,
+            'budget_alerts': board.budget_alerts or [],
             'members': [
                 {
                     'id': member.id,
@@ -1394,6 +1502,8 @@ def create_app(config_name='default'):
     def update_board(board_id):
         """Update board details"""
         data = request.get_json()
+        print(f"💰 Update board API called with data: {data}")
+        
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
@@ -1402,11 +1512,13 @@ def create_app(config_name='default'):
             return jsonify({'error': 'Board not found'}), 404
         
         update_data = {}
-        allowed_fields = ['name', 'description', 'currency', 'timezone', 'settings']
+        allowed_fields = ['name', 'description', 'currency', 'timezone', 'settings', 'budget_amount', 'budget_alerts']
         
         for field in allowed_fields:
             if field in data:
                 update_data[field] = data[field]
+        
+        print(f"💰 Filtered update data: {update_data}")
         
         if update_data:
             success = db_manager.update_board(board_id, update_data)
@@ -1421,7 +1533,9 @@ def create_app(config_name='default'):
                     'updated_at': updated_board.updated_at,
                     'currency': updated_board.currency,
                     'timezone': updated_board.timezone,
-                    'settings': updated_board.settings
+                    'settings': updated_board.settings,
+                    'budget_amount': updated_board.budget_amount,
+                    'budget_alerts': updated_board.budget_alerts or []
                 }), 200
         
         return jsonify({'error': 'No valid fields to update'}), 400
@@ -1480,13 +1594,14 @@ def create_app(config_name='default'):
     @require_auth
     @require_board_admin
     def invite_member(board_id):
-        """Invite a member to the board"""
+        """Invite a member to the board or add a virtual member"""
         data = request.get_json()
-        if not data or not data.get('email'):
-            return jsonify({'error': 'Email is required'}), 400
         
-        # Convert email to lowercase
-        data['email'] = data['email'].lower()
+        # Check if this is a virtual member (no email, just names)
+        is_virtual = not data.get('email') and data.get('first_name') and data.get('last_name')
+        
+        if not data or (not data.get('email') and not is_virtual):
+            return jsonify({'error': 'Either email or first_name and last_name are required'}), 400
         
         board = db_manager.get_board_by_id(board_id)
         if not board:
@@ -1497,59 +1612,88 @@ def create_app(config_name='default'):
         if len(current_members) >= app.config['MAX_USERS_PER_BOARD']:
             return jsonify({'error': 'Maximum number of members reached'}), 400
         
-        # Check if user already exists
-        user = db_manager.get_user_by_email(data['email'])
-        if user:
-            # User exists, add them directly
-            member = db_manager.add_board_member(
-                board_id=board_id,
-                user_id=user.id,
-                role=data.get('role', UserRole.MEMBER.value),
-                invited_by=auth_manager.get_current_user()['user']['id']
-            )
-            return jsonify({
-                'message': 'Member added successfully',
-                'member_id': member.id
-            }), 201
-        else:
-            # User doesn't exist, create invitation
-            current_user_info = auth_manager.get_current_user()['user']
-            inviter = db_manager.get_user_by_id(current_user_info['id'])
-            inviter_name = f"{inviter.first_name} {inviter.last_name}" if inviter else "משתמש לא ידוע"
-            
-            invitation_data = {
-                'board_id': board_id,
-                'email': data['email'],
-                'invited_by': current_user_info['id'],
-                'role': data.get('role', UserRole.MEMBER.value),
-                'expires_at': (datetime.now() + timedelta(days=7)).isoformat()
-            }
-            
-            invitation = db_manager.create_invitation(invitation_data)
-            
-            # Send invitation email
+        if is_virtual:
+            # Create virtual user and add to board
             try:
-                email_sent = auth_manager.send_board_invitation_email(
-                    email=data['email'],
-                    inviter_name=inviter_name,
-                    board_name=board.name,
-                    invitation_token=invitation.token,
-                    app_config=app.config
+                virtual_user = db_manager.create_virtual_user(
+                    first_name=data['first_name'].strip(),
+                    last_name=data['last_name'].strip()
                 )
                 
-                if email_sent:
-                    print(f"✅ Invitation email sent successfully to {data['email']} for board '{board.name}'")
-                else:
-                    print(f"⚠️ Failed to send invitation email to {data['email']}, but invitation was created")
-                    
+                member = db_manager.add_board_member(
+                    board_id=board_id,
+                    user_id=virtual_user.id,
+                    role=data.get('role', UserRole.MEMBER.value),
+                    invited_by=auth_manager.get_current_user()['user']['id']
+                )
+                
+                return jsonify({
+                    'message': 'Virtual member added successfully',
+                    'member_id': member.id,
+                    'is_virtual': True
+                }), 201
+                
             except Exception as e:
-                print(f"❌ Error sending invitation email: {e}")
-                # Continue anyway - invitation was created
+                print(f"❌ Error creating virtual member: {e}")
+                return jsonify({'error': 'Failed to create virtual member'}), 500
+        else:
+            # Regular email-based invitation
+            # Convert email to lowercase
+            data['email'] = data['email'].lower()
             
-            return jsonify({
-                'message': 'Invitation sent successfully',
-                'invitation_id': invitation.id
-            }), 201
+            # Check if user already exists
+            user = db_manager.get_user_by_email(data['email'])
+            if user:
+                # User exists, add them directly
+                member = db_manager.add_board_member(
+                    board_id=board_id,
+                    user_id=user.id,
+                    role=data.get('role', UserRole.MEMBER.value),
+                    invited_by=auth_manager.get_current_user()['user']['id']
+                )
+                return jsonify({
+                    'message': 'Member added successfully',
+                    'member_id': member.id
+                }), 201
+            else:
+                # User doesn't exist, create invitation
+                current_user_info = auth_manager.get_current_user()['user']
+                inviter = db_manager.get_user_by_id(current_user_info['id'])
+                inviter_name = f"{inviter.first_name} {inviter.last_name}" if inviter else "משתמש לא ידוע"
+                
+                invitation_data = {
+                    'board_id': board_id,
+                    'email': data['email'],
+                    'invited_by': current_user_info['id'],
+                    'role': data.get('role', UserRole.MEMBER.value),
+                    'expires_at': (datetime.now() + timedelta(days=7)).isoformat()
+                }
+                
+                invitation = db_manager.create_invitation(invitation_data)
+                
+                # Send invitation email
+                try:
+                    email_sent = auth_manager.send_board_invitation_email(
+                        email=data['email'],
+                        inviter_name=inviter_name,
+                        board_name=board.name,
+                        invitation_token=invitation.token,
+                        app_config=app.config
+                    )
+                    
+                    if email_sent:
+                        print(f"✅ Invitation email sent successfully to {data['email']} for board '{board.name}'")
+                    else:
+                        print(f"⚠️ Failed to send invitation email to {data['email']}, but invitation was created")
+                        
+                except Exception as e:
+                    print(f"❌ Error sending invitation email: {e}")
+                    # Continue anyway - invitation was created
+                
+                return jsonify({
+                    'message': 'Invitation sent successfully',
+                    'invitation_id': invitation.id
+                }), 201
 
     @app.route('/api/boards/<board_id>/members/<user_id>', methods=['DELETE'])
     @require_auth
@@ -1558,13 +1702,58 @@ def create_app(config_name='default'):
         """Remove a member from the board"""
         current_user_id = auth_manager.get_current_user()['user']['id']
         
-        if user_id == current_user_id:
-            return jsonify({'error': 'Cannot remove yourself from the board'}), 400
+        # Check if current user can modify this member
+        if not db_manager.can_modify_member(current_user_id, board_id, user_id):
+            if user_id == current_user_id:
+                return jsonify({'error': 'Cannot remove yourself from the board'}), 400
+            elif db_manager.is_board_creator(user_id, board_id):
+                return jsonify({'error': 'Cannot remove the board creator'}), 403
+            else:
+                return jsonify({'error': 'Insufficient permissions to remove this member'}), 403
         
         if db_manager.remove_board_member(board_id, user_id):
             return jsonify({'message': 'Member removed successfully'}), 200
         else:
             return jsonify({'error': 'Failed to remove member'}), 500
+
+    @app.route('/api/boards/<board_id>/members/<user_id>/role', methods=['PUT'])
+    @require_auth
+    @require_board_admin
+    def update_member_role(board_id, user_id):
+        """Update a member's role in the board"""
+        current_user_id = auth_manager.get_current_user()['user']['id']
+        data = request.get_json()
+        
+        if not data or not data.get('role'):
+            return jsonify({'error': 'Role is required'}), 400
+        
+        new_role = data['role']
+        
+        # Validate role
+        valid_roles = [UserRole.OWNER.value, UserRole.ADMIN.value, UserRole.MEMBER.value, UserRole.VIEWER.value]
+        if new_role not in valid_roles:
+            return jsonify({'error': 'Invalid role'}), 400
+        
+        # Check if current user can modify this member
+        if not db_manager.can_modify_member(current_user_id, board_id, user_id):
+            if user_id == current_user_id:
+                return jsonify({'error': 'Cannot modify your own role'}), 400
+            elif db_manager.is_board_creator(user_id, board_id):
+                return jsonify({'error': 'Cannot modify the board creator\'s role'}), 403
+            else:
+                return jsonify({'error': 'Insufficient permissions to modify this member\'s role'}), 403
+        
+        # Get the member record
+        from postgres_models import BoardMember
+        member = BoardMember.query.filter_by(board_id=board_id, user_id=user_id, is_active=True).first()
+        if not member:
+            return jsonify({'error': 'Member not found'}), 404
+        
+        # Update the role
+        if db_manager.update_board_member_role(member.id, new_role):
+            return jsonify({'message': 'Member role updated successfully'}), 200
+        else:
+            return jsonify({'error': 'Failed to update member role'}), 500
 
     @app.route('/api/boards/<board_id>/set-default', methods=['PUT'])
     @require_auth
@@ -1966,8 +2155,16 @@ def create_app(config_name='default'):
         else:
             print(f"💰 Only one member - no debts to process")
         
-        # Create notifications for all board members except the creator
+        # Create notifications for all board members except the creator (original functionality)
         db_manager.create_expense_notification(expense, members, 'expense_added')
+        
+        # Additionally, if someone added an expense for another person, send special notification
+        if expense.paid_by != expense.created_by:
+            # Find the member who the expense was added for
+            payer_member = next((m for m in members if m.user_id == expense.paid_by), None)
+            if payer_member:
+                # Send additional notification to the person who the expense was added for
+                db_manager.create_expense_notification(expense, [payer_member], 'expense_added_for_you')
         
         return jsonify({
             'id': expense.id,
@@ -2797,6 +2994,18 @@ def create_app(config_name='default'):
         except Exception as e:
             print(f"❌ Error updating board categories: {str(e)}")
             return jsonify({'error': 'Failed to update categories'}), 500
+
+    @app.route('/api/boards/<board_id>/budget/status', methods=['GET'])
+    @require_auth
+    @require_board_access(BoardPermission.READ.value)
+    def get_board_budget_status(board_id):
+        """Get budget status for a board including alerts"""
+        try:
+            budget_status = get_budget_status(board_id)
+            return jsonify(budget_status), 200
+        except Exception as e:
+            print(f"Error getting budget status: {e}")
+            return jsonify({'error': 'Failed to get budget status'}), 500
 
     # Helper function to process debts for an expense with smart offsetting
     def process_expense_debts(expense, members):

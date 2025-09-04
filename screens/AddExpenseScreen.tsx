@@ -95,7 +95,7 @@ const AddExpenseScreen: React.FC = () => {
   useEffect(() => {
     if (selectedBoard) {
       loadCategories();
-      // Always set current user as payer - user can only add expenses for themselves
+      // Set current user as default payer, but allow changing to other board members
       if (user && !isGuestMode) {
         setSelectedPaidBy(user.id);
       }
@@ -557,6 +557,40 @@ const AddExpenseScreen: React.FC = () => {
     );
   };
 
+  const renderPayerSelector = () => {
+    if (isGuestMode) {
+      return null; // In guest mode, we don't show payer selection
+    }
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>מי משלם?</Text>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.payerScroll}
+          contentContainerStyle={styles.payerContainer}
+        >
+          {boardMembers.map((member) => (
+            <TouchableOpacity
+              key={member.user_id}
+              style={[
+                styles.payerButton,
+                selectedPaidBy === member.user_id && styles.selectedPayerButton,
+              ]}
+              onPress={() => setSelectedPaidBy(member.user_id)}
+            >
+              <Text style={styles.payerIcon}>👤</Text>
+              <Text style={styles.payerText} numberOfLines={2}>
+                {`${member.user.first_name} ${member.user.last_name}`}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  };
+
   const renderCategoryButtons = () => {
     // Only use categories from server (selected in settings)
     let displayCategories: Array<{ name: string; icon: string; color: string }> = [];
@@ -639,6 +673,8 @@ const AddExpenseScreen: React.FC = () => {
                 blurOnSubmit={true}
               />
             </View>
+
+            {renderPayerSelector()}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>תיאור (אופציונלי)</Text>
@@ -1012,6 +1048,49 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  
+  // Payer selector styles
+  payerScroll: {
+    maxHeight: 100,
+  },
+  payerContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  payerButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 6,
+    backgroundColor: '#ecf0f1',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  selectedPayerButton: {
+    backgroundColor: '#3498db',
+    borderColor: '#2c3e50',
+  },
+  payerIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  payerText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    color: '#2c3e50',
+    lineHeight: 13,
   },
 });
 

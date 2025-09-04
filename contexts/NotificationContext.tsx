@@ -15,7 +15,7 @@ export interface Notification {
   created_by_name: string;
   created_at: string;
   is_read: boolean;
-  type: 'expense_added' | 'expense_updated' | 'expense_deleted' | 'board_invite';
+  type: 'expense_added' | 'expense_updated' | 'expense_deleted' | 'board_invite' | 'expense_added_for_you';
 }
 
 interface NotificationContextType {

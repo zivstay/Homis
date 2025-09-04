@@ -17,7 +17,7 @@ interface TutorialStep {
   description: string;
   targetElement?: string;
   action?: string;
-  position: {
+  position?: {
     x: number;
     y: number;
     width: number;
@@ -34,6 +34,7 @@ interface AppTutorialProps {
   onNavigateToScreen?: (screen: string) => void;
   hasSelectedBoard?: boolean; // חדש: האם יש לוח נבחר
   boardsCount?: number; // חדש: מספר הלוחות הקיימים
+  elementPositions?: { [key: string]: { x: number; y: number; width: number; height: number } }; // חדש: מיקומים דינמיים
 }
 
 const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
@@ -106,40 +107,41 @@ const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
       highlightColor: '#3498db',
     },
     {
-      id: 'add_expense_button_location',
-      title: 'כפתור "הוסף הוצאה" 💰',
-      description: 'הכפתור הירוק "+ הוסף" הוא הכפתור הכי חשוב! לחיצה עליו תעביר אתכם למסך הוספת הוצאה חדשה. זהו הדרך הראשית להוסיף הוצאות ללוח.',
-      position: { x: screenWidth - 80, y: 285, width: 70, height: 35 },
-      arrowDirection: 'left',
-      action: 'highlight_add_expense_button',
+      id: 'quick_expense_buttons',
+      title: 'כפתורי הוצאות מהירות 💰',
+      description: 'לחיצה על הכפתורים הללו תוביל אותכם להוספת הוצאה בקלות, עם הקטגוריה שבחרתם. זוהי הדרך המהירה והנוחה ביותר להוסיף הוצאות ללוח.',
+      targetElement: 'quick_expense_buttons',
+      position: { x: 20, y: 320, width: screenWidth - 40, height: 60 }, // fallback position
+      arrowDirection: 'top',
+      action: 'highlight_quick_expense_buttons',
       highlightColor: '#4CAF50',
     },
     {
       id: 'add_expense_explanation',
       title: 'איך עובד הוספת הוצאות? 📝',
-      description: 'כשתלחצו על "+ הוסף", תגיעו לטופס פשוט: הזינו סכום, בחרו קטגוריה (אוכל, תחבורה וכו\'), ציינו מי שילם, ואפשר להוסיף תמונה של הקבלה.',
-      position: { x: 20, y: 320, width: screenWidth - 40, height: 120 },
+      description: 'כשתלחצו על אחד מהכפתורים, תגיעו לטופס פשוט: הסכום יהיה ריק להזנה, הקטגוריה תהיה כבר נבחרת לפי הכפתור שלחצתם, תבחרו מי שילם, ואפשר להוסיף תמונה של הקבלה.',
+      position: { x: 20, y: 390, width: screenWidth - 40, height: 120 },
       arrowDirection: 'top',
     },
     {
       id: 'expense_list_intro',
       title: 'רשימת ההוצאות 📋',
       description: 'למטה תוכלו לראות את כל ההוצאות האחרונות. כל הוצאה מציגה: סכום, תיאור, מי שילם, ותאריך.',
-      position: { x: 20, y: 350, width: screenWidth - 40, height: 100 },
+      position: { x: 20, y: 520, width: screenWidth - 40, height: 100 },
       arrowDirection: 'top',
     },
     {
       id: 'expense_item_features',
       title: 'תכונות ההוצאות 🔍',
       description: 'לחיצה על הוצאה תציג פרטים נוספים. תוכלו לראות תמונות, לערוך או למחוק הוצאות (אם יש לכם הרשאה). גלילה למטה תציג הוצאות ישנות יותר.',
-      position: { x: 20, y: 400, width: screenWidth - 40, height: 150 },
+      position: { x: 20, y: 630, width: screenWidth - 40, height: 150 },
       arrowDirection: 'top',
     },
     {
       id: 'refresh_feature',
       title: 'רענון הרשימה 🔄',
       description: 'משכו את הרשימה למטה כדי לרענן ולקבל עדכונים חדשים. זה שימושי כשחברים אחרים מוסיפים הוצאות.',
-      position: { x: 20, y: 350, width: screenWidth - 40, height: 100 },
+      position: { x: 20, y: 520, width: screenWidth - 40, height: 100 },
       arrowDirection: 'top',
     },
     {
@@ -383,7 +385,7 @@ const TUTORIAL_STEPS: { [screen: string]: TutorialStep[] } = {
   ],
 };
 
-const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, currentScreen, onNavigateToScreen, hasSelectedBoard = true, boardsCount = 0 }) => {
+const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, currentScreen, onNavigateToScreen, hasSelectedBoard = true, boardsCount = 0, elementPositions = {} }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [tooltipOpacity] = useState(new Animated.Value(0));
   const [highlightScale] = useState(new Animated.Value(0));
@@ -402,6 +404,22 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
 
   const currentSteps = getCurrentSteps();
   const currentStep = currentSteps[currentStepIndex];
+
+  // פונקציה לקבלת המיקום הנכון של השלב
+  const getStepPosition = (step: TutorialStep) => {
+    // בדוק אם יש מיקום דינמי לפי targetElement
+    if (step.targetElement && elementPositions[step.targetElement]) {
+      return elementPositions[step.targetElement];
+    }
+    
+    // בדוק אם יש מיקום דינמי לפי action
+    if (step.action && elementPositions[step.action]) {
+      return elementPositions[step.action];
+    }
+    
+    // אחרת, השתמש במיקום הקבוע (fallback)
+    return step.position || { x: 20, y: 100, width: screenWidth - 40, height: 100 };
+  };
 
   // בדיקה אם צריך להציג את ה-Tutorial
   const shouldShowTutorial = isVisible && currentStep && (
@@ -517,6 +535,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
   const renderArrow = () => {
     if (!currentStep) return null;
 
+    const position = getStepPosition(currentStep);
     const arrowStyle = {
       position: 'absolute' as const,
       width: 0,
@@ -526,8 +545,8 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
     };
 
     const arrowSize = 12;
-    const tooltipX = currentStep.position.x + currentStep.position.width / 2;
-    const tooltipY = currentStep.position.y + currentStep.position.height / 2;
+    const tooltipX = position.x + position.width / 2;
+    const tooltipY = position.y + position.height / 2;
 
     switch (currentStep.arrowDirection) {
       case 'top':
@@ -536,7 +555,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
             style={[
               arrowStyle,
               {
-                top: tooltipY + currentStep.position.height + 15,
+                top: tooltipY + position.height + 15,
                 left: tooltipX - arrowSize,
                 borderLeftWidth: arrowSize,
                 borderRightWidth: arrowSize,
@@ -573,7 +592,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
               arrowStyle,
               {
                 top: tooltipY - arrowSize,
-                left: tooltipX + currentStep.position.width + 15,
+                left: tooltipX + position.width + 15,
                 borderTopWidth: arrowSize,
                 borderBottomWidth: arrowSize,
                 borderLeftWidth: arrowSize,
@@ -610,16 +629,17 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
   const renderHighlight = () => {
     if (!currentStep || !currentStep.action) return null;
 
+    const position = getStepPosition(currentStep);
+
     return (
       <Animated.View
         style={[
           styles.highlight,
           {
-            left: currentStep.position.x - 5,
-            top: currentStep.position.y - 5,
-            width: currentStep.position.width + 10,
-            height: currentStep.position.height + 10,
-            borderColor: currentStep.highlightColor || '#FF6B6B',
+            left: position.x,
+            top: position.y,
+            width: position.width,
+            height: position.height,
             transform: [{ scale: highlightScale }],
           },
         ]}
@@ -639,19 +659,20 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
       };
     }
 
-    let tooltipX = currentStep.position.x;
-    let tooltipY = currentStep.position.y;
+    const position = getStepPosition(currentStep);
+    let tooltipX = position.x;
+    let tooltipY = position.y;
 
     // Adjust position based on arrow direction to avoid overlap
     switch (currentStep.arrowDirection) {
       case 'top':
-        tooltipY += currentStep.position.height + 35;
+        tooltipY += position.height + 35;
         break;
       case 'bottom':
         tooltipY -= 180; // Tooltip height approximate
         break;
       case 'left':
-        tooltipX += currentStep.position.width + 35;
+        tooltipX += position.width + 35;
         tooltipY -= 50;
         break;
       case 'right':
@@ -745,9 +766,8 @@ const styles = StyleSheet.create({
   },
   highlight: {
     position: 'absolute',
-    borderWidth: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 8,
-    backgroundColor: 'transparent',
   },
   tooltip: {
     position: 'absolute',

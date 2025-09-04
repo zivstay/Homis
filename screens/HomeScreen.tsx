@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { BudgetEditModal } from '../components/BudgetEditModal';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,6 +23,20 @@ import { useTutorial } from '../contexts/TutorialContext';
 import { adManager } from '../services/adManager';
 import { apiService, Category, Expense } from '../services/api';
 import { formatCurrency } from '../utils/currencyUtils';
+
+interface BudgetStatus {
+  has_budget: boolean;
+  budget_amount: number | null;
+  current_expenses: number;
+  percentage_used: number;
+  alerts: number[];
+  triggered_alerts: Array<{
+    percentage: number;
+    current_percentage: number;
+    budget_amount: number;
+    current_expenses: number;
+  }>;
+}
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -40,6 +55,8 @@ const HomeScreen: React.FC = () => {
   const [exportData, setExportData] = useState<{blob: Blob, filename: string} | null>(null);
   const [forceUpdate, setForceUpdate] = useState(0);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
 
   // פונקציה לניקוי מלא של כל ה-states
   const resetAllExportStates = () => {
@@ -60,10 +77,11 @@ const HomeScreen: React.FC = () => {
       console.log('🎓 HomeScreen: Setting tutorial screen to Home');
       setCurrentScreen('Home');
       
-      // Refresh categories when screen is focused (in case they were updated in settings)
+      // Refresh categories and budget when screen is focused (in case they were updated in settings)
       if (selectedBoard) {
-        console.log('🔄 HomeScreen: Refreshing categories on focus...');
+        console.log('🔄 HomeScreen: Refreshing categories and budget on focus...');
         loadCategories();
+        loadBudgetStatus();
         refreshBoardCategories();
       }
       
@@ -94,8 +112,9 @@ const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     if (selectedBoard) {
-      console.log('🔄 HomeScreen: Board changed, loading categories...');
+      console.log('🔄 HomeScreen: Board changed, loading categories and budget...');
       loadCategories();
+      loadBudgetStatus();
       // Also refresh ExpenseContext categories when board changes
       refreshBoardCategories();
     }
@@ -104,10 +123,19 @@ const HomeScreen: React.FC = () => {
   // Additional effect to listen for board data changes (e.g., after category updates)
   useEffect(() => {
     if (selectedBoard) {
-      console.log('🔄 HomeScreen: Board data may have changed, reloading categories...');
+      console.log('🔄 HomeScreen: Board data may have changed, reloading categories and budget...');
       loadCategories();
+      loadBudgetStatus();
     }
   }, [selectedBoard?.updated_at]); // This will trigger when board data is updated
+
+  // Effect to reload budget when expenses change (for alerts)
+  useEffect(() => {
+    if (selectedBoard && boardExpenses.length >= 0) {
+      console.log('🔄 HomeScreen: Expenses changed, reloading budget status...');
+      loadBudgetStatus();
+    }
+  }, [boardExpenses, selectedBoard?.id]); // Reload when expenses or board changes
 
   const loadCategories = async () => {
     if (!selectedBoard) return;
@@ -127,12 +155,32 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const loadBudgetStatus = async () => {
+    if (!selectedBoard) return;
+
+    try {
+      console.log('🔄 Loading budget status for board:', selectedBoard.id);
+      const budgetResult = await apiService.getBoardBudgetStatus(selectedBoard.id);
+      if (budgetResult.success && budgetResult.data) {
+        console.log('✅ Budget status loaded:', budgetResult.data);
+        setBudgetStatus(budgetResult.data);
+      } else {
+        console.log('❌ Failed to load budget status:', budgetResult.error);
+        setBudgetStatus(null);
+      }
+    } catch (error) {
+      console.error('Error loading budget status:', error);
+      setBudgetStatus(null);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
       refreshBoardExpenses(),
       loadCategories(),
-      refreshBoardCategories() // Also refresh ExpenseContext categories
+      refreshBoardCategories(), // Also refresh ExpenseContext categories
+      loadBudgetStatus() // Load budget status
     ]);
     setRefreshing(false);
   };
@@ -314,18 +362,59 @@ const HomeScreen: React.FC = () => {
       <View style={styles.summaryRow}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>סה"כ הוצאות</Text>
-                          <Text style={styles.summaryValue}>
-                  {formatCurrency(calculateTotalExpenses(), selectedBoard?.currency || 'ILS')}
-                </Text>
+          <Text style={styles.summaryValue}>
+            {formatCurrency(calculateTotalExpenses(), selectedBoard?.currency || 'ILS')}
+          </Text>
         </View>
         
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>ההוצאות שלי</Text>
-                          <Text style={styles.summaryValue}>
-                  {formatCurrency(calculateMyExpenses(), selectedBoard?.currency || 'ILS')}
-                </Text>
+          <Text style={styles.summaryValue}>
+            {formatCurrency(calculateMyExpenses(), selectedBoard?.currency || 'ILS')}
+          </Text>
         </View>
+        
+        <TouchableOpacity 
+          style={styles.summaryItem}
+          onPress={() => setShowBudgetModal(true)}
+        >
+          <Text style={styles.summaryLabel}>תקציב</Text>
+          <Text style={[styles.summaryValue, budgetStatus?.has_budget ? styles.budgetActiveValue : styles.budgetInactiveValue]}>
+            {budgetStatus?.has_budget 
+              ? formatCurrency(budgetStatus.budget_amount || 0, selectedBoard?.currency || 'ILS')
+              : 'הגדר תקציב'
+            }
+          </Text>
+          {budgetStatus?.has_budget && (
+            <Text style={styles.budgetPercentage}>
+              {Math.round(budgetStatus.percentage_used)}% בשימוש
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
+      
+      {/* Budget alerts disclaimer */}
+      {budgetStatus?.triggered_alerts && budgetStatus.triggered_alerts.length > 0 && (
+        <View style={styles.budgetAlertContainer}>
+          {budgetStatus.triggered_alerts.map((alert, index) => {
+            const isExceeded = (alert as any).is_exceeded;
+            return (
+              <Text 
+                key={index} 
+                style={[
+                  styles.budgetAlertText,
+                  isExceeded && styles.budgetExceededText
+                ]}
+              >
+                {isExceeded 
+                  ? `🚨 חריגה מהתקציב! (${Math.round(alert.current_percentage)}% בשימוש)`
+                  : `⚠️ עברתם ${alert.percentage}% מהתקציב (${Math.round(alert.current_percentage)}% בשימוש)`
+                }
+              </Text>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 
@@ -437,6 +526,41 @@ const HomeScreen: React.FC = () => {
     }
     
     console.log('🎯 Download: Function ended');
+  };
+
+  const handleBudgetUpdate = async (budgetAmount: number | null, alerts: number[]) => {
+    if (!selectedBoard) return;
+
+    try {
+      console.log('💰 Updating budget:', { budgetAmount, alerts });
+      const updateData = {
+        budget_amount: budgetAmount,
+        budget_alerts: alerts
+      };
+
+      const result = await apiService.updateBoard(selectedBoard.id, updateData);
+      console.log('💰 Budget update result:', result);
+      
+      if (result.success) {
+        console.log('✅ Budget updated successfully, refreshing data...');
+        
+        // Refresh budget status
+        await loadBudgetStatus();
+        
+        // Also refresh the board data in BoardContext to update the selectedBoard
+        // This will trigger useEffect and reload budget status
+        await refreshBoardExpenses();
+        
+        setShowBudgetModal(false);
+        Alert.alert('הצלחה', 'התקציב עודכן בהצלחה');
+      } else {
+        console.log('❌ Budget update failed:', result.error);
+        Alert.alert('שגיאה', result.error || 'שגיאה בעדכון התקציב');
+      }
+    } catch (error) {
+      console.error('Error updating budget:', error);
+      Alert.alert('שגיאה', 'שגיאה בעדכון התקציב');
+    }
   };
 
   const handleDateRangeExport = async (startDate?: string, endDate?: string, optionName?: string) => {
@@ -582,6 +706,8 @@ const HomeScreen: React.FC = () => {
           expense={selectedExpense}
           getMemberName={getMemberName}
           getCategoryColor={getCategoryColor}
+          onDelete={handleDeleteExpense}
+          canDelete={isGuestMode || !!(user && selectedExpense.created_by === user.id)}
         />
       )}
 
@@ -710,6 +836,16 @@ const HomeScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Budget Edit Modal */}
+      <BudgetEditModal
+        visible={showBudgetModal}
+        onClose={() => setShowBudgetModal(false)}
+        onSave={handleBudgetUpdate}
+        currentBudget={budgetStatus?.budget_amount}
+        currentAlerts={budgetStatus?.alerts || []}
+        currency={selectedBoard?.currency || 'ILS'}
+      />
 
     </View>
   );
@@ -1175,6 +1311,45 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Budget styles
+  budgetActiveValue: {
+    color: '#27ae60',
+  },
+  budgetInactiveValue: {
+    color: '#95a5a6',
+    fontSize: 14,
+  },
+  budgetPercentage: {
+    fontSize: 12,
+    color: '#7f8c8d',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  budgetAlertContainer: {
+    backgroundColor: '#fff3cd',
+    borderColor: '#ffeaa7',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
+  budgetAlertTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#856404',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  budgetAlertText: {
+    fontSize: 12,
+    color: '#856404',
+    textAlign: 'center',
+  },
+  budgetExceededText: {
+    color: '#dc3545',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
 
 });
