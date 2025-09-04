@@ -41,7 +41,7 @@ interface BudgetStatus {
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses, boards } = useBoard();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { refreshBoardCategories, quickCategories } = useExpenses();
   const { isGuestMode } = useAuth();
   const { setCurrentScreen, checkScreenTutorial, startTutorial, forceStartTutorial } = useTutorial();
@@ -81,7 +81,9 @@ const HomeScreen: React.FC = () => {
       if (selectedBoard) {
         console.log('🔄 HomeScreen: Refreshing categories and budget on focus...');
         loadCategories();
-        loadBudgetStatus();
+        if (!isGuestMode) {
+          loadBudgetStatus();
+        }
         refreshBoardCategories();
       }
       
@@ -114,7 +116,9 @@ const HomeScreen: React.FC = () => {
     if (selectedBoard) {
       console.log('🔄 HomeScreen: Board changed, loading categories and budget...');
       loadCategories();
-      loadBudgetStatus();
+      if (!isGuestMode) {
+        loadBudgetStatus();
+      }
       // Also refresh ExpenseContext categories when board changes
       refreshBoardCategories();
     }
@@ -125,13 +129,15 @@ const HomeScreen: React.FC = () => {
     if (selectedBoard) {
       console.log('🔄 HomeScreen: Board data may have changed, reloading categories and budget...');
       loadCategories();
-      loadBudgetStatus();
+      if (!isGuestMode) {
+        loadBudgetStatus();
+      }
     }
   }, [selectedBoard?.updated_at]); // This will trigger when board data is updated
 
   // Effect to reload budget when expenses change (for alerts)
   useEffect(() => {
-    if (selectedBoard && boardExpenses.length >= 0) {
+    if (selectedBoard && boardExpenses.length >= 0 && !isGuestMode) {
       console.log('🔄 HomeScreen: Expenses changed, reloading budget status...');
       loadBudgetStatus();
     }
@@ -156,7 +162,7 @@ const HomeScreen: React.FC = () => {
   };
 
   const loadBudgetStatus = async () => {
-    if (!selectedBoard) return;
+    if (!selectedBoard || isGuestMode) return;
 
     try {
       console.log('🔄 Loading budget status for board:', selectedBoard.id);
@@ -180,7 +186,7 @@ const HomeScreen: React.FC = () => {
       refreshBoardExpenses(),
       loadCategories(),
       refreshBoardCategories(), // Also refresh ExpenseContext categories
-      loadBudgetStatus() // Load budget status
+      ...(isGuestMode ? [] : [loadBudgetStatus()]) // Load budget status only if not guest mode
     ]);
     setRefreshing(false);
   };
@@ -375,14 +381,32 @@ const HomeScreen: React.FC = () => {
         </View>
         
         <TouchableOpacity 
-          style={styles.summaryItem}
-          onPress={() => setShowBudgetModal(true)}
+          style={[styles.summaryItem, { opacity: isGuestMode ? 0.5 : 1 }]}
+          onPress={() => {
+            if (isGuestMode) {
+              Alert.alert(
+                'פונקציה נעולה',
+                'כדי לנהל תקציבים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
+                [
+                  { text: 'אולי מאוחר יותר', style: 'cancel' },
+                  { 
+                    text: 'התחבר עכשיו', 
+                    onPress: () => {
+                      logout();
+                    }
+                  }
+                ]
+              );
+            } else {
+              setShowBudgetModal(true);
+            }
+          }}
         >
           <Text style={styles.summaryLabel}>תקציב</Text>
           <Text style={[styles.summaryValue, budgetStatus?.has_budget ? styles.budgetActiveValue : styles.budgetInactiveValue]}>
             {budgetStatus?.has_budget 
               ? formatCurrency(budgetStatus.budget_amount || 0, selectedBoard?.currency || 'ILS')
-              : 'הגדר תקציב'
+              : `הגדר תקציב${isGuestMode ? ' 🔒' : ''}`
             }
           </Text>
           {budgetStatus?.has_budget && (
