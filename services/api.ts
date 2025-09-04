@@ -5,8 +5,8 @@ import { QuickCategory } from '../constants/boardTypes';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-// const API_BASE_URL = 'http://192.168.7.7:5000/api';   // <-- your IP
-const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
+const API_BASE_URL = 'http://192.168.7.7:5000/api';   // <-- your IP
+// const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
 
 // Types
 export interface User {
