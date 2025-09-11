@@ -12,6 +12,7 @@ interface QuickCategory {
   name: string;
   icon: string;
   color: string;
+  imageUrl?: string; // Add optional image URL field
 }
 
 interface ExpenseContextType {
@@ -116,6 +117,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           name: category.name,
           icon: category.icon,
           color: category.color,
+          imageUrl: category.imageUrl, // Include image URL
         }));
         console.log('✅ Loaded', guestCategories.length, 'guest categories for board');
         setQuickCategories(guestCategories);
@@ -136,6 +138,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
           name: category.name,
           icon: category.icon,
           color: category.color,
+          imageUrl: category.image_url, // Include image URL
         }));
 
         console.log('✅ Loaded', boardCategories.length, 'categories for board');
@@ -593,6 +596,7 @@ export function ExpenseProvider({ children }: { children: ReactNode }) {
         name: category.name,
         icon: category.icon,
         color: category.color,
+        image_url: category.imageUrl, // Include image URL
         is_default: false
       });
 

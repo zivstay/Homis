@@ -11,6 +11,7 @@ interface BoardContextType {
   boardExpenses: Expense[];
   isLoading: boolean;
   selectBoard: (board: Board) => void;
+  updateSelectedBoard: (boardId: string) => Promise<void>;
   createBoard: (boardData: {
     name: string;
     description?: string;
@@ -272,23 +273,44 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
   useEffect(() => {
     if (selectedBoard) {
       console.log('🏠 BoardContext: Board selected, refreshing members and expenses:', selectedBoard.name);
-      // Add a small delay to prevent simultaneous requests
-      const timer = setTimeout(() => {
-        refreshBoardMembers();
-      }, 50);
       
-      refreshBoardExpenses();
-      
-      return () => clearTimeout(timer);
+      // Use refs to avoid dependency issues
+      const currentSelectedBoard = selectedBoardRef.current;
+      if (currentSelectedBoard && currentSelectedBoard.id === selectedBoard.id) {
+        // Add a small delay to prevent simultaneous requests
+        const timer = setTimeout(() => {
+          if (!isRefreshingMembers.current) {
+            refreshBoardMembers();
+          }
+        }, 50);
+        
+        if (!isRefreshingExpenses.current) {
+          refreshBoardExpenses();
+        }
+        
+        return () => clearTimeout(timer);
+      }
     } else {
       console.log('🏠 BoardContext: No board selected, clearing members and expenses');
       setBoardMembers([]);
       setBoardExpenses([]);
     }
-  }, [selectedBoard, refreshBoardMembers, refreshBoardExpenses]);
+  }, [selectedBoard]);
 
   const selectBoard = (board: Board) => {
     setSelectedBoard(board);
+  };
+
+  const updateSelectedBoard = async (boardId: string) => {
+    try {
+      const response = await apiService.getBoard(boardId);
+      if (response.success && response.data) {
+        console.log('🔄 BoardContext: Updating selected board with fresh data from API');
+        setSelectedBoard(response.data);
+      }
+    } catch (error) {
+      console.error('Error updating selected board:', error);
+    }
   };
 
   const createBoard = async (
@@ -525,6 +547,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     boardExpenses,
     isLoading,
     selectBoard,
+    updateSelectedBoard,
     createBoard,
     saveBoardCategories,
     refreshBoards,

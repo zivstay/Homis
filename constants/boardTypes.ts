@@ -10,6 +10,26 @@ export interface QuickCategory {
   name: string;
   icon: string;
   color: string;
+  id?: string;
+  imageUrl?: string; // Optional image URL for custom categories
+}
+
+export interface WorkItem {
+  id: string;
+  category: string;
+  price: number;
+  description?: string;
+  hours?: number;
+}
+
+export interface WorkExpenseData {
+  workItems: WorkItem[];
+  clientName: string;
+  location: string;
+  totalAmount: number;
+  workDate: string;
+  description?: string;
+  image_url?: string;
 }
 
 export const BOARD_TYPES: BoardType[] = [
@@ -90,6 +110,22 @@ export const BOARD_TYPES: BoardType[] = [
       { name: 'קניות', icon: '🛍️', color: '#DDA0DD' },
       { name: 'משכנתא', icon: '🏦', color: '#96CEB4' },
       { name: 'תחבורה', icon: '🚌', color: '#98D8C8' },
+      { name: 'אחר', icon: '📋', color: '#95A5A6' },
+    ]
+  },
+  {
+    id: 'work_management',
+    name: 'ניהול עבודה',
+    description: 'לוח כללי לניהול יומן עבודה, שעות עבודה, משימות ועבודות שבוצעו',
+    icon: '🔧',
+    quickCategories: [
+      { name: 'התקנת גוף תאורה', icon: '💡', color: '#FFD700' },
+      { name: 'צביעה', icon: '🎨', color: '#FF6B6B' },
+      { name: 'תיקון צנרת', icon: '🔧', color: '#4ECDC4' },
+      { name: 'עבודות חשמל', icon: '⚡', color: '#FF8C00' },
+      { name: 'תיקון רצפה', icon: '🏠', color: '#96CEB4' },
+      { name: 'הרכבת רהיטים', icon: '🪑', color: '#DDA0DD' },
+      { name: 'ניקיון', icon: '🧹', color: '#98D8C8' },
       { name: 'אחר', icon: '📋', color: '#95A5A6' },
     ]
   },

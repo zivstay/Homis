@@ -74,6 +74,10 @@ class BoardDataclass:
     board_type: str = "general"
     budget_amount: Optional[float] = None
     budget_alerts: List[int] = None  # List of percentages [50, 75, 90]
+    budget_auto_reset: bool = False  # האם לאפס אוטומטית
+    budget_reset_day: Optional[int] = None  # יום בחודש לאיפוס (1-31)
+    budget_reset_time: Optional[str] = None  # שעה לאיפוס (HH:MM)
+    budget_last_reset: Optional[str] = None  # תאריך האיפוס האחרון
 
 
 @dataclass
@@ -107,6 +111,7 @@ class ExpenseDataclass:
     end_date: str = None
     receipt_url: Optional[str] = None
     tags: List[str] = None
+    work_data: Optional[Dict] = None
 
 
 @dataclass
@@ -151,6 +156,7 @@ class CategoryDataclass:
     color: str
     created_by: str
     created_at: str
+    image_url: Optional[str] = None  # Add image URL field
     is_default: bool = False
     is_active: bool = True
 
@@ -310,6 +316,10 @@ class Board(db.Model):
     board_type = Column(String(50), default='general')
     budget_amount = Column(Float, nullable=True)
     budget_alerts = Column(JSON, default=lambda: [])
+    budget_auto_reset = Column(Boolean, default=False)  # האם לאפס אוטומטית
+    budget_reset_day = Column(Integer, nullable=True)  # יום בחודש לאיפוס (1-31)
+    budget_reset_time = Column(String(5), nullable=True)  # שעה לאיפוס (HH:MM)
+    budget_last_reset = Column(DateTime, nullable=True)  # תאריך האיפוס האחרון
 
     # Relationships
     owner = relationship("User", back_populates="owned_boards", foreign_keys=[owner_id])
@@ -332,7 +342,11 @@ class Board(db.Model):
             'timezone': self.timezone,
             'board_type': self.board_type,
             'budget_amount': self.budget_amount,
-            'budget_alerts': self.budget_alerts or []
+            'budget_alerts': self.budget_alerts or [],
+            'budget_auto_reset': self.budget_auto_reset,
+            'budget_reset_day': self.budget_reset_day,
+            'budget_reset_time': self.budget_reset_time,
+            'budget_last_reset': self.budget_last_reset.isoformat() if self.budget_last_reset else None
         }
 
     def to_dataclass(self) -> BoardDataclass:
@@ -395,6 +409,7 @@ class Expense(db.Model):
     end_date = Column(DateTime, nullable=True)
     receipt_url = Column(String(500), nullable=True)
     tags = Column(JSON, default=lambda: [])
+    work_data = Column(JSON, nullable=True)  # Work management data
 
     # Relationships
     board = relationship("Board", back_populates="expenses")
@@ -419,7 +434,8 @@ class Expense(db.Model):
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
             'receipt_url': self.receipt_url,
-            'tags': self.tags or []
+            'tags': self.tags or [],
+            'work_data': self.work_data
         }
 
     def to_dataclass(self) -> ExpenseDataclass:
@@ -479,6 +495,7 @@ class Category(db.Model):
     name = Column(String(255), nullable=False)
     icon = Column(String(255), default='ellipsis-horizontal')
     color = Column(String(50), default='#9370DB')
+    image_url = Column(String(500), nullable=True)  # Add image URL field
     created_by = Column(String, ForeignKey('users.id'), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_default = Column(Boolean, default=False)
@@ -495,6 +512,7 @@ class Category(db.Model):
             'name': self.name,
             'icon': self.icon,
             'color': self.color,
+            'image_url': self.image_url,  # Add image URL to dict
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'is_default': self.is_default,

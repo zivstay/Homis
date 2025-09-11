@@ -277,32 +277,43 @@ def normalize_expense_date(expense_date):
         return datetime.now(timezone.utc)
 
 
-# Budget helper functions
+# Budget helper functions - DISABLED
 def check_budget_alerts(board_id, board_budget_amount, board_budget_alerts, total_expenses):
-    """Check if any budget alerts should be triggered - return only the highest triggered alert"""
-    if not board_budget_amount or not board_budget_alerts:
-        return []
+    """
+    Check if any budget alerts should be triggered - return only the highest triggered alert
     
-    expense_percentage = (total_expenses / board_budget_amount) * 100
-    highest_triggered_alert = None
+    TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+    """
+    # DISABLED: Budget alerts temporarily disabled
+    return []
     
-    # Find the highest percentage that was triggered
-    for alert_percentage in sorted(board_budget_alerts, reverse=True):  # Sort descending
-        if expense_percentage >= alert_percentage:
-            highest_triggered_alert = {
-                'percentage': alert_percentage,
-                'current_percentage': expense_percentage,
-                'budget_amount': board_budget_amount,
-                'current_expenses': total_expenses
-            }
-            break  # Take only the highest triggered alert
-    
-    return [highest_triggered_alert] if highest_triggered_alert else []
+    # COMMENTED OUT - Budget alerts logic (needs work)
+    # if not board_budget_amount or not board_budget_alerts:
+    #     return []
+    # 
+    # expense_percentage = (total_expenses / board_budget_amount) * 100
+    # highest_triggered_alert = None
+    # 
+    # # Find the highest percentage that was triggered
+    # for alert_percentage in sorted(board_budget_alerts, reverse=True):  # Sort descending
+    #     if expense_percentage >= alert_percentage:
+    #         highest_triggered_alert = {
+    #             'percentage': alert_percentage,
+    #             'current_percentage': expense_percentage,
+    #             'budget_amount': board_budget_amount,
+    #             'current_expenses': total_expenses
+    #         }
+    #         break  # Take only the highest triggered alert
+    # 
+    # return [highest_triggered_alert] if highest_triggered_alert else []
 
 
 def create_app(config_name='default'):
     """Application factory pattern"""
     app = Flask(__name__)
+
+
+    
     
     # Load configuration
     app.config.from_object(config[config_name])
@@ -365,25 +376,205 @@ def create_app(config_name='default'):
     app.db_manager = db_manager
     
     # Budget helper functions (moved inside create_app to access db_manager)
+    def format_datetime_field(dt_field):
+        """Helper function to safely format datetime fields that might be strings or datetime objects"""
+        if not dt_field:
+            return None
+        if hasattr(dt_field, 'isoformat'):
+            return dt_field.isoformat()
+        return dt_field  # Already a string
+    
+    def format_time_field(time_field):
+        """Helper function to safely format time fields for JSON serialization"""
+        if not time_field:
+            return None
+        if hasattr(time_field, 'strftime'):
+            return time_field.strftime('%H:%M')
+        return str(time_field)  # Already a string
+    
+    def check_and_reset_budget_if_needed(board_id):
+        """
+        בדוק אם צריך לאפס את התקציב של הלוח ואפס אותו אם צריך.
+        מחזיר True אם התקציב אופס, False אחרת.
+        
+        TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+        """
+        # DISABLED: Budget logic temporarily disabled
+        return False
+        
+        # COMMENTED OUT - Budget reset logic (needs work)
+        # try:
+        #     board = db_manager.get_board_by_id(board_id)
+        #     if not board or not board.budget_auto_reset or not board.budget_reset_day:
+        #         return False
+        #     
+        #     from datetime import datetime, timezone, time
+        #     
+        #     now = datetime.now(timezone.utc)
+        #     reset_day = board.budget_reset_day
+        #     
+        #     # בנה את תאריך ושעת האיפוס הבא
+        #     reset_datetime = _get_next_reset_datetime(now, reset_day, board.budget_reset_time)
+        #     
+        #     # בדוק אם יש איפוס אחרון
+        #     if board.budget_last_reset is None:
+        #         # מעולם לא אופס - אפס אם עבר זמן האיפוס הבא
+        #         should_reset = now >= reset_datetime
+        #         print(f"💰 First time reset check: now={now.strftime('%Y-%m-%d %H:%M')}, reset_time={reset_datetime.strftime('%Y-%m-%d %H:%M')}, should_reset={should_reset}")
+        #     else:
+        #         # המר את תאריך האיפוס האחרון
+        #         if isinstance(board.budget_last_reset, str):
+        #             last_reset = datetime.fromisoformat(board.budget_last_reset.replace('Z', '+00:00'))
+        #         else:
+        #             last_reset = board.budget_last_reset.replace(tzinfo=timezone.utc) if board.budget_last_reset.tzinfo is None else board.budget_last_reset
+        #         
+        #         # אפס רק אם עבר זמן האיפוס מאז האיפוס האחרון
+        #         should_reset = now >= reset_datetime and last_reset < reset_datetime
+        #         print(f"💰 Reset check: now={now.strftime('%Y-%m-%d %H:%M')}, reset_time={reset_datetime.strftime('%Y-%m-%d %H:%M')}, last_reset={last_reset.strftime('%Y-%m-%d %H:%M')}, should_reset={should_reset}")
+        #     
+        #     if should_reset:
+        #         reset_time_str = f" at {board.budget_reset_time}" if board.budget_reset_time else ""
+        #         print(f"💰 Resetting budget for board {board_id} - auto reset day: {reset_day}{reset_time_str}")
+        #         
+        #         # עדכן את תאריך האיפוס האחרון לזמן הנוכחי
+        #         update_data = {
+        #             'budget_last_reset': now
+        #         }
+        #         
+        #         success = db_manager.update_board(board_id, update_data)
+        #         if success:
+        #             print(f"💰 Budget reset successful for board {board_id}")
+        #             return True
+        #         else:
+        #             print(f"💰 Failed to update budget reset date for board {board_id}")
+        #             return False
+        #     
+        #     return False
+        #     
+        # except Exception as e:
+        #     print(f"💰 Error checking/resetting budget for board {board_id}: {e}")
+        #     import traceback
+        #     traceback.print_exc()
+        #     return False
+    
+    def _get_next_reset_datetime(current_time, reset_day, reset_time_str):
+        """
+        חשב את תאריך ושעת האיפוס הבא בהתבסס על היום והשעה שנקבעו
+        
+        TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+        """
+        # DISABLED: Budget logic temporarily disabled
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc)
+        
+        # COMMENTED OUT - Budget reset datetime calculation (needs work)
+        # from datetime import datetime, timezone, time
+        # import calendar
+        # 
+        # # קבע את השעה (ברירת מחדל 09:00)
+        # reset_hour, reset_minute = 9, 0
+        # if reset_time_str:
+        #     try:
+        #         reset_hour, reset_minute = map(int, reset_time_str.split(':'))
+        #     except (ValueError, AttributeError):
+        #         pass  # השתמש בברירת המחדל
+        # 
+        # reset_time = time(reset_hour, reset_minute)
+        # 
+        # # התחל מהחודש הנוכחי
+        # year = current_time.year
+        # month = current_time.month
+        # 
+        # # וודא שיום האיפוס תקין לחודש הנוכחי
+        # max_day = calendar.monthrange(year, month)[1]
+        # actual_reset_day = min(reset_day, max_day)
+        # 
+        # # בנה את תאריך האיפוס בחודש הנוכחי
+        # reset_datetime = datetime(year, month, actual_reset_day, reset_hour, reset_minute, tzinfo=timezone.utc)
+        # 
+        # # אם תאריך האיפוס כבר עבר בחודש הנוכחי, עבור לחודש הבא
+        # if reset_datetime <= current_time:
+        #     # עבור לחודש הבא
+        #     if month == 12:
+        #         year += 1
+        #         month = 1
+        #     else:
+        #         month += 1
+        #     
+        #     # וודא שיום האיפוס תקין לחודש הבא
+        #     max_day = calendar.monthrange(year, month)[1]
+        #     actual_reset_day = min(reset_day, max_day)
+        #     
+        #     reset_datetime = datetime(year, month, actual_reset_day, reset_hour, reset_minute, tzinfo=timezone.utc)
+        # 
+        # return reset_datetime
+
     def calculate_board_total_expenses(board_id):
-        """Calculate total expenses for a board"""
+        """
+        Calculate total expenses for a board since last budget reset (if any)
+        
+        TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+        """
         try:
+            board = db_manager.get_board_by_id(board_id)
+            if not board:
+                return 0.0
+            
+            # DISABLED: Budget reset logic temporarily disabled
+            # Just return total of all expenses for now
             expenses = db_manager.get_board_expenses(board_id)
-            return sum(expense.amount for expense in expenses)
+            total_amount = sum(expense.amount for expense in expenses)
+            print(f"💰 Board {board_id}: Total expenses (budget logic disabled): {total_amount} ({len(expenses)} expenses)")
+            return total_amount
+            
+            # COMMENTED OUT - Budget-aware expense calculation (needs work)
+            # # בדוק אם צריך איפוס לפני חישוב ההוצאות
+            # was_reset = check_and_reset_budget_if_needed(board_id)
+            # if was_reset:
+            #     print(f"💰 Budget was just reset for board {board_id}, returning 0 expenses")
+            #     return 0.0
+            # 
+            # expenses = db_manager.get_board_expenses(board_id)
+            # 
+            # # אם יש איפוס אוטומטי ותאריך איפוס אחרון, חשב רק הוצאות מאז האיפוס
+            # if board.budget_auto_reset and board.budget_last_reset:
+            #     from datetime import datetime, timezone
+            #     
+            #     # המר את תאריך האיפוס האחרון
+            #     if isinstance(board.budget_last_reset, str):
+            #         last_reset = datetime.fromisoformat(board.budget_last_reset.replace('Z', '+00:00'))
+            #     else:
+            #         last_reset = board.budget_last_reset.replace(tzinfo=timezone.utc) if board.budget_last_reset.tzinfo is None else board.budget_last_reset
+            #     
+            #     # סנן הוצאות רק מאז האיפוס האחרון
+            #     filtered_expenses = []
+            #     for expense in expenses:
+            #         expense_date = normalize_expense_date(expense.date)
+            #         if expense_date >= last_reset:
+            #             filtered_expenses.append(expense)
+            #     
+            #     total_amount = sum(expense.amount for expense in filtered_expenses)
+            #     print(f"💰 Board {board_id}: Total expenses since last reset ({last_reset.strftime('%Y-%m-%d %H:%M')}): {total_amount} ({len(filtered_expenses)} out of {len(expenses)} expenses)")
+            #     return total_amount
+            # else:
+            #     # אין איפוס אוטומטי - חשב את כל ההוצאות
+            #     total_amount = sum(expense.amount for expense in expenses)
+            #     print(f"💰 Board {board_id}: Total expenses (no auto-reset): {total_amount} ({len(expenses)} expenses)")
+            #     return total_amount
         except Exception as e:
             print(f"Error calculating board total expenses: {e}")
             return 0.0
 
     def get_budget_status(board_id):
-        """Get budget status for a board including alerts"""
+        """
+        Get budget status for a board including alerts
+        
+        TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+        """
         try:
-            print(f"💰 Getting budget status for board: {board_id}")
-            board = db_manager.get_board_by_id(board_id)
-            print(f"💰 Board data: {board}")
+            print(f"💰 Getting budget status for board: {board_id} (BUDGET LOGIC DISABLED)")
             
-            if board:
-                print(f"💰 Board budget_amount: {board.budget_amount}")
-                print(f"💰 Board budget_alerts: {board.budget_alerts}")
+            board = db_manager.get_board_by_id(board_id)
             
             if not board or not board.budget_amount:
                 print(f"💰 No budget found for board {board_id}")
@@ -396,32 +587,9 @@ def create_app(config_name='default'):
                     'triggered_alerts': []
                 }
             
+            # DISABLED: Just show basic budget info without alerts or reset logic
             total_expenses = calculate_board_total_expenses(board_id)
-            print(f"💰 Total expenses: {total_expenses}")
             percentage_used = (total_expenses / board.budget_amount) * 100 if board.budget_amount > 0 else 0
-            print(f"💰 Percentage used: {percentage_used}%")
-            
-            triggered_alerts = check_budget_alerts(
-                board_id, 
-                board.budget_amount, 
-                board.budget_alerts or [], 
-                total_expenses
-            )
-            
-            # Add budget exceeded alert if over 100%
-            if percentage_used >= 100:
-                print(f"💰 Budget exceeded! Replacing all alerts with exceeded alert...")
-                # Clear all previous alerts and show only the exceeded alert
-                triggered_alerts = [{
-                    'percentage': 100,
-                    'current_percentage': percentage_used,
-                    'budget_amount': board.budget_amount,
-                    'current_expenses': total_expenses,
-                    'is_exceeded': True  # Special flag for exceeded budget
-                }]
-                print(f"💰 Showing only exceeded alert")
-            
-            print(f"💰 Triggered alerts: {triggered_alerts}")
             
             result = {
                 'has_budget': True,
@@ -429,10 +597,80 @@ def create_app(config_name='default'):
                 'current_expenses': total_expenses,
                 'percentage_used': percentage_used,
                 'alerts': board.budget_alerts or [],
-                'triggered_alerts': triggered_alerts
+                'triggered_alerts': [],  # DISABLED: No alerts for now
+                'was_reset': False  # DISABLED: No reset logic for now
             }
-            print(f"💰 Final budget status: {result}")
+            print(f"💰 Budget status (alerts disabled): {result}")
             return result
+            
+            # COMMENTED OUT - Full budget status with alerts and reset logic (needs work)
+            # # בדוק ואפס תקציב אם צריך בהתחלה
+            # was_reset = check_and_reset_budget_if_needed(board_id)
+            # if was_reset:
+            #     print(f"💰 Budget was just reset for board {board_id}")
+            # 
+            # board = db_manager.get_board_by_id(board_id)
+            # print(f"💰 Board data: {board}")
+            # 
+            # if board:
+            #     print(f"💰 Board budget_amount: {board.budget_amount}")
+            #     print(f"💰 Board budget_alerts: {board.budget_alerts}")
+            # 
+            # if not board or not board.budget_amount:
+            #     print(f"💰 No budget found for board {board_id}")
+            #     return {
+            #         'has_budget': False,
+            #         'budget_amount': None,
+            #         'current_expenses': 0.0,
+            #         'percentage_used': 0.0,
+            #         'alerts': [],
+            #         'triggered_alerts': []
+            #     }
+            # 
+            # # חשב הוצאות (כבר לוקח בחשבון איפוס)
+            # total_expenses = calculate_board_total_expenses(board_id)
+            # print(f"💰 Total expenses: {total_expenses}")
+            # percentage_used = (total_expenses / board.budget_amount) * 100 if board.budget_amount > 0 else 0
+            # print(f"💰 Percentage used: {percentage_used}%")
+            # 
+            # # אם התקציב אופס זה עתה, לא צריך התראות
+            # if was_reset:
+            #     print(f"💰 Budget was reset - no alerts triggered")
+            #     triggered_alerts = []
+            # else:
+            #     triggered_alerts = check_budget_alerts(
+            #         board_id, 
+            #         board.budget_amount, 
+            #         board.budget_alerts or [], 
+            #         total_expenses
+            #     )
+            #     
+            #     # Add budget exceeded alert if over 100%
+            #     if percentage_used >= 100:
+            #         print(f"💰 Budget exceeded! Replacing all alerts with exceeded alert...")
+            #         # Clear all previous alerts and show only the exceeded alert
+            #         triggered_alerts = [{
+            #             'percentage': 100,
+            #             'current_percentage': percentage_used,
+            #             'budget_amount': board.budget_amount,
+            #             'current_expenses': total_expenses,
+            #             'is_exceeded': True  # Special flag for exceeded budget
+            #         }]
+            #         print(f"💰 Showing only exceeded alert")
+            # 
+            # print(f"💰 Triggered alerts: {triggered_alerts}")
+            # 
+            # result = {
+            #     'has_budget': True,
+            #     'budget_amount': board.budget_amount,
+            #     'current_expenses': total_expenses,
+            #     'percentage_used': percentage_used,
+            #     'alerts': board.budget_alerts or [],
+            #     'triggered_alerts': triggered_alerts,
+            #     'was_reset': was_reset  # הוסף מידע על איפוס
+            # }
+            # print(f"💰 Final budget status: {result}")
+            # return result
         except Exception as e:
             print(f"Error getting budget status for board {board_id}: {e}")
             import traceback
@@ -1212,6 +1450,7 @@ def create_app(config_name='default'):
             
             board_list = []
             for board in boards:
+                # לא צריך לבדוק איפוס כאן - זה יקרה בget_budget_status או calculate_board_total_expenses
                 board_dict = {
                     'id': board.id,
                     'name': board.name,
@@ -1224,6 +1463,10 @@ def create_app(config_name='default'):
                     'board_type': board.board_type,
                     'budget_amount': board.budget_amount,
                     'budget_alerts': board.budget_alerts or [],
+                    'budget_auto_reset': board.budget_auto_reset,
+                    'budget_reset_day': board.budget_reset_day,
+                    'budget_reset_time': format_time_field(board.budget_reset_time),
+                    'budget_last_reset': format_datetime_field(board.budget_last_reset),
                     'is_default_board': getattr(board, 'is_default_board', False),
                     'user_role': getattr(board, 'user_role', 'member')
                 }
@@ -1302,6 +1545,8 @@ def create_app(config_name='default'):
     @require_board_access(BoardPermission.READ.value)
     def get_board(board_id):
         """Get board details"""
+        # לא צריך לבדוק איפוס כאן - זה יקרה בget_budget_status או calculate_board_total_expenses
+        
         board = db_manager.get_board_by_id(board_id)
         if not board:
             return jsonify({'error': 'Board not found'}), 404
@@ -1322,6 +1567,10 @@ def create_app(config_name='default'):
             'settings': board.settings,
             'budget_amount': board.budget_amount,
             'budget_alerts': board.budget_alerts or [],
+            'budget_auto_reset': board.budget_auto_reset,
+            'budget_reset_day': board.budget_reset_day,
+            'budget_reset_time': format_time_field(board.budget_reset_time),
+            'budget_last_reset': format_datetime_field(board.budget_last_reset),
             'members': [
                 {
                     'id': member.id,
@@ -1350,7 +1599,7 @@ def create_app(config_name='default'):
             return jsonify({'error': 'Board not found'}), 404
         
         update_data = {}
-        allowed_fields = ['name', 'description', 'currency', 'timezone', 'settings', 'budget_amount', 'budget_alerts']
+        allowed_fields = ['name', 'description', 'currency', 'timezone', 'settings', 'budget_amount', 'budget_alerts', 'budget_auto_reset', 'budget_reset_day', 'budget_reset_time']
         
         for field in allowed_fields:
             if field in data:
@@ -1373,7 +1622,11 @@ def create_app(config_name='default'):
                     'timezone': updated_board.timezone,
                     'settings': updated_board.settings,
                     'budget_amount': updated_board.budget_amount,
-                    'budget_alerts': updated_board.budget_alerts or []
+                    'budget_alerts': updated_board.budget_alerts or [],
+                    'budget_auto_reset': updated_board.budget_auto_reset,
+                    'budget_reset_day': updated_board.budget_reset_day,
+                    'budget_reset_time': format_time_field(updated_board.budget_reset_time),
+                    'budget_last_reset': format_datetime_field(updated_board.budget_last_reset)
                 }), 200
         
         return jsonify({'error': 'No valid fields to update'}), 400
@@ -1643,6 +1896,9 @@ def create_app(config_name='default'):
             if not board:
                 return jsonify({'error': 'Board not found'}), 404
             
+            # Check if this is a work management board
+            is_work_management = board.board_type == 'work_management'
+            
             # Get all expenses for the board
             expenses = db_manager.get_board_expenses(board_id)
             if not expenses:
@@ -1688,7 +1944,7 @@ def create_app(config_name='default'):
             
             # Main expenses sheet
             ws_expenses = wb.active
-            ws_expenses.title = "הוצאות"
+            ws_expenses.title = "עבודות" if is_work_management else "הוצאות"
             
             # Styles
             header_font = Font(bold=True, color="FFFFFF")
@@ -1702,7 +1958,7 @@ def create_app(config_name='default'):
             ws_expenses['B1'] = board.name
             ws_expenses['A2'] = "תאריך ייצוא:"
             ws_expenses['B2'] = datetime.now().strftime('%d/%m/%Y %H:%M')
-            ws_expenses['A3'] = "סה\"כ הוצאות:"
+            ws_expenses['A3'] = f"סה\"כ {'עבודות' if is_work_management else 'הוצאות'}:"
             ws_expenses['B3'] = len(expenses)
             ws_expenses['A4'] = "סה\"כ סכום:"
             ws_expenses['B4'] = sum(expense.amount for expense in expenses)
@@ -1734,7 +1990,10 @@ def create_app(config_name='default'):
                 ws_expenses[f'A{row}'].font = Font(bold=True)
             
             # Expenses table header
-            headers = ["תיאור", "קטגוריה", "סכום", "שולם על ידי", "תאריך הוצאה", "תאריך יצירה", "תגיות", "הוצאה חוזרת", "תדירות"]
+            if is_work_management:
+                headers = ["תיאור", "קטגוריה", "סכום", "בוצע על ידי", "תאריך עבודה", "תאריך יצירה", "תגיות", "הוצאה חוזרת", "תדירות"]
+            else:
+                headers = ["תיאור", "קטגוריה", "סכום", "שולם על ידי", "תאריך הוצאה", "תאריך יצירה", "תגיות", "הוצאה חוזרת", "תדירות"]
             header_row = header_row_start
             
             for col, header in enumerate(headers, 1):
@@ -1747,32 +2006,68 @@ def create_app(config_name='default'):
             # Add expense data
             current_row = header_row + 1
             for expense in expenses:
-                description = expense.description or ''
-                category = expense.category or ''
-                amount = expense.amount or 0
-                paid_by = member_names.get(expense.paid_by, 'Unknown')
-                
-                # Format expense date (when the expense happened)
-                date = datetime.fromisoformat(expense.date.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
-                
-                # Format created date (when the record was added to database)
-                created_date = datetime.fromisoformat(expense.created_at.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
-                
-                tags = '; '.join(expense.tags) if expense.tags else ''
-                is_recurring = 'כן' if expense.is_recurring else 'לא'
-                frequency = expense.frequency if expense.is_recurring else ''
-                
-                row_data = [description, category, amount, paid_by, date, created_date, tags, is_recurring, frequency]
-                
-                for col, value in enumerate(row_data, 1):
-                    cell = ws_expenses.cell(row=current_row, column=col, value=value)
-                    cell.border = border
-                    if col == 3:  # Amount column (סכום)
-                        cell.alignment = Alignment(horizontal="right")
-                    elif col in [5, 6]:  # Date columns (תאריך הוצאה, תאריך יצירה)
-                        cell.alignment = Alignment(horizontal="center")
-                
-                current_row += 1
+                if is_work_management and expense.work_data:
+                    # For work management, create detailed rows for each work item
+                    work_data = expense.work_data
+                    for work_item in work_data.get('workItems', []):
+                        description = f"{work_item.get('category', '')} - {work_item.get('description', '')}" if work_item.get('description') else work_item.get('category', '')
+                        category = work_item.get('category', '')
+                        amount = work_item.get('price', 0)
+                        paid_by = member_names.get(expense.paid_by, 'Unknown')
+                        
+                        # Format expense date (when the work happened)
+                        date = datetime.fromisoformat(expense.date.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+                        
+                        # Format created date (when the record was added to database)
+                        created_date = datetime.fromisoformat(expense.created_at.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+                        
+                        tags = '; '.join(expense.tags) if expense.tags else ''
+                        is_recurring = 'כן' if expense.is_recurring else 'לא'
+                        frequency = expense.frequency if expense.is_recurring else ''
+                        
+                        # Add work-specific info
+                        if work_item.get('hours'):
+                            description += f" ({work_item.get('hours')} שעות)"
+                        
+                        row_data = [description, category, amount, paid_by, date, created_date, tags, is_recurring, frequency]
+                        
+                        for col, value in enumerate(row_data, 1):
+                            cell = ws_expenses.cell(row=current_row, column=col, value=value)
+                            cell.border = border
+                            if col == 3:  # Amount column (סכום)
+                                cell.alignment = Alignment(horizontal="right")
+                            elif col in [5, 6]:  # Date columns (תאריך עבודה, תאריך יצירה)
+                                cell.alignment = Alignment(horizontal="center")
+                        
+                        current_row += 1
+                else:
+                    # Regular expense handling
+                    description = expense.description or ''
+                    category = expense.category or ''
+                    amount = expense.amount or 0
+                    paid_by = member_names.get(expense.paid_by, 'Unknown')
+                    
+                    # Format expense date (when the expense happened)
+                    date = datetime.fromisoformat(expense.date.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+                    
+                    # Format created date (when the record was added to database)
+                    created_date = datetime.fromisoformat(expense.created_at.replace('Z', '+00:00')).strftime('%d/%m/%Y %H:%M')
+                    
+                    tags = '; '.join(expense.tags) if expense.tags else ''
+                    is_recurring = 'כן' if expense.is_recurring else 'לא'
+                    frequency = expense.frequency if expense.is_recurring else ''
+                    
+                    row_data = [description, category, amount, paid_by, date, created_date, tags, is_recurring, frequency]
+                    
+                    for col, value in enumerate(row_data, 1):
+                        cell = ws_expenses.cell(row=current_row, column=col, value=value)
+                        cell.border = border
+                        if col == 3:  # Amount column (סכום)
+                            cell.alignment = Alignment(horizontal="right")
+                        elif col in [5, 6]:  # Date columns (תאריך הוצאה, תאריך יצירה)
+                            cell.alignment = Alignment(horizontal="center")
+                    
+                    current_row += 1
             
             # Auto-adjust column widths
             for column in ws_expenses.columns:
@@ -1792,7 +2087,7 @@ def create_app(config_name='default'):
             
             # Category summary header
             ws_category['A1'] = "קטגוריה"
-            ws_category['B1'] = "מספר הוצאות"
+            ws_category['B1'] = f"מספר {'עבודות' if is_work_management else 'הוצאות'}"
             ws_category['C1'] = "סה\"כ סכום"
             
             for col in range(1, 4):
@@ -1836,7 +2131,7 @@ def create_app(config_name='default'):
             
             # Monthly summary header
             ws_monthly['A1'] = "חודש"
-            ws_monthly['B1'] = "מספר הוצאות"
+            ws_monthly['B1'] = f"מספר {'עבודות' if is_work_management else 'הוצאות'}"
             ws_monthly['C1'] = "סה\"כ סכום"
             
             for col in range(1, 4):
@@ -1892,7 +2187,7 @@ def create_app(config_name='default'):
             board_name_clean = re.sub(r'_+', '_', board_name_clean).strip('_')  # Remove multiple underscores
             if not board_name_clean or len(board_name_clean) < 2:  # If no valid name
                 board_name_clean = "board"
-            filename = f"expenses_{board_name_clean}_{timestamp}.xlsx"
+            filename = f"{'works' if is_work_management else 'expenses'}_{board_name_clean}_{timestamp}.xlsx"
             
             # Return Excel file as download
             response = Response(
@@ -1904,13 +2199,13 @@ def create_app(config_name='default'):
                 }
             )
             
-            print(f"✅ Excel export successful for board '{board.name}' - {len(expenses)} expenses")
+            print(f"✅ Excel export successful for board '{board.name}' - {len(expenses)} {'works' if is_work_management else 'expenses'}")
             return response
             
         except Exception as e:
-            print(f"Error exporting expenses: {e}")
+            print(f"Error exporting {'works' if is_work_management else 'expenses'}: {e}")
             logger.error(traceback.format_exc())
-            return jsonify({'error': 'Failed to export expenses'}), 500
+            return jsonify({'error': f'Failed to export {'works' if is_work_management else 'expenses'}'}), 500
 
     # Expense routes
     @app.route('/api/boards/<board_id>/expenses', methods=['GET'])
@@ -1972,7 +2267,8 @@ def create_app(config_name='default'):
             'start_date': data.get('start_date'),
             'end_date': data.get('end_date'),
             'receipt_url': data.get('image_url'),  # Use image_url from frontend
-            'tags': data.get('tags', [])
+            'tags': data.get('tags', []),
+            'work_data': data.get('work_data')  # Add work management data
         }
         
         print(f"🔍 Expense data - Paid by: {expense_data['paid_by']}")
@@ -2710,6 +3006,7 @@ def create_app(config_name='default'):
             'name': data['name'],
             'icon': data.get('icon', 'ellipsis-horizontal'),
             'color': data.get('color', '#9370DB'),
+            'image_url': data.get('image_url'),  # Add image URL support
             'created_by': current_user_id,
             'is_default': data.get('is_default', False)
         }
@@ -2722,6 +3019,7 @@ def create_app(config_name='default'):
             'name': category.name,
             'icon': category.icon,
             'color': category.color,
+            'image_url': category.image_url,  # Include image URL in response
             'created_by': category.created_by,
             'created_at': category.created_at,
             'is_default': category.is_default
@@ -2757,6 +3055,7 @@ def create_app(config_name='default'):
                     'name': category_data.get('name'),
                     'icon': category_data.get('icon', 'ellipsis-horizontal'),
                     'color': category_data.get('color', '#9370DB'),
+                    'image_url': category_data.get('image_url'),  # Add image URL support
                     'created_by': current_user_id,
                     'is_default': False
                 }
@@ -2778,6 +3077,7 @@ def create_app(config_name='default'):
     def get_board_budget_status(board_id):
         """Get budget status for a board including alerts"""
         try:
+            # בדיקת איפוס תקרה בתוך get_budget_status
             budget_status = get_budget_status(board_id)
             return jsonify(budget_status), 200
         except Exception as e:

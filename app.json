@@ -4,7 +4,7 @@
     "slug": "home-expense-manager",
     "version": "1.0.3",
     "orientation": "portrait",
-    "icon": "./assets/images/main_logo_icon.jpeg",
+    "icon": "./assets/images/main_logo_icon.png",
     "scheme": "home-expense-manager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -19,9 +19,10 @@
       "bundleIdentifier": "com.sarusiziv96.homeexpensemanager"
     },
     "android": {
+
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/main_logo_icon.jpeg",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/main_logo_icon.png",
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -37,14 +38,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/main_logo_icon.jpeg"
+      "favicon": "./assets/images/main_logo_icon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/main_logo_icon.jpeg",
+          "image": "./assets/images/main_logo_icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"

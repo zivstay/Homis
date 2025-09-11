@@ -5,7 +5,7 @@ class AdManager {
   private static instance: AdManager;
   private readonly AD_COOLDOWN_KEY = 'ad_last_shown_time';
   private readonly FIRST_LAUNCH_KEY = 'app_first_launch_time';
-  private readonly COOLDOWN_MINUTES = 20; // 30 שניות (לבדיקה)
+  private readonly COOLDOWN_MINUTES = 10; // 30 שניות (לבדיקה)
   private readonly GRACE_PERIOD_HOURS = 0.25; // 6 שעות ללא פרסומות למשתמשים חדשים
 
   public static getInstance(): AdManager {
@@ -126,19 +126,54 @@ class AdManager {
   /**
    * הצגת פרסומת אם מותר (בדיקת זמן)
    * @param adType סוג הפרסומת לזיהוי בלוגים
+   * @param forceShow אם true, מציג פרסומת ללא קשר לקירור
    */
-  public async showAdIfAllowed(adType: string = 'general'): Promise<boolean> {
+  public async showAdIfAllowed(adType: string = 'general', forceShow: boolean = false): Promise<boolean> {
     try {
-      console.log(`🎯 AdManager: Attempting to show ${adType} ad`);
+      console.log(`🎯 AdManager: Attempting to show ${adType} ad${forceShow ? ' (forced)' : ''}`);
       
-      const canShow = await this.canShowAd();
+      const canShow = forceShow ? true : await this.canShowAd();
       
       if (!canShow) {
         console.log(`🎯 AdManager: Not showing ${adType} ad - cooldown active`);
         return false;
       }
 
-      console.log(`🎯 AdManager: Cooldown passed, trying to show ${adType} interstitial ad`);
+      console.log(`🎯 AdManager: ${forceShow ? 'Force showing' : 'Cooldown passed, trying to show'} ${adType} interstitial ad`);
+      
+      // בדיקת זמינות AdMob לפני ניסיון הצגה
+      const isAdMobAvailable = adMobService.isAvailable();
+      console.log(`🎯 AdManager: AdMob availability check: ${isAdMobAvailable}`);
+      
+      if (!isAdMobAvailable) {
+        console.log(`🎯 AdManager: AdMob not available for ${adType} ad - likely running in Expo Go mode`);
+        return false;
+      }
+      
+      // בדיקה אם פרסומת מוכנה
+      const isAdReady = adMobService.isAdReady();
+      const adStatus = adMobService.getAdStatus();
+      console.log(`🎯 AdManager: Ad ready status: ${isAdReady}`);
+      console.log(`🎯 AdManager: Detailed ad status:`, adStatus);
+      
+      if (!isAdReady) {
+        console.log(`🎯 AdManager: Ad not ready, trying to preload and wait...`);
+        // ניסיון לטעון פרסומת
+        adMobService.preloadAd();
+        
+        // המתנה קצרה לפרסומת להיטען
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // בדיקה נוספת אם הפרסומת נטענה
+        const isAdReadyAfterWait = adMobService.isAdReady();
+        console.log(`🎯 AdManager: Ad ready after wait: ${isAdReadyAfterWait}`);
+        
+        if (!isAdReadyAfterWait) {
+          console.log(`🎯 AdManager: Ad still not ready after wait, skipping`);
+          return false;
+        }
+      }
+      
       const adShown = await adMobService.showInterstitialAd();
       
       if (adShown) {

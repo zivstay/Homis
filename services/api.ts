@@ -37,6 +37,10 @@ export interface Board {
   is_default_board?: boolean;
   budget_amount?: number | null;
   budget_alerts?: number[];
+  budget_auto_reset?: boolean;
+  budget_reset_day?: number | null;
+  budget_reset_time?: string | null;
+  budget_last_reset?: string | null;
 }
 
 export interface BudgetStatus {
@@ -106,6 +110,7 @@ export interface Category {
   name: string;
   icon: string;
   color: string;
+  image_url?: string; // Add optional image URL field
   created_by: string;
   created_at: string;
   is_default: boolean;
@@ -987,6 +992,7 @@ class ApiService {
     name: string;
     icon: string;
     color: string;
+    image_url?: string; // Add optional image URL field
     is_default?: boolean;
   }): Promise<ApiResponse<Category>> {
     return this.makeAuthenticatedRequest<Category>(

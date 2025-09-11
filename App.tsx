@@ -2,13 +2,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Keyboard, Modal, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AppTutorial from './components/AppTutorial';
+import CreateBoardWizard from './components/CreateBoardWizard';
 import GuestDisclaimer from './components/GuestDisclaimer';
 import NotificationModal from './components/NotificationModal';
 import TermsAndConditionsModal from './components/TermsAndConditionsModal';
 import { API_CONFIG } from './config/api';
-import { BOARD_TYPES, BoardType, QuickCategory } from './constants/boardTypes';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { BoardProvider, useBoard } from './contexts/BoardContext';
 import { ExpenseProvider, useExpenses } from './contexts/ExpenseContext';
@@ -34,16 +34,6 @@ function BoardSwitcherHeader() {
   const [showBoardModal, setShowBoardModal] = useState(false);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
-  const [wizardStep, setWizardStep] = useState(1); // 1: פרטים, 2: סוג לוח, 3: קטגוריות
-  const [newBoardName, setNewBoardName] = useState('');
-  const [newBoardDescription, setNewBoardDescription] = useState('');
-  const [newBoardCurrency, setNewBoardCurrency] = useState('ILS');
-  const [selectedBoardType, setSelectedBoardType] = useState<BoardType | null>(null);
-  const [selectedCategories, setSelectedCategories] = useState<QuickCategory[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
-  useEffect(() => {
-    console.log('🔄 App: Selected categories:', selectedCategories);
-  }, [selectedCategories]);
   const handleBoardSelect = async (board: Board) => {
     // בדיקה אם מחליפים לוח אחר (לא אותו לוח)
     const shouldShowAd = selectedBoard && selectedBoard.id !== board.id;
@@ -109,6 +99,37 @@ function BoardSwitcherHeader() {
     );
   };
 
+  const handleBoardCreated = async (newBoard?: any) => {
+    // Close the create wizard
+    setShowCreateWizard(false);
+    setShowBoardModal(false);
+    
+    // Wait 300ms and then refresh board data to ensure categories are updated
+    setTimeout(async () => {
+      try {
+        console.log('🔄 App: Refreshing board data after board creation...');
+        if (refreshBoardData) {
+          await refreshBoardData();
+          console.log('✅ App: Board data refreshed successfully');
+        }
+        
+        // Also refresh the expense context categories (for quick categories)
+        if (refreshBoardCategories) {
+          await refreshBoardCategories();
+          console.log('✅ App: Expense categories refreshed successfully');
+        }
+        
+        // Auto-select the newly created board
+        if (newBoard && selectBoard) {
+          console.log('🎯 App: Auto-selecting newly created board:', newBoard.name);
+          selectBoard(newBoard);
+        }
+      } catch (error) {
+        console.error('❌ App: Error refreshing board data:', error);
+      }
+    }, 300);
+  };
+
   const handleDeleteBoard = (board: Board) => {
     Alert.alert(
       'מחיקת לוח',
@@ -138,122 +159,8 @@ function BoardSwitcherHeader() {
     );
   };
 
-  const resetWizard = () => {
-    setWizardStep(1);
-    setNewBoardName('');
-    setNewBoardDescription('');
-    setNewBoardCurrency('ILS');
-    setSelectedBoardType(null);
-    setSelectedCategories([]);
-  };
 
-  const handleBoardTypeSelect = (boardType: BoardType) => {
-    setSelectedBoardType(boardType);
-    // Set default categories for the selected board type
-    setSelectedCategories([...boardType.quickCategories]);
-  };
 
-  const handleCategoryToggle = (category: QuickCategory) => {
-    setSelectedCategories(prev => {
-      const isSelected = prev.some(cat => cat.name === category.name);
-      if (isSelected) {
-        return prev.filter(cat => cat.name !== category.name);
-      } else {
-        // Check if we're at the limit of 7 categories (excluding "אחר")
-        const nonOtherCategories = prev.filter(cat => cat.name !== 'אחר');
-        if (nonOtherCategories.length >= 7) {
-          Alert.alert('הגבלה', 'ניתן לבחור עד 7 קטגוריות בלבד. בטל בחירה של קטגוריה אחרת כדי להוסיף חדשה.');
-          return prev;
-        }
-        return [...prev, category];
-      }
-    });
-  };
-
-  const handleCreateBoard = async () => {
-    if (!newBoardName.trim()) {
-      Alert.alert('שגיאה', 'נא להזין שם ללוח');
-      return;
-    }
-
-    if (!selectedBoardType) {
-      Alert.alert('שגיאה', 'נא לבחור סוג לוח');
-      return;
-    }
-
-    if (selectedCategories.filter(cat => cat.name !== 'אחר').length === 0) {
-      Alert.alert('שגיאה', 'נא לבחור לפחות קטגוריה אחת');
-      return;
-    }
-
-    setIsCreating(true);
-    const boardData = {
-      name: newBoardName.trim(),
-      description: newBoardDescription.trim(),
-      currency: newBoardCurrency,
-      timezone: 'Asia/Jerusalem',
-      board_type: selectedBoardType.id,
-      custom_categories: selectedCategories,
-    };
-    
-    const result = await createBoard(boardData);
-    setIsCreating(false);
-
-    if (result.success) {
-      setShowCreateWizard(false);
-      setShowBoardModal(false);
-      resetWizard();
-      
-      // Wait 300ms and then refresh board data to ensure categories are updated
-      setTimeout(async () => {
-        try {
-          console.log('🔄 App: Refreshing board data after board creation...');
-          if (refreshBoardData) {
-            await refreshBoardData();
-            console.log('✅ App: Board data refreshed successfully');
-          }
-          
-          // Also refresh the expense context categories (for quick categories)
-          if (refreshBoardCategories) {
-            await refreshBoardCategories();
-            console.log('✅ App: Expense categories refreshed successfully');
-          }
-          
-          // Auto-select the newly created board
-          if (result.board && selectBoard) {
-            console.log('🎯 App: Auto-selecting newly created board:', result.board.name);
-            selectBoard(result.board);
-          }
-        } catch (error) {
-          console.error('❌ App: Error refreshing board data:', error);
-        }
-      }, 300);
-    } else {
-      Alert.alert('שגיאה', result.error || 'שגיאה ביצירת לוח');
-    }
-  };
-
-  const nextStep = () => {
-    if (wizardStep === 1) {
-      if (!newBoardName.trim()) {
-        Alert.alert('שגיאה', 'נא להזין שם ללוח');
-        return;
-      }
-      setWizardStep(2);
-    } else if (wizardStep === 2) {
-      if (!selectedBoardType) {
-        Alert.alert('שגיאה', 'נא לבחור סוג לוח');
-        return;
-      }
-      setWizardStep(3);
-    }
-  };
-
-  const previousStep = () => {
-    if (wizardStep > 1) {
-      setWizardStep(wizardStep - 1);
-    }
-  };
 
   const renderBoardItem = ({ item }: { item: Board }) => (
     <View style={[
@@ -303,330 +210,12 @@ function BoardSwitcherHeader() {
     </View>
   );
 
-  const renderBoardTypeItem = ({ item }: { item: BoardType }) => (
-    <TouchableOpacity
-      style={[
-        styles.boardTypeItem,
-        selectedBoardType?.id === item.id && styles.selectedBoardTypeItem,
-      ]}
-      onPress={() => handleBoardTypeSelect(item)}
-    >
-      <Text style={styles.boardTypeIcon}>{item.icon}</Text>
-      <Text style={styles.boardTypeName}>{item.name}</Text>
-      <Text style={styles.boardTypeDescription}>{item.description}</Text>
-    </TouchableOpacity>
-  );
 
-  const renderCategoryItem = ({ item }: { item: QuickCategory }) => {
-    const isSelected = selectedCategories.some(cat => cat.name === item.name);
-    const nonOtherCategories = selectedCategories.filter(cat => cat.name !== 'אחר');
-    const isDisabled = !isSelected && nonOtherCategories.length >= 7;
-    
-    return (
-      <TouchableOpacity
-        style={[
-          styles.categoryItem,
-          isSelected && styles.selectedCategoryItem,
-          isDisabled && styles.disabledCategoryItem,
-        ]}
-        onPress={() => {
-          if (!isDisabled) {
-            handleCategoryToggle(item);
-          }
-        }}
-        disabled={isDisabled}
-      >
-        <Text style={[
-          styles.categoryIcon,
-          isDisabled && styles.disabledCategoryIcon
-        ]}>
-          {item.icon}
-        </Text>
-        <Text 
-          style={[
-            styles.categoryName,
-            isSelected && styles.selectedCategoryName,
-            isDisabled && styles.disabledCategoryName
-          ]}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}
-        >
-          {item.name}
-        </Text>
-        
-        {isSelected && (
-          <Text style={styles.checkmark}>✓</Text>
-        )}
-        
-        {isDisabled && (
-          <Text style={styles.disabledIndicator}>🔒</Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
 
-  const renderWizardStep1 = () => (
-    <View style={styles.wizardContent}>
-      <Text style={styles.wizardTitle}>שלב 1: פרטי הלוח</Text>
-      
-      <TextInput
-        style={styles.boardSwitcherModalInput}
-        placeholder="שם הלוח"
-        value={newBoardName}
-        onChangeText={setNewBoardName}
-        textAlign="right"
-        returnKeyType="done"
-        onSubmitEditing={() => Keyboard.dismiss()}
-        blurOnSubmit={true}
-      />
-      
-      <TextInput
-        style={styles.boardSwitcherModalInput}
-        placeholder="תיאור (אופציונלי)"
-        value={newBoardDescription}
-        onChangeText={setNewBoardDescription}
-        multiline
-        numberOfLines={3}
-        textAlign="right"
-        returnKeyType="done"
-        onSubmitEditing={() => Keyboard.dismiss()}
-        blurOnSubmit={true}
-      />
-      
-      <Text style={styles.currencyLabel}>מטבע:</Text>
-      <View style={styles.currencyContainer}>
-        {[
-          { code: 'ILS', symbol: '₪', name: 'שקל' },
-          { code: 'USD', symbol: '$', name: 'דולר' },
-          { code: 'EUR', symbol: '€', name: 'יורו' }
-        ].map((currency) => (
-          <TouchableOpacity
-            key={currency.code}
-            style={[
-              styles.currencyOption,
-              (newBoardCurrency === currency.code) && styles.selectedCurrencyOption
-            ]}
-            onPress={() => setNewBoardCurrency(currency.code)}
-          >
-            <Text style={[
-              styles.currencySymbol,
-              (newBoardCurrency === currency.code) && styles.selectedCurrencySymbol
-            ]}>
-              {currency.symbol}
-            </Text>
-            <Text style={[
-              styles.currencyName,
-              (newBoardCurrency === currency.code) && styles.selectedCurrencyName
-            ]}>
-              {currency.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
 
-  const renderWizardStep2 = () => (
-    <View style={styles.wizardContent}>
-      <Text style={styles.wizardTitle}>שלב 2: בחר סוג לוח</Text>
-      
-      <FlatList
-        data={BOARD_TYPES}
-        renderItem={renderBoardTypeItem}
-        keyExtractor={(item) => item.id}
-        style={styles.boardTypeList}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
-  );
 
-  const renderWizardStep3 = () => {
-    // Get all available categories (current board type first, then all others)
-    const getAllAvailableCategories = () => {
-      if (!selectedBoardType) return [];
-      
-      const allCategories: QuickCategory[] = [];
-      const addedNames = new Set<string>();
-      
-      // First: Add categories from selected board type (priority) - excluding "אחר"
-      selectedBoardType.quickCategories.forEach(category => {
-        if (!addedNames.has(category.name) && category.name !== 'אחר') {
-          allCategories.push(category);
-          addedNames.add(category.name);
-        }
-      });
-      
-      // Second: Add categories from all other board types - excluding "אחר"
-      BOARD_TYPES.forEach(boardType => {
-        if (boardType.id !== selectedBoardType.id) {
-          boardType.quickCategories.forEach(category => {
-            if (!addedNames.has(category.name) && category.name !== 'אחר') {
-              allCategories.push(category);
-              addedNames.add(category.name);
-            }
-          });
-        }
-      });
-      
-      // Third: Add additional common/useful categories (excluding "אחר")
-      const additionalCategories = [
-        { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
-        { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
-        { name: 'מיסים', icon: '📋', color: '#95A5A6' },
-        { name: 'תרומות', icon: '💝', color: '#FF69B4' },
-        { name: 'חיות מחמד', icon: '🐕', color: '#98D8C8' },
-        { name: 'טכנולוגיה', icon: '📱', color: '#4ECDC4' },
-        { name: 'ספרים', icon: '📚', color: '#E74C3C' },
-        { name: 'מתנות', icon: '🎁', color: '#9B59B6' },
-        { name: 'עבודה', icon: '💼', color: '#3498DB' },
-        { name: 'חינוך', icon: '🎓', color: '#E67E22' },
-        { name: 'בריאות', icon: '🏥', color: '#E74C3C' },
-        { name: 'ספורט', icon: '⚽', color: '#2ECC71' },
-        { name: 'נסיעות', icon: '✈️', color: '#9B59B6' },
-        { name: 'תחביבים', icon: '🎨', color: '#F39C12' },
-        { name: 'קניות', icon: '🛒', color: '#8E44AD' },
-        { name: 'תקשורת', icon: '📞', color: '#34495E' },
-        { name: 'משפט', icon: '⚖️', color: '#2C3E50' },
-        { name: 'יופי', icon: '💄', color: '#EC7063' },
-        { name: 'משחקים', icon: '🎮', color: '#AF7AC5' },
-        { name: 'אירועים', icon: '🎉', color: '#F1C40F' },
-        { name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
-        { name: 'משכנתא', icon: '🏦', color: '#96CEB4' },
-      ];
-      
-      additionalCategories.forEach(category => {
-        if (!addedNames.has(category.name) && category.name !== 'אחר') {
-          allCategories.push(category);
-          addedNames.add(category.name);
-        }
-      });
-      
-      return allCategories;
-    };
 
-    return (
-      <View style={styles.wizardContent}>
-        <Text style={styles.wizardTitle}>שלב 3: בחר קטגוריות</Text>
-        
-        {selectedBoardType && (
-          <Text style={styles.wizardSubtitle}>
-            קטגוריות עבור לוח "{selectedBoardType.name}"
-          </Text>
-        )}
-        
-        <Text style={styles.selectedCountText}>
-          נבחרו: {selectedCategories.filter(cat => cat.name !== 'אחר').length}/7 קטגוריות
-        </Text>
-        
-        <Text style={styles.wizardHelpText}>
-          הקטגוריות של סוג הלוח נבחרו אוטומטיית. בחר עד 7 קטגוריות נוספות.
-        </Text>
-        
-        <FlatList
-          data={getAllAvailableCategories()}
-          renderItem={renderCategoryItem}
-          keyExtractor={(item) => item.name}
-          style={styles.categoriesList}
-          numColumns={2}
-          columnWrapperStyle={styles.categoriesRow}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
-    );
-  };
 
-  const renderCreateWizard = () => (
-    <Modal
-      visible={showCreateWizard}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => {
-        setShowCreateWizard(false);
-        resetWizard();
-      }}
-    >
-      <View style={styles.boardSwitcherModalOverlay}>
-        <View style={styles.wizardModalContent}>
-          <View style={styles.wizardHeader}>
-            <Text style={styles.boardSwitcherModalTitle}>צור לוח חדש</Text>
-            <View style={styles.wizardSteps}>
-              {[1, 2, 3].map((step) => (
-                <View
-                  key={step}
-                  style={[
-                    styles.wizardStepIndicator,
-                    wizardStep >= step && styles.wizardStepActive,
-                  ]}
-                >
-                  <Text style={[
-                    styles.wizardStepNumber,
-                    wizardStep >= step && styles.wizardStepNumberActive,
-                  ]}>
-                    {step}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {wizardStep === 1 && renderWizardStep1()}
-          {wizardStep === 2 && renderWizardStep2()}
-          {wizardStep === 3 && renderWizardStep3()}
-          
-          <View style={styles.wizardButtons}>
-            {/* Left button - Back or Cancel */}
-            {wizardStep > 1 ? (
-              <TouchableOpacity
-                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
-                onPress={previousStep}
-              >
-                <Text style={styles.boardSwitcherCancelText}>חזור</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
-                onPress={() => {
-                  setShowCreateWizard(false);
-                  resetWizard();
-                }}
-              >
-                <Text style={styles.boardSwitcherCancelText}>ביטול</Text>
-              </TouchableOpacity>
-            )}
-            
-            {/* Right button - Next or Create */}
-            {wizardStep < 3 ? (
-              <TouchableOpacity
-                style={[styles.boardSwitcherModalButton, styles.boardSwitcherCreateButton]}
-                onPress={nextStep}
-              >
-                <Text style={styles.boardSwitcherCreateText}>המשך</Text>
-              </TouchableOpacity>
-            ) : (
-                              <TouchableOpacity
-                  style={[
-                    styles.boardSwitcherModalButton, 
-                    styles.boardSwitcherCreateButton,
-                    (isCreating || selectedCategories.filter(cat => cat.name !== 'אחר').length === 0) && styles.disabledWizardButton
-                  ]}
-                  onPress={handleCreateBoard}
-                  disabled={isCreating || selectedCategories.filter(cat => cat.name !== 'אחר').length === 0}
-                >
-                  <Text style={styles.boardSwitcherCreateText}>
-                    {isCreating ? 'יוצר...' : 'צור לוח'}
-                  </Text>
-                </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  const renderCategoryModal = () => null; // Old modal is replaced by wizard
-  
-  const renderCreateModal = () => null; // Old modal is replaced by wizard
 
   return (
     <View style={styles.boardSwitcherContainer}>
@@ -730,7 +319,12 @@ function BoardSwitcherHeader() {
         </View>
       </Modal>
 
-      {renderCreateWizard()}
+      <CreateBoardWizard
+        isVisible={showCreateWizard}
+        onClose={() => setShowCreateWizard(false)}
+        onBoardCreated={handleBoardCreated}
+        createBoard={createBoard}
+      />
       
       <NotificationModal
         visible={showNotificationModal}

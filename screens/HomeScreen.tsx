@@ -3,19 +3,24 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  InteractionManager,
-  Modal,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    FlatList,
+    Image,
+    InteractionManager,
+    Modal,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { BudgetEditModal } from '../components/BudgetEditModal';
+import { showAdConsentModal } from '../components/AdConsentModal';
+// DISABLED: BudgetEditModal temporarily removed
+// import { BudgetEditModal } from '../components/BudgetEditModal';
 import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
+import { CategoryImage } from '../components/CategoryImage';
 import { ExpenseImage } from '../components/ExpenseImage';
+import { getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
@@ -24,23 +29,28 @@ import { adManager } from '../services/adManager';
 import { apiService, Category, Expense } from '../services/api';
 import { formatCurrency } from '../utils/currencyUtils';
 
-interface BudgetStatus {
-  has_budget: boolean;
-  budget_amount: number | null;
-  current_expenses: number;
-  percentage_used: number;
-  alerts: number[];
-  triggered_alerts: Array<{
-    percentage: number;
-    current_percentage: number;
-    budget_amount: number;
-    current_expenses: number;
-  }>;
-}
+// DISABLED: BudgetStatus interface temporarily removed
+// TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+
+// COMMENTED OUT - BudgetStatus interface (needs work)
+// interface BudgetStatus {
+//   has_budget: boolean;
+//   budget_amount: number | null;
+//   current_expenses: number;
+//   percentage_used: number;
+//   alerts: number[];
+//   triggered_alerts: Array<{
+//     percentage: number;
+//     current_percentage: number;
+//     budget_amount: number;
+//     current_expenses: number;
+//   }>;
+//   was_reset?: boolean;
+// }
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses, boards } = useBoard();
+  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses, updateSelectedBoard, boards } = useBoard();
   const { user, logout } = useAuth();
   const { refreshBoardCategories, quickCategories } = useExpenses();
   const { isGuestMode } = useAuth();
@@ -55,8 +65,20 @@ const HomeScreen: React.FC = () => {
   const [exportData, setExportData] = useState<{blob: Blob, filename: string} | null>(null);
   const [forceUpdate, setForceUpdate] = useState(0);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null);
-  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  // DISABLED: Budget-related states temporarily removed
+  // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+  
+  // COMMENTED OUT - Budget states (needs work)
+  // const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null);
+  // const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [timeFilter, setTimeFilter] = useState<'month' | 'total'>('month');
+
+  // Check if this is a work management board
+  const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
+  const isWorkManagement = selectedBoard?.board_type === 'work_management';
+  
+  // Check if current user is the board owner
+  const isBoardOwner = selectedBoard?.user_role === 'owner';
 
   // פונקציה לניקוי מלא של כל ה-states
   const resetAllExportStates = () => {
@@ -77,13 +99,12 @@ const HomeScreen: React.FC = () => {
       console.log('🎓 HomeScreen: Setting tutorial screen to Home');
       setCurrentScreen('Home');
       
-      // Refresh categories and budget when screen is focused (in case they were updated in settings)
+      // Refresh categories when screen is focused (in case they were updated in settings)
       if (selectedBoard) {
-        console.log('🔄 HomeScreen: Refreshing categories and budget on focus...');
+        console.log('🔄 HomeScreen: Refreshing categories on focus...');
         loadCategories();
-        if (!isGuestMode) {
-          loadBudgetStatus();
-        }
+        // DISABLED: loadBudgetStatus() temporarily removed
+        // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
         refreshBoardCategories();
       }
       
@@ -114,11 +135,10 @@ const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     if (selectedBoard) {
-      console.log('🔄 HomeScreen: Board changed, loading categories and budget...');
+      console.log('🔄 HomeScreen: Board changed, loading categories...');
       loadCategories();
-      if (!isGuestMode) {
-        loadBudgetStatus();
-      }
+      // DISABLED: loadBudgetStatus() temporarily removed
+      // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
       // Also refresh ExpenseContext categories when board changes
       refreshBoardCategories();
     }
@@ -127,21 +147,23 @@ const HomeScreen: React.FC = () => {
   // Additional effect to listen for board data changes (e.g., after category updates)
   useEffect(() => {
     if (selectedBoard) {
-      console.log('🔄 HomeScreen: Board data may have changed, reloading categories and budget...');
+      console.log('🔄 HomeScreen: Board data may have changed, reloading categories...');
       loadCategories();
-      if (!isGuestMode) {
-        loadBudgetStatus();
-      }
+      // DISABLED: loadBudgetStatus() temporarily removed
+      // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
     }
   }, [selectedBoard?.updated_at]); // This will trigger when board data is updated
 
-  // Effect to reload budget when expenses change (for alerts)
-  useEffect(() => {
-    if (selectedBoard && boardExpenses.length >= 0 && !isGuestMode) {
-      console.log('🔄 HomeScreen: Expenses changed, reloading budget status...');
-      loadBudgetStatus();
-    }
-  }, [boardExpenses, selectedBoard?.id]); // Reload when expenses or board changes
+  // DISABLED: Effect to reload budget when expenses change temporarily removed
+  // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+  
+  // COMMENTED OUT - Budget reload on expenses change (needs work)
+  // useEffect(() => {
+  //   if (selectedBoard && boardExpenses.length >= 0 && !isGuestMode) {
+  //     console.log('🔄 HomeScreen: Expenses changed, reloading budget status...');
+  //     loadBudgetStatus();
+  //   }
+  // }, [boardExpenses, selectedBoard?.id]); // Reload when expenses or board changes
 
   const loadCategories = async () => {
     if (!selectedBoard) return;
@@ -161,32 +183,52 @@ const HomeScreen: React.FC = () => {
     }
   };
 
-  const loadBudgetStatus = async () => {
-    if (!selectedBoard || isGuestMode) return;
+  // DISABLED: Budget loading function temporarily removed
+  // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+  
+  // COMMENTED OUT - Budget loading function (needs work)
+  // const loadBudgetStatus = async () => {
+  //   if (!selectedBoard || isGuestMode) return;
 
-    try {
-      console.log('🔄 Loading budget status for board:', selectedBoard.id);
-      const budgetResult = await apiService.getBoardBudgetStatus(selectedBoard.id);
-      if (budgetResult.success && budgetResult.data) {
-        console.log('✅ Budget status loaded:', budgetResult.data);
-        setBudgetStatus(budgetResult.data);
-      } else {
-        console.log('❌ Failed to load budget status:', budgetResult.error);
-        setBudgetStatus(null);
-      }
-    } catch (error) {
-      console.error('Error loading budget status:', error);
-      setBudgetStatus(null);
-    }
-  };
+  //   try {
+  //     console.log('🔄 Loading budget status for board:', selectedBoard.id);
+  //     const budgetResult = await apiService.getBoardBudgetStatus(selectedBoard.id);
+  //     if (budgetResult.success && budgetResult.data) {
+  //       console.log('✅ Budget status loaded:', budgetResult.data);
+  //       setBudgetStatus(budgetResult.data);
+        
+  //       // DISABLED: Budget reset notifications temporarily disabled
+  //       // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+        
+  //       // COMMENTED OUT - Budget reset notification (needs work)
+  //       // // אם התקציב אופס זה עתה, הצג הודעה
+  //       // if ((budgetResult.data as any).was_reset) {
+  //       //   console.log('💰 Budget was reset - showing notification');
+  //       //   // הצג התראה על איפוס התקציב
+  //       //   Alert.alert(
+  //       //     '🔄 התקציב אופס',
+  //       //     'התקציב שלכם אופס אוטומטית בהתאם להגדרות האיפוס. ההוצאות והחריגות מתחילות מחדש.',
+  //       //     [{ text: 'הבנתי', style: 'default' }]
+  //       //   );
+  //       // }
+  //     } else {
+  //       console.log('❌ Failed to load budget status:', budgetResult.error);
+  //       setBudgetStatus(null);
+  //     }
+  //   } catch (error) {
+  //     console.error('Error loading budget status:', error);
+  //     setBudgetStatus(null);
+  //   }
+  // };
 
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
       refreshBoardExpenses(),
       loadCategories(),
-      refreshBoardCategories(), // Also refresh ExpenseContext categories
-      ...(isGuestMode ? [] : [loadBudgetStatus()]) // Load budget status only if not guest mode
+      refreshBoardCategories() // Also refresh ExpenseContext categories
+      // DISABLED: loadBudgetStatus() temporarily removed
+      // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
     ]);
     setRefreshing(false);
   };
@@ -218,6 +260,7 @@ const HomeScreen: React.FC = () => {
           name: cat.name,
           icon: cat.icon,
           color: cat.color,
+          imageUrl: cat.imageUrl, // Include imageUrl if exists
         }));
 
       return selectedCategories;
@@ -233,7 +276,8 @@ const HomeScreen: React.FC = () => {
     const selectedCategories = categories.slice(0, maxCategories).map(cat => ({
       name: cat.name,
       icon: cat.icon,
-      color: cat.color
+      color: cat.color,
+      imageUrl: cat.image_url, // Include imageUrl if exists
     }));
 
     return selectedCategories;
@@ -291,17 +335,36 @@ const HomeScreen: React.FC = () => {
     );
   };
 
+  const getFilteredExpenses = () => {
+    if (timeFilter === 'total') {
+      return boardExpenses;
+    }
+    
+    // Filter for current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    
+    return boardExpenses.filter(expense => {
+      const expenseDate = new Date(expense.date);
+      return expenseDate >= startOfMonth && expenseDate <= endOfMonth;
+    });
+  };
+
   const calculateTotalExpenses = () => {
-    return boardExpenses.reduce((total, expense) => total + expense.amount, 0);
+    const filteredExpenses = getFilteredExpenses();
+    return filteredExpenses.reduce((total, expense) => total + expense.amount, 0);
   };
 
   const calculateMyExpenses = () => {
+    const filteredExpenses = getFilteredExpenses();
+    
     if (isGuestMode) {
       // In guest mode, all expenses are "mine"
-      return boardExpenses.reduce((total, expense) => total + expense.amount, 0);
+      return filteredExpenses.reduce((total, expense) => total + expense.amount, 0);
     }
     if (!user) return 0;
-    return boardExpenses.reduce((total, expense) => {
+    return filteredExpenses.reduce((total, expense) => {
       if (expense.paid_by === user.id) {
         return total + expense.amount;
       }
@@ -337,7 +400,7 @@ const HomeScreen: React.FC = () => {
         
         <View style={styles.expenseFooter}>
           <Text style={styles.paidByText}>
-            שולם על ידי: {getMemberName(item.paid_by)}
+            {isWorkManagement ? 'בוצע על ידי:' : 'שולם על ידי:'} {getMemberName(item.paid_by)}
           </Text>
           <Text style={styles.expenseDate}>
             {new Date(item.date).toLocaleDateString('he-IL')}
@@ -365,60 +428,71 @@ const HomeScreen: React.FC = () => {
 
   const renderSummary = () => (
     <View style={styles.summaryContainer}>
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>סה"כ הוצאות</Text>
-          <Text style={styles.summaryValue}>
-            {formatCurrency(calculateTotalExpenses(), selectedBoard?.currency || 'ILS')}
-          </Text>
+      {/* Time Filter */}
+      <View style={styles.filterContainer}>
+        <View style={styles.filterButtons}>
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              timeFilter === 'month' && styles.filterButtonActive
+            ]}
+            onPress={() => setTimeFilter('month')}
+          >
+            <Text style={[
+              styles.filterButtonText,
+              timeFilter === 'month' && styles.filterButtonTextActive
+            ]}>
+              החודש
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              timeFilter === 'total' && styles.filterButtonActive
+            ]}
+            onPress={() => setTimeFilter('total')}
+          >
+            <Text style={[
+              styles.filterButtonText,
+              timeFilter === 'total' && styles.filterButtonTextActive
+            ]}>
+              סה"כ
+            </Text>
+          </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Summary Row - Budget column removed */}
+      <View style={styles.summaryRow}>
+        {/* Total Expenses/Works - Only for board owners */}
+        {isBoardOwner && (
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>
+              {isWorkManagement ? 'סה"כ עבודות' : 'סה"כ הוצאות'}
+            </Text>
+            <Text style={styles.summaryValue}>
+              {formatCurrency(calculateTotalExpenses(), selectedBoard?.currency || 'ILS')}
+            </Text>
+          </View>
+        )}
         
+        {/* My Expenses/Works */}
         <View style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>ההוצאות שלי</Text>
+          <Text style={styles.summaryLabel}>
+            {isWorkManagement ? 'העבודות שלי' : 'ההוצאות שלי'}
+          </Text>
           <Text style={styles.summaryValue}>
             {formatCurrency(calculateMyExpenses(), selectedBoard?.currency || 'ILS')}
           </Text>
         </View>
-        
-        <TouchableOpacity 
-          style={[styles.summaryItem, { opacity: isGuestMode ? 0.5 : 1 }]}
-          onPress={() => {
-            if (isGuestMode) {
-              Alert.alert(
-                'פונקציה נעולה',
-                'כדי לנהל תקציבים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
-                [
-                  { text: 'אולי מאוחר יותר', style: 'cancel' },
-                  { 
-                    text: 'התחבר עכשיו', 
-                    onPress: () => {
-                      logout();
-                    }
-                  }
-                ]
-              );
-            } else {
-              setShowBudgetModal(true);
-            }
-          }}
-        >
-          <Text style={styles.summaryLabel}>תקציב</Text>
-          <Text style={[styles.summaryValue, budgetStatus?.has_budget ? styles.budgetActiveValue : styles.budgetInactiveValue]}>
-            {budgetStatus?.has_budget 
-              ? formatCurrency(budgetStatus.budget_amount || 0, selectedBoard?.currency || 'ILS')
-              : `הגדר תקציב${isGuestMode ? ' 🔒' : ''}`
-            }
-          </Text>
-          {budgetStatus?.has_budget && (
-            <Text style={styles.budgetPercentage}>
-              {Math.round(budgetStatus.percentage_used)}% בשימוש
-            </Text>
-          )}
-        </TouchableOpacity>
       </View>
       
+      {/* DISABLED: Budget alerts temporarily disabled */}
+      {/* TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת */}
+      
+      {/* COMMENTED OUT - Budget alerts display (needs work) */}
       {/* Budget alerts disclaimer */}
-      {budgetStatus?.triggered_alerts && budgetStatus.triggered_alerts.length > 0 && (
+      {/* {budgetStatus?.triggered_alerts && budgetStatus.triggered_alerts.length > 0 && (
         <View style={styles.budgetAlertContainer}>
           {budgetStatus.triggered_alerts.map((alert, index) => {
             const isExceeded = (alert as any).is_exceeded;
@@ -438,7 +512,7 @@ const HomeScreen: React.FC = () => {
             );
           })}
         </View>
-      )}
+      )} */}
     </View>
   );
 
@@ -453,7 +527,11 @@ const HomeScreen: React.FC = () => {
             style={[styles.quickCategoryButton, { backgroundColor: category.color }]}
             onPress={() => handleQuickAddExpense(category.name)}
           >
-            <Text style={styles.quickCategoryIcon}>{category.icon}</Text>
+        {category.imageUrl ? (
+          <CategoryImage imageUrl={category.imageUrl} style={styles.quickCategoryImage} />
+        ) : (
+          <Text style={styles.quickCategoryIcon}>{category.icon}</Text>
+        )}
             <Text style={styles.quickCategoryText}>{category.name}</Text>
           </TouchableOpacity>
         ))}
@@ -552,40 +630,46 @@ const HomeScreen: React.FC = () => {
     console.log('🎯 Download: Function ended');
   };
 
-  const handleBudgetUpdate = async (budgetAmount: number | null, alerts: number[]) => {
-    if (!selectedBoard) return;
+  // DISABLED: Budget update function temporarily removed
+  // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+  
+  // COMMENTED OUT - Budget update function (needs work)
+  // const handleBudgetUpdate = async (budgetAmount: number | null, alerts: number[], autoReset: boolean, resetDay: number | null, resetTime: string | null) => {
+  //   if (!selectedBoard) return;
 
-    try {
-      console.log('💰 Updating budget:', { budgetAmount, alerts });
-      const updateData = {
-        budget_amount: budgetAmount,
-        budget_alerts: alerts
-      };
+  //   try {
+  //     console.log('💰 Updating budget:', { budgetAmount, alerts, autoReset, resetDay, resetTime });
+  //     const updateData = {
+  //       budget_amount: budgetAmount,
+  //       budget_alerts: alerts,
+  //       budget_auto_reset: autoReset,
+  //       budget_reset_day: resetDay,
+  //       budget_reset_time: resetTime
+  //     };
 
-      const result = await apiService.updateBoard(selectedBoard.id, updateData);
-      console.log('💰 Budget update result:', result);
+  //     const result = await apiService.updateBoard(selectedBoard.id, updateData);
+  //     console.log('💰 Budget update result:', result);
       
-      if (result.success) {
-        console.log('✅ Budget updated successfully, refreshing data...');
+  //     if (result.success) {
+  //       console.log('✅ Budget updated successfully, refreshing data...');
         
-        // Refresh budget status
-        await loadBudgetStatus();
+  //       // Refresh budget status
+  //       await loadBudgetStatus();
         
-        // Also refresh the board data in BoardContext to update the selectedBoard
-        // This will trigger useEffect and reload budget status
-        await refreshBoardExpenses();
+  //       // Update the selected board with fresh data from API
+  //       await updateSelectedBoard(selectedBoard.id);
         
-        setShowBudgetModal(false);
-        Alert.alert('הצלחה', 'התקציב עודכן בהצלחה');
-      } else {
-        console.log('❌ Budget update failed:', result.error);
-        Alert.alert('שגיאה', result.error || 'שגיאה בעדכון התקציב');
-      }
-    } catch (error) {
-      console.error('Error updating budget:', error);
-      Alert.alert('שגיאה', 'שגיאה בעדכון התקציב');
-    }
-  };
+  //       setShowBudgetModal(false);
+  //       Alert.alert('הצלחה', 'התקציב עודכן בהצלחה');
+  //     } else {
+  //       console.log('❌ Budget update failed:', result.error);
+  //       Alert.alert('שגיאה', result.error || 'שגיאה בעדכון התקציב');
+  //     }
+  //   } catch (error) {
+  //     console.error('Error updating budget:', error);
+  //     Alert.alert('שגיאה', 'שגיאה בעדכון התקציב');
+  //   }
+  // };
 
   const handleDateRangeExport = async (startDate?: string, endDate?: string, optionName?: string) => {
     if (!selectedBoard) return;
@@ -593,18 +677,46 @@ const HomeScreen: React.FC = () => {
     setIsExporting(true);
     setSelectedExportOption(optionName || null);
     try {
-      // הצגת פרסומת Interstitial פשוטה לפני הייצוא
-      console.log('🎯 Export: Showing interstitial ad before export');
+      // בדוק אם ניתן להציג פרסומת (תמיד true עבור ייצוא)
+      console.log('🎯 Export: Checking if we can show ad for export');
       
-      // בדיקה אם ניתן להציג פרסומת
-      const canShowAd = await adManager.checkCanShowAd();
+      // הצג הודעה למשתמש לפני הפרסומת
+      const userConsent = await showAdConsentModal({
+        title: '🎉 תודה על השימוש',
+        message: 'בשביל שתוכל להוריד קובץ הוצאות, נשמח שתצפה בפרסומת קטנה שתעזור לנו להמשיך לפתח את Homeis!\n\n**חשוב לדעת:**\n•תצטרך לצפות בה עד הסוף כדי שהקובץ יורד',
+        alwaysRequireAd: true
+      });
+
+      if (!userConsent) {
+        // המשתמש לא הסכים לצפות בפרסומת - לא מייצאים
+        Alert.alert(
+          'אוקיי, לא נורא! 😊',
+          'הייצוא לא יתבצע כרגע. תוכל לנסות שוב בהמשך! 😊'
+        );
+        setIsExporting(false);
+        setSelectedExportOption(null);
+        setShowDateModal(false);
+        return;
+      }
+
+      // המשתמש הסכים - מציגים פרסומת
+      console.log('🎯 Export: User agreed, showing ad...');
       
-      if (canShowAd) {
-        console.log('🎯 Export: Can show ad, displaying interstitial');
-        const adShown = await adManager.showAdIfAllowed('export_report');
-        console.log(`🎯 Export: Interstitial ad shown: ${adShown}`);
-      } else {
-        console.log('🎯 Export: Cannot show ad due to cooldown, proceeding without ad');
+      try {
+        // הצגת פרסומת ללא קשר לקירור עבור ייצוא לאקסל
+        console.log('🎯 Export: Attempting to show ad with force=true');
+        const adShown = await adManager.showAdIfAllowed('export_report', true);
+        console.log(`🎯 Export: Interstitial ad result: ${adShown}`);
+        
+        // המתנה קצרה לוודא שהפרסומת הסתיימה לפני המשך
+        if (adShown) {
+          console.log('🎯 Export: Ad was shown successfully, waiting a moment before proceeding');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          console.log('🎯 Export: Ad was not shown, proceeding anyway');
+        }
+      } catch (error) {
+        console.error('🎯 Export: Error showing ad:', error);
       }
 
       // רק אחרי שהפרסומת הושלמה - מתחילים את הייצוא
@@ -685,9 +797,11 @@ const HomeScreen: React.FC = () => {
         </View>
         
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>הוצאות אחרונות</Text>
+          <Text style={styles.sectionTitle}>
+            {isWorkManagement ? 'עבודות אחרונות' : 'הוצאות אחרונות'}
+          </Text>
           <View style={styles.headerButtons}>
-            {boardExpenses.length > 0 && (
+            {boardExpenses.length > 0 && isBoardOwner && (
               <TouchableOpacity
                 style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
                 onPress={handleExportExpenses}
@@ -705,9 +819,11 @@ const HomeScreen: React.FC = () => {
 
       {boardExpenses.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>אין הוצאות עדיין</Text>
+          <Text style={styles.emptyStateTitle}>
+            {isWorkManagement ? 'אין עבודות עדיין' : 'אין הוצאות עדיין'}
+          </Text>
           <Text style={styles.emptyStateSubtitle}>
-            הוסף הוצאה ראשונה כדי להתחיל
+            {isWorkManagement ? 'הוסף עבודה ראשונה כדי להתחיל' : 'הוסף הוצאה ראשונה כדי להתחיל'}
           </Text>
         </View>
       ) : (
@@ -861,15 +977,21 @@ const HomeScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Budget Edit Modal */}
-      <BudgetEditModal
+      {/* DISABLED: Budget Edit Modal temporarily removed */}
+      {/* TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת */}
+      
+      {/* COMMENTED OUT - Budget Edit Modal (needs work) */}
+      {/* <BudgetEditModal
         visible={showBudgetModal}
         onClose={() => setShowBudgetModal(false)}
         onSave={handleBudgetUpdate}
         currentBudget={budgetStatus?.budget_amount}
         currentAlerts={budgetStatus?.alerts || []}
+        currentAutoReset={selectedBoard?.budget_auto_reset}
+        currentResetDay={selectedBoard?.budget_reset_day}
+        currentResetTime={selectedBoard?.budget_reset_time}
         currency={selectedBoard?.currency || 'ILS'}
-      />
+      /> */}
 
     </View>
   );
@@ -893,26 +1015,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  summaryItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  summaryLabel: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    textAlign: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -1069,6 +1171,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     marginBottom: 4,
     textAlign: 'center',
+  },
+  quickCategoryImage: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginBottom: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   quickCategoryText: {
     fontSize: 11,
@@ -1325,44 +1434,98 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // Budget styles
-  budgetActiveValue: {
-    color: '#27ae60',
+  // DISABLED: Budget styles temporarily removed
+  // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
+  
+  // COMMENTED OUT - Budget styles (needs work)
+  // budgetActiveValue: {
+  //   color: '#27ae60',
+  // },
+  // budgetInactiveValue: {
+  //   color: '#95a5a6',
+  //   fontSize: 14,
+  // },
+  // budgetPercentage: {
+  //   fontSize: 12,
+  //   color: '#7f8c8d',
+  //   textAlign: 'center',
+  //   marginTop: 2,
+  // },
+  // budgetAlertContainer: {
+  //   backgroundColor: '#fff3cd',
+  //   borderColor: '#ffeaa7',
+  //   borderWidth: 1,
+  //   borderRadius: 8,
+  //   padding: 12,
+  //   marginTop: 12,
+  // },
+  // budgetAlertTitle: {
+  //   fontSize: 14,
+  //   fontWeight: 'bold',
+  //   color: '#856404',
+  //   textAlign: 'center',
+  //   marginBottom: 4,
+  // },
+  // budgetAlertText: {
+  //   fontSize: 12,
+  //   color: '#856404',
+  //   textAlign: 'center',
+  // },
+  // budgetExceededText: {
+  //   color: '#dc3545',
+  //   fontWeight: 'bold',
+  //   fontSize: 13,
+  // },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  budgetInactiveValue: {
-    color: '#95a5a6',
-    fontSize: 14,
+  summaryItem: {
+    alignItems: 'center',
+    flex: 1,
   },
-  budgetPercentage: {
-    fontSize: 12,
+  summaryLabel: {
+    fontSize: 16,
     color: '#7f8c8d',
+    marginBottom: 8,
     textAlign: 'center',
-    marginTop: 2,
   },
-  budgetAlertContainer: {
-    backgroundColor: '#fff3cd',
-    borderColor: '#ffeaa7',
-    borderWidth: 1,
+  summaryValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+  },
+  // Filter styles
+  filterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: 16,
+  },
+  filterButtons: {
+    flexDirection: 'row',
+    backgroundColor: '#ecf0f1',
     borderRadius: 8,
-    padding: 12,
-    marginTop: 12,
+    padding: 2,
   },
-  budgetAlertTitle: {
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  filterButtonActive: {
+    backgroundColor: '#3498db',
+  },
+  filterButtonText: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#856404',
-    textAlign: 'center',
-    marginBottom: 4,
+    color: '#7f8c8d',
   },
-  budgetAlertText: {
-    fontSize: 12,
-    color: '#856404',
-    textAlign: 'center',
-  },
-  budgetExceededText: {
-    color: '#dc3545',
-    fontWeight: 'bold',
-    fontSize: 13,
+  filterButtonTextActive: {
+    color: 'white',
   },
 
 });

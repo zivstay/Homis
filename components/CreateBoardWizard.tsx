@@ -1,16 +1,23 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
     Alert,
     FlatList,
+    Image,
     Keyboard,
     Modal,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { uploadExpenseImage } from '../config/api';
 import { BOARD_TYPES, BoardType, QuickCategory } from '../constants/boardTypes';
+import { useAuth } from '../contexts/AuthContext';
+import { CategoryImage } from './CategoryImage';
 
 interface CreateBoardWizardProps {
   isVisible: boolean;
@@ -25,12 +32,19 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
   onBoardCreated,
   createBoard,
 }) => {
+  const { user } = useAuth(); // Remove token since it doesn't exist
   const [wizardStep, setWizardStep] = useState(1); // 1: פרטים, 2: סוג לוח, 3: קטגוריות
   const [newBoardName, setNewBoardName] = useState('');
   const [newBoardDescription, setNewBoardDescription] = useState('');
   const [selectedBoardType, setSelectedBoardType] = useState<BoardType | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<QuickCategory[]>([]);
+  const [customCategories, setCustomCategories] = useState<QuickCategory[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [showCustomCategoryModal, setShowCustomCategoryModal] = useState(false);
+  const [newCustomCategoryName, setNewCustomCategoryName] = useState('');
+  const [selectedCustomIcon, setSelectedCustomIcon] = useState('📝');
+  const [selectedCategoryImage, setSelectedCategoryImage] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const resetWizard = () => {
     setWizardStep(1);
@@ -38,6 +52,12 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
     setNewBoardDescription('');
     setSelectedBoardType(null);
     setSelectedCategories([]);
+    setCustomCategories([]);
+    setShowCustomCategoryModal(false);
+    setNewCustomCategoryName('');
+    setSelectedCustomIcon('📝');
+    setSelectedCategoryImage(null);
+    setIsUploadingImage(false);
   };
 
   const handleBoardTypeSelect = (boardType: BoardType) => {
@@ -52,14 +72,134 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
       if (isSelected) {
         return prev.filter(cat => cat.name !== category.name);
       } else {
-        // Check if we're at the limit of 7 categories
-        if (prev.length >= 7) {
+        // Check if we're at the limit of 7 categories (including custom ones)
+        const totalSelected = prev.length + customCategories.length;
+        if (totalSelected >= 7) {
           Alert.alert('הגבלה', 'ניתן לבחור עד 7 קטגוריות בלבד. בטל בחירה של קטגוריה אחרת כדי להוסיף חדשה.');
           return prev;
         }
         return [...prev, category];
       }
     });
+  };
+
+  const availableIcons = [
+    '📝', '💰', '🛒', '🍕', '⛽', '🏠', '🚗', '📱', '🎬', '👕',
+    '🏥', '💊', '🎓', '📚', '✈️', '🏖️', '🎁', '🎉', '⚽', '🎮',
+    '🍷', '☕', '🍔', '🍜', '🛍️', '💄', '🔧', '🏦', '📊', '💼',
+    '🎨', '🎵', '📷', '🌱', '🐕', '🐱', '🚲', '🏃', '💪', '🧘',
+    '🍎', '🥗', '🍰', '🧸', '📦', '🔑', '🛡️', '⚖️', '📋', '💝'
+  ];
+
+  const handleImagePicker = async () => {
+    try {
+      // Request permissions
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('הרשאה נדרשת', 'נדרשת הרשאה לגישה לגלריית התמונות');
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1], // Square aspect ratio
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        setIsUploadingImage(true);
+        
+        try {
+          // Get token from AsyncStorage
+          const token = await AsyncStorage.getItem('access_token');
+          
+          // Upload image using config API
+          console.log('🖼️ Selected image URI:', asset.uri);
+          console.log('🔑 Token exists:', !!token);
+          
+          const imageUrl = await uploadExpenseImage(asset.uri, token || undefined);
+          console.log('📤 Upload result - imageUrl:', imageUrl);
+          
+          if (imageUrl) {
+            setSelectedCategoryImage(imageUrl);
+            setSelectedCustomIcon(''); // Clear icon when image is selected
+            console.log('✅ Image uploaded successfully, URL set to:', imageUrl);
+            Alert.alert('הצלחה', 'התמונה הועלתה בהצלחה');
+          } else {
+            console.error('❌ Failed to upload image - no URL returned');
+            Alert.alert('שגיאה', 'שגיאה בהעלאת התמונה');
+          }
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          Alert.alert('שגיאה', 'שגיאה בהעלאת התמונה');
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('שגיאה', 'שגיאה בבחירת התמונה');
+    }
+  };
+
+  const handleClearImage = () => {
+    setSelectedCategoryImage(null);
+    setSelectedCustomIcon('📝'); // Reset to default icon
+  };
+
+  const handleAddCustomCategory = () => {
+    if (!newCustomCategoryName.trim()) {
+      Alert.alert('שגיאה', 'נא להזין שם לקטגוריה');
+      return;
+    }
+
+    // Check if category name already exists
+    const allCategories = [...selectedCategories, ...customCategories];
+    if (allCategories.some(cat => cat.name.toLowerCase() === newCustomCategoryName.trim().toLowerCase())) {
+      Alert.alert('שגיאה', 'קטגוריה עם השם הזה כבר קיימת');
+      return;
+    }
+
+    // Check if we're at the limit
+    const totalSelected = selectedCategories.length + customCategories.length;
+    if (totalSelected >= 7) {
+      Alert.alert('הגבלה', 'ניתן לבחור עד 7 קטגוריות בלבד');
+      return;
+    }
+
+    const newCategory: QuickCategory = {
+      name: newCustomCategoryName.trim(),
+      icon: selectedCategoryImage ? '' : selectedCustomIcon, // Empty icon if image is selected
+      color: '#9370DB', // Default purple color
+      imageUrl: selectedCategoryImage || undefined, // Add image URL if selected
+    };
+
+    console.log('📝 Creating new category:', newCategory);
+    console.log('🖼️ Selected category image:', selectedCategoryImage);
+
+    setCustomCategories(prev => [...prev, newCategory]);
+    setShowCustomCategoryModal(false);
+    setNewCustomCategoryName('');
+    setSelectedCustomIcon('📝');
+    setSelectedCategoryImage(null);
+    setIsUploadingImage(false);
+  };
+
+  const handleRemoveCustomCategory = (categoryName: string) => {
+    setCustomCategories(prev => prev.filter(cat => cat.name !== categoryName));
+  };
+
+  const handleOpenCustomCategoryModal = () => {
+    const totalSelected = selectedCategories.length + customCategories.length;
+    if (totalSelected >= 7) {
+      Alert.alert('הגבלה', 'ניתן לבחור עד 7 קטגוריות בלבד. בטל בחירה של קטגוריה אחרת כדי להוסיף חדשה.');
+      return;
+    }
+    setShowCustomCategoryModal(true);
   };
 
   const handleCreateBoard = async () => {
@@ -73,7 +213,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
       return;
     }
 
-    if (selectedCategories.length === 0) {
+    const totalCategories = selectedCategories.length + customCategories.length;
+    if (totalCategories === 0) {
       Alert.alert('שגיאה', 'נא לבחור לפחות קטגוריה אחת');
       return;
     }
@@ -85,7 +226,7 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
       currency: 'ILS',
       timezone: 'Asia/Jerusalem',
       board_type: selectedBoardType.id,
-      custom_categories: selectedCategories,
+      custom_categories: [...selectedCategories, ...customCategories],
     };
     
     const result = await createBoard(boardData);
@@ -143,7 +284,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
 
   const renderCategoryItem = ({ item }: { item: QuickCategory }) => {
     const isSelected = selectedCategories.some(cat => cat.name === item.name);
-    const isDisabled = !isSelected && selectedCategories.length >= 7;
+    const totalSelected = selectedCategories.length + customCategories.length;
+    const isDisabled = !isSelected && totalSelected >= 7;
     
     return (
       <TouchableOpacity
@@ -185,6 +327,42 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
         {isDisabled && (
           <Text style={styles.disabledIndicator}>🔒</Text>
         )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderCustomCategoryItem = ({ item }: { item: QuickCategory }) => {
+    return (
+      <View style={[styles.categoryItem, styles.customCategoryItem]}>
+        {item.imageUrl ? (
+          <CategoryImage imageUrl={item.imageUrl} style={styles.categoryImage} />
+        ) : (
+          <Text style={styles.categoryIcon}>{item.icon}</Text>
+        )}
+        <Text style={[styles.categoryName, styles.customCategoryName]}>
+          {item.name}
+        </Text>
+        <TouchableOpacity
+          onPress={() => handleRemoveCustomCategory(item.name)}
+          style={styles.removeCustomCategoryButton}
+        >
+          <Text style={styles.removeCustomCategoryIcon}>✕</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderIconItem = ({ item }: { item: string }) => {
+    const isSelected = selectedCustomIcon === item;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.iconItem,
+          isSelected && styles.selectedIconItem
+        ]}
+        onPress={() => setSelectedCustomIcon(item)}
+      >
+        <Text style={styles.iconText}>{item}</Text>
       </TouchableOpacity>
     );
   };
@@ -308,12 +486,42 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
         )}
         
         <Text style={styles.selectedCountText}>
-          נבחרו: {selectedCategories.length}/7 קטגוריות
+          נבחרו: {selectedCategories.length + customCategories.length}/7 קטגוריות
         </Text>
         
         <Text style={styles.wizardHelpText}>
           בחר עד 7 קטגוריות עבור הלוח שלך. הקטגוריות של סוג הלוח מוצגות בראש הרשימה.
         </Text>
+        
+        {/* Custom Categories Section */}
+        {customCategories.length > 0 && (
+          <View style={styles.customCategoriesSection}>
+            <Text style={styles.customCategoriesTitle}>קטגוריות מותאמות אישית:</Text>
+            <FlatList
+              data={customCategories}
+              renderItem={renderCustomCategoryItem}
+              keyExtractor={(item) => item.name}
+              style={styles.customCategoriesList}
+              numColumns={2}
+              columnWrapperStyle={customCategories.length > 1 ? styles.categoriesRow : undefined}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            />
+          </View>
+        )}
+        
+        {/* Add Custom Category Button */}
+        <TouchableOpacity
+          style={[
+            styles.addCustomCategoryButton,
+            (selectedCategories.length + customCategories.length >= 7) && styles.disabledAddButton
+          ]}
+          onPress={handleOpenCustomCategoryModal}
+          disabled={selectedCategories.length + customCategories.length >= 7}
+        >
+          <Text style={styles.addCustomCategoryIcon}>+</Text>
+          <Text style={styles.addCustomCategoryText}>הוסף קטגוריה מותאמת אישית</Text>
+        </TouchableOpacity>
         
         <FlatList
           data={getAllAvailableCategories()}
@@ -322,7 +530,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
           style={styles.categoriesList}
           numColumns={2}
           columnWrapperStyle={styles.categoriesRow}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
         />
       </View>
     );
@@ -394,10 +603,10 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
                 style={[
                   styles.wizardButton, 
                   styles.wizardCreateButton,
-                  (isCreating || selectedCategories.length === 0) && styles.disabledWizardButton
+                  (isCreating || (selectedCategories.length + customCategories.length === 0)) && styles.disabledWizardButton
                 ]}
                 onPress={handleCreateBoard}
-                disabled={isCreating || selectedCategories.length === 0}
+                disabled={isCreating || (selectedCategories.length + customCategories.length === 0)}
               >
                 <Text style={styles.wizardCreateText}>
                   {isCreating ? 'יוצר...' : 'צור לוח'}
@@ -407,6 +616,94 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
           </View>
         </View>
       </View>
+      
+      {/* Custom Category Modal */}
+      <Modal
+        visible={showCustomCategoryModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowCustomCategoryModal(false)}
+      >
+        <View style={styles.customCategoryModalOverlay}>
+          <View style={styles.customCategoryModalContent}>
+            <Text style={styles.customCategoryModalTitle}>הוסף קטגוריה מותאמת אישית</Text>
+            
+            <TextInput
+              style={styles.customCategoryInput}
+              placeholder="שם הקטגוריה"
+              value={newCustomCategoryName}
+              onChangeText={setNewCustomCategoryName}
+              textAlign="right"
+              maxLength={20}
+            />
+            
+            <Text style={styles.iconSelectorTitle}>בחר אייקון:</Text>
+            
+            {/* Image upload section */}
+            <View style={styles.imageUploadSection}>
+              <TouchableOpacity
+                style={styles.imageUploadButton}
+                onPress={handleImagePicker}
+                disabled={isUploadingImage}
+              >
+                <Text style={styles.imageUploadButtonText}>
+                  {isUploadingImage ? '🔄 מעלה...' : '📷 העלה תמונה'}
+                </Text>
+              </TouchableOpacity>
+              
+              {selectedCategoryImage && (
+                <View style={styles.selectedImageContainer}>
+                  <CategoryImage imageUrl={selectedCategoryImage} style={styles.selectedImage} />
+                  <TouchableOpacity
+                    style={styles.clearImageButton}
+                    onPress={handleClearImage}
+                  >
+                    <Text style={styles.clearImageButtonText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+            
+            <ScrollView style={styles.iconSelector} showsVerticalScrollIndicator={false}>
+              <FlatList
+                data={availableIcons}
+                renderItem={renderIconItem}
+                keyExtractor={(item) => item}
+                numColumns={5}
+                columnWrapperStyle={styles.iconRow}
+                scrollEnabled={false}
+              />
+            </ScrollView>
+            
+            <View style={styles.customCategoryModalButtons}>
+              <TouchableOpacity
+                style={[styles.customCategoryButton, styles.customCategoryCancelButton]}
+                onPress={() => {
+                  setShowCustomCategoryModal(false);
+                  setNewCustomCategoryName('');
+                  setSelectedCustomIcon('📝');
+                  setSelectedCategoryImage(null);
+                  setIsUploadingImage(false);
+                }}
+              >
+                <Text style={styles.customCategoryCancelText}>ביטול</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.customCategoryButton, 
+                  styles.customCategoryAddButton,
+                  !newCustomCategoryName.trim() && styles.disabledCustomCategoryButton
+                ]}
+                onPress={handleAddCustomCategory}
+                disabled={!newCustomCategoryName.trim()}
+              >
+                <Text style={styles.customCategoryAddText}>הוסף</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 };
@@ -573,7 +870,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   categoriesList: {
-    maxHeight: 280,
+    maxHeight: 200,
     marginTop: 12,
   },
   categoriesRow: {
@@ -683,6 +980,203 @@ const styles = StyleSheet.create({
   disabledWizardButton: {
     backgroundColor: '#bdc3c7',
     opacity: 0.7,
+  },
+  customCategoriesSection: {
+    marginBottom: 16,
+  },
+  customCategoriesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 8,
+    textAlign: 'right',
+  },
+  customCategoriesList: {
+    maxHeight: 80,
+  },
+  customCategoryItem: {
+    backgroundColor: '#e8f5e8',
+    borderColor: '#4caf50',
+  },
+  customCategoryName: {
+    color: '#4caf50',
+    fontWeight: 'bold',
+  },
+  removeCustomCategoryButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  removeCustomCategoryIcon: {
+    fontSize: 16,
+    color: '#e74c3c',
+    fontWeight: 'bold',
+  },
+  addCustomCategoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3498db',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  disabledAddButton: {
+    backgroundColor: '#bdc3c7',
+    opacity: 0.6,
+  },
+  addCustomCategoryIcon: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  addCustomCategoryText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  customCategoryModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  customCategoryModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+  },
+  customCategoryModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  customCategoryInput: {
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 20,
+    backgroundColor: '#fafbfc',
+  },
+  iconSelectorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 12,
+    textAlign: 'right',
+  },
+  iconSelector: {
+    maxHeight: 200,
+    marginBottom: 20,
+  },
+  iconRow: {
+    justifyContent: 'space-around',
+    marginBottom: 12,
+  },
+  iconItem: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 2,
+    borderColor: '#e0e6ed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 4,
+  },
+  selectedIconItem: {
+    backgroundColor: '#e8f5e8',
+    borderColor: '#4caf50',
+  },
+  iconText: {
+    fontSize: 24,
+  },
+  customCategoryModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  customCategoryButton: {
+    width: '48%',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  customCategoryCancelButton: {
+    backgroundColor: '#ecf0f1',
+  },
+  customCategoryCancelText: {
+    color: '#7f8c8d',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  customCategoryAddButton: {
+    backgroundColor: '#2ecc71',
+  },
+  customCategoryAddText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  disabledCustomCategoryButton: {
+    backgroundColor: '#bdc3c7',
+    opacity: 0.6,
+  },
+  categoryImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+  },
+  imageUploadSection: {
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  imageUploadButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  imageUploadButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  selectedImageContainer: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  selectedImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#f8f9fa',
+  },
+  clearImageButton: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#e74c3c',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearImageButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 

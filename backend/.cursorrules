@@ -1,0 +1,38 @@
+rules:
+  # === כללי ===
+  - תמיד לכתוב קוד קריא וברור, עם שמות משתנים ופונקציות באנגלית בלבד.
+  - להשתמש ב־Git-friendly code style (שורות קצרות, עקביות, ללא קוד מת).
+  - לא להחזיר קוד חלקי – כל דוגמה צריכה להיות runnable.
+
+  # === React Native (Frontend) ===
+  - להשתמש תמיד ב־Functional Components עם Hooks, לא ב־Class Components.
+  - להשתמש ב־TypeScript כשאפשר, עם טיפוסים ברורים ל־props ול־state.
+  - שמות משתנים ופונקציות ב־camelCase.
+  - שמות קומפוננטות ב־PascalCase.
+  - להקפיד על מבנה תיקיות: components, screens, hooks, services, utils.
+  - לנהל state גלובלי עם Context API או Zustand/Recoil – לא Redux אם אין הכרח.
+  - לכתוב StyleSheets עם שימוש במודולריות, לא inline style ארוך.
+  - להשתמש ב־FlatList ולא ב־map ישיר כשמרנדרים רשימות ארוכות.
+  - להימנע מ־any – להשתמש ב־interfaces ו־types ב־TypeScript.
+  - בכל API call – להשתמש ב־axios/fetch עטוף בפונקציית שירות (service), לא ישירות בקומפוננטה.
+  - תמיד לעטוף קריאות API ב־try/catch + error handling ידידותי למשתמש.
+
+  # === Python Backend (Flask/FastAPI/Django) ===
+  - שמות משתנים ופונקציות ב־snake_case.
+  - להוסיף type hints לכל פונקציה.
+  - להשתמש ב־Pydantic models (ב־FastAPI) או dataclasses (ב־Flask/Django) ל־request/response.
+  - להוסיף docstring בסגנון Google לכל פונקציה ציבורית.
+  - להשתמש ב־logging במקום print.
+  - SQL queries תמיד להיות parameterized כדי למנוע SQL Injection.
+  - לא לשים secrets בקוד – להשתמש ב־dotenv/config.
+  - בכל endpoint – לבדוק קלט, גם אם נראה מובן מאליו.
+  - Response תמיד בפורמט JSON ברור, עם status code מתאים.
+  - לפרק קוד ל־services ו־repositories, לא להכניס לוגיקה ישירות ל־routes/views.
+  - להוסיף בדיקות יחידה (pytest) לפונקציות קריטיות.
+  - dont run python tests, i will run them myself.
+  # === Best Practices משותפים ===
+  - להעדיף async/await גם בפייתון וגם ב־JS כשאפשר.
+  - לפרק פונקציות גדולות ליחידות קטנות (עד ~30 שורות).
+  - בכל פרויקט – לשמור על מבנה קבצים עקבי (frontend / backend).
+  - לכתוב בדיקות בסיסיות לכל feature חדש.
+  - לא לנסות להריץ בדיקות עכשיו להריץ לי את הבקנד או הפרונטנד לבד, אני בודק ואתן פידבק

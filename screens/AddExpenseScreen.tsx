@@ -1,24 +1,26 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Image,
-  Keyboard,
-  KeyboardAvoidingView,
-  Linking,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Linking,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { showAdConsentModal } from '../components/AdConsentModal';
 import { uploadExpenseImage } from '../config/api';
-import { getAllAvailableCategories, getBoardTypeById } from '../constants/boardTypes';
+import { getAllAvailableCategories, getBoardTypeById, WorkExpenseData, WorkItem } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
 import { useExpenses } from '../contexts/ExpenseContext';
@@ -41,6 +43,8 @@ const AddExpenseScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedPaidBy, setSelectedPaidBy] = useState('');
   const [selectedOtherCategory, setSelectedOtherCategory] = useState('');
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -48,8 +52,19 @@ const AddExpenseScreen: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Work management specific states
+  const [workItems, setWorkItems] = useState<WorkItem[]>([]);
+  const [clientName, setClientName] = useState('');
+  const [location, setLocation] = useState('');
+  const [showWorkItemModal, setShowWorkItemModal] = useState(false);
+  const [selectedWorkCategory, setSelectedWorkCategory] = useState('');
+  const [workItemPrice, setWorkItemPrice] = useState('');
+  const [workItemDescription, setWorkItemDescription] = useState('');
+  const [workItemHours, setWorkItemHours] = useState('');
+
   const boardType = selectedBoard ? getBoardTypeById(selectedBoard.board_type) : null;
   const quickCategories = boardType?.quickCategories || [];
+  const isWorkManagement = selectedBoard?.board_type === 'work_management';
 
   // Get preselected category from navigation params
   const params = route.params as { preselectedCategory?: string } | undefined;
@@ -189,6 +204,72 @@ const AddExpenseScreen: React.FC = () => {
     // Don't auto-fill description with category name
   };
 
+  // Work management functions
+  const handleWorkCategorySelect = (categoryName: string) => {
+    setSelectedWorkCategory(categoryName);
+    setShowWorkItemModal(true);
+  };
+
+  const handleAddWorkItem = () => {
+    if (!selectedWorkCategory) {
+      Alert.alert('שגיאה', 'נא לבחור סוג עבודה');
+      return;
+    }
+
+    // מחיר הוא אופציונלי - אם לא הוזן, נשתמש ב-0
+    const priceValue = workItemPrice ? parseFloat(workItemPrice) : 0;
+    if (workItemPrice && (isNaN(priceValue) || priceValue < 0)) {
+      Alert.alert('שגיאה', 'נא להזין מחיר תקין');
+      return;
+    }
+
+    const hoursValue = workItemHours ? parseFloat(workItemHours) : undefined;
+    if (workItemHours && (isNaN(hoursValue!) || hoursValue! <= 0)) {
+      Alert.alert('שגיאה', 'נא להזין מספר שעות תקין');
+      return;
+    }
+
+    const newWorkItem: WorkItem = {
+      id: Date.now().toString(),
+      category: selectedWorkCategory,
+      price: priceValue,
+      description: workItemDescription.trim() || undefined,
+      hours: hoursValue,
+    };
+
+    setWorkItems(prev => [...prev, newWorkItem]);
+    
+    // Clear modal fields
+    setSelectedWorkCategory('');
+    setWorkItemPrice('');
+    setWorkItemDescription('');
+    setWorkItemHours('');
+    setShowWorkItemModal(false);
+  };
+
+  const handleRemoveWorkItem = (itemId: string) => {
+    setWorkItems(prev => prev.filter(item => item.id !== itemId));
+  };
+
+  const getTotalWorkAmount = () => {
+    return workItems.reduce((total, item) => total + item.price, 0);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setSelectedDate(selectedDate);
+    }
+  };
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('he-IL', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  };
+
   const handleSubmit = async () => {
     console.log('🔍 AddExpenseScreen: handleSubmit called, isGuestMode:', isGuestMode);
     
@@ -203,15 +284,31 @@ const AddExpenseScreen: React.FC = () => {
       return;
     }
 
-    if (!amount || !selectedCategory) {
-      Alert.alert('שגיאה', 'נא למלא את כל השדות הנדרשים');
-      return;
-    }
+    // Different validation for work management
+    if (isWorkManagement) {
+      if (workItems.length === 0) {
+        Alert.alert('שגיאה', 'נא להוסיף לפחות עבודה אחת');
+        return;
+      }
+      if (!clientName.trim()) {
+        Alert.alert('שגיאה', 'נא להזין שם לקוח');
+        return;
+      }
+      if (!location.trim()) {
+        Alert.alert('שגיאה', 'נא להזין מיקום');
+        return;
+      }
+    } else {
+      if (!amount || !selectedCategory) {
+        Alert.alert('שגיאה', 'נא למלא את כל השדות הנדרשים');
+        return;
+      }
 
-    const amountValue = parseFloat(amount);
-    if (isNaN(amountValue) || amountValue <= 0) {
-      Alert.alert('שגיאה', 'נא להזין סכום תקין');
-      return;
+      const amountValue = parseFloat(amount);
+      if (isNaN(amountValue) || amountValue <= 0) {
+        Alert.alert('שגיאה', 'נא להזין סכום תקין');
+        return;
+      }
     }
 
     // בדוק אם ניתן להציג פרסומת (גם במצב אורח)
@@ -245,7 +342,7 @@ const AddExpenseScreen: React.FC = () => {
       if (adResult.success && adResult.reason === 'completed') {
         console.log('🎯 User watched the full ad, creating expense...');
         // המשתמש צפה בפרסומת עד הסוף - יוצרים את ההוצאה
-        await createExpense(amountValue);
+        await createExpense(isWorkManagement ? getTotalWorkAmount() : parseFloat(amount));
       } else if (adResult.reason === 'user_cancelled') {
         console.log('🎯 User did not complete the ad');
         // המשתמש לא צפה בפרסומת עד הסוף - לא יוצרים הוצאה
@@ -258,13 +355,13 @@ const AddExpenseScreen: React.FC = () => {
       } else {
         // שגיאה טכנית או פרסומת לא זמינה - יוצרים הוצאה בכל מקרה
         console.log('🎯 Technical error or ad unavailable, creating expense anyway. Reason:', adResult.reason, 'Message:', adResult.message);
-        await createExpense(amountValue);
+        await createExpense(isWorkManagement ? getTotalWorkAmount() : parseFloat(amount));
       }
     } else {
       // לא ניתן להציג פרסומת בגלל cooldown - יוצרים הוצאה ללא פרסומת
       console.log('🎯 Cannot show ad due to cooldown, creating expense without ad (isGuestMode:', isGuestMode, ')');
       setIsLoading(true);
-      await createExpense(amountValue);
+      await createExpense(isWorkManagement ? getTotalWorkAmount() : parseFloat(amount));
     }
   };
 
@@ -278,23 +375,91 @@ const AddExpenseScreen: React.FC = () => {
     }
     
     try {
-      // Determine the final category to use
-      const finalCategory = selectedCategory === 'אחר' && selectedOtherCategory 
-        ? selectedOtherCategory 
-        : selectedCategory;
+      if (isWorkManagement) {
+        // Work management mode
+        console.log('🔍 AddExpenseScreen: Work management mode');
+        
+        const workExpenseData: WorkExpenseData = {
+          workItems,
+          clientName: clientName.trim(),
+          location: location.trim(),
+          totalAmount: amountValue,
+          workDate: selectedDate.toISOString(),
+          description: description.trim() || undefined,
+          image_url: selectedImage || undefined,
+        };
 
-      console.log('🔍 AddExpenseScreen: Final category:', finalCategory, 'Amount:', amountValue);
+        if (isGuestMode) {
+          console.log('🔍 AddExpenseScreen: Guest mode - saving work data to local storage');
+          const expenseData = {
+            board_id: selectedBoard.id,
+            amount: amountValue,
+            description: `עבודה עבור ${clientName} ב${location}`,
+            category: 'עבודה',
+            date: selectedDate.toISOString(),
+            payer_id: 'guest',
+            split_type: 'equal',
+            split_data: {},
+            work_data: workExpenseData,
+          };
+          
+          console.log('🔍 AddExpenseScreen: Saving work expense data:', expenseData);
+          
+          await localStorageService.saveExpense(expenseData);
+        } else {
+          // Regular mode for work management
+          const expenseData = {
+            amount: amountValue,
+            category: 'עבודה',
+            description: `עבודה עבור ${clientName} ב${location}`,
+            paid_by: selectedPaidBy,
+            date: selectedDate.toISOString(),
+            is_recurring: false,
+            frequency: 'monthly',
+            tags: [],
+            image_url: selectedImage,
+            work_data: workExpenseData,
+          };
 
-      if (isGuestMode) {
-        console.log('🔍 AddExpenseScreen: Guest mode - saving to local storage');
-        // Guest mode - save to local storage
-        try {
+          const result = await apiService.createExpense(selectedBoard.id, expenseData);
+          
+          if (result.success) {
+            // Refresh board expenses to get the updated list
+            await refreshBoardExpenses();
+            
+            // הצג הודעת הצלחה ונחזור למסך הקודם
+            Alert.alert('', 'העבודה נוספה בהצלחה! 🎉', [
+              { 
+                text: 'מעולה!', 
+                onPress: () => {
+                  navigation.goBack();
+                }
+              }
+            ]);
+            return;
+          } else {
+            Alert.alert('שגיאה', result.error || 'שגיאה בהוספת העבודה');
+            return;
+          }
+        }
+      } else {
+        // Regular expense mode
+        // Determine the final category to use
+        const finalCategory = selectedCategory === 'אחר' && selectedOtherCategory 
+          ? selectedOtherCategory 
+          : selectedCategory;
+
+        console.log('🔍 AddExpenseScreen: Final category:', finalCategory, 'Amount:', amountValue);
+
+        if (isGuestMode) {
+          console.log('🔍 AddExpenseScreen: Guest mode - saving to local storage');
+          // Guest mode - save to local storage
           const expenseData = {
             board_id: selectedBoard.id,
             amount: amountValue,
             description: description.trim(),
             category: finalCategory,
-            date: new Date().toISOString(),
+            date: selectedDate.toISOString(),
             payer_id: 'guest',
             split_type: 'equal',
             split_data: {},
@@ -311,63 +476,53 @@ const AddExpenseScreen: React.FC = () => {
           
           console.log('🔍 AddExpenseScreen: Board expenses refreshed, showing success alert');
           
-          // הצג הודעת הצלחה ונחזור למסך הקודם
-          Alert.alert('', 'ההוצאה נוספה בהצלחה! 🎉', [
-            { 
-              text: 'מעולה!', 
-              onPress: () => {
-                console.log('🔍 AddExpenseScreen: User pressed OK, navigating back');
-                navigation.goBack();
-              }
+        } else {
+          // Regular mode - use API
+          // Upload image if selected
+          let imageUrl = null;
+          if (selectedImage) {
+            imageUrl = await uploadImage(selectedImage);
+            if (selectedImage && !imageUrl) {
+              // Upload failed, but continue without image
+              Alert.alert('הודעה', 'העלאת התמונה נכשלה, ההוצאה תישמר ללא תמונה');
             }
-          ]);
-        } catch (error) {
-          console.error('🔍 AddExpenseScreen: Error saving guest expense:', error);
-          Alert.alert('שגיאה', 'שגיאה בשמירת ההוצאה במצב אורח');
-        }
-      } else {
-        // Regular mode - use API
-        // Upload image if selected
-        let imageUrl = null;
-        if (selectedImage) {
-          imageUrl = await uploadImage(selectedImage);
-          if (selectedImage && !imageUrl) {
-            // Upload failed, but continue without image
-            Alert.alert('הודעה', 'העלאת התמונה נכשלה, ההוצאה תישמר ללא תמונה');
+          }
+
+          const expenseData = {
+            amount: amountValue,
+            category: finalCategory,
+            description: description.trim(),
+            paid_by: selectedPaidBy,
+            date: selectedDate.toISOString(),
+            is_recurring: isRecurring,
+            frequency: 'monthly',
+            tags: [],
+            image_url: imageUrl,
+          };
+
+          const result = await apiService.createExpense(selectedBoard.id, expenseData);
+          
+          if (result.success) {
+            // Refresh board expenses to get the updated list
+            await refreshBoardExpenses();
+            
+          } else {
+            Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
+            return;
           }
         }
-
-        const expenseData = {
-          amount: amountValue,
-          category: finalCategory,
-          description: description.trim(),
-          paid_by: selectedPaidBy,
-          date: new Date().toISOString(),
-          is_recurring: isRecurring,
-          frequency: 'monthly',
-          tags: [],
-          image_url: imageUrl,
-        };
-
-        const result = await apiService.createExpense(selectedBoard.id, expenseData);
-        
-        if (result.success) {
-          // Refresh board expenses to get the updated list
-          await refreshBoardExpenses();
-          
-          // הצג הודעת הצלחה ונחזור למסך הקודם
-          Alert.alert('', 'ההוצאה נוספה בהצלחה! 🎉', [
-            { 
-              text: 'מעולה!', 
-              onPress: () => {
-                navigation.goBack();
-              }
-            }
-          ]);
-        } else {
-          Alert.alert('שגיאה', result.error || 'שגיאה בהוספת ההוצאה');
-        }
       }
+      
+      // Success message for both guest and regular modes
+      Alert.alert('', isWorkManagement ? 'העבודה נוספה בהצלחה! 🎉' : 'ההוצאה נוספה בהצלחה! 🎉', [
+        { 
+          text: 'מעולה!', 
+          onPress: () => {
+            console.log('🔍 AddExpenseScreen: User pressed OK, navigating back');
+            navigation.goBack();
+          }
+        }
+      ]);
     } catch (error) {
       console.error('🔍 AddExpenseScreen: Error creating expense:', error);
       Alert.alert('שגיאה', 'שגיאה בהוספת ההוצאה');
@@ -591,6 +746,240 @@ const AddExpenseScreen: React.FC = () => {
     );
   };
 
+  const renderWorkManagementForm = () => {
+    return (
+      <>
+        {/* Work Description */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>פרטי עבודה</Text>
+          <TextInput
+            style={styles.descriptionInput}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="תיאור כללי של העבודה..."
+            multiline
+            numberOfLines={2}
+            textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
+          />
+        </View>
+
+        {/* Work Categories */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>סוג עבודה</Text>
+          <View style={styles.quickButtonsContainer}>
+            {categories.map((category, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.quickButton,
+                  { backgroundColor: category.color },
+                ]}
+                onPress={() => handleWorkCategorySelect(category.name)}
+              >
+                <Text style={styles.quickButtonIcon}>{category.icon}</Text>
+                <Text style={styles.quickButtonText}>{category.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Work Items List */}
+        {workItems.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>ביצוע</Text>
+            {workItems.map((item) => (
+              <View key={item.id} style={styles.workItemCard}>
+                <View style={styles.workItemHeader}>
+                  <Text style={styles.workItemCategory}>{item.category}</Text>
+                  <TouchableOpacity onPress={() => handleRemoveWorkItem(item.id)}>
+                    <Text style={styles.removeWorkItemButton}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.workItemPrice}>₪{item.price}</Text>
+                {item.description && (
+                  <Text style={styles.workItemDescription}>{item.description}</Text>
+                )}
+                {item.hours && (
+                  <Text style={styles.workItemHours}>{item.hours} שעות</Text>
+                )}
+              </View>
+            ))}
+            <View style={styles.totalWorkAmount}>
+              <Text style={styles.totalWorkAmountText}>סה"כ: ₪{getTotalWorkAmount()}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Client Name */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>שם לקוח</Text>
+          <TextInput
+            style={styles.textInput}
+            value={clientName}
+            onChangeText={setClientName}
+            placeholder="הזן שם לקוח..."
+            textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
+          />
+        </View>
+
+        {/* Location */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>מיקום</Text>
+          <TextInput
+            style={styles.textInput}
+            value={location}
+            onChangeText={setLocation}
+            placeholder="הזן מיקום..."
+            textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
+          />
+        </View>
+
+        {/* Date */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>תאריך</Text>
+          <TouchableOpacity 
+            style={styles.dateButton}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={20} color="#007AFF" />
+            <Text style={styles.dateButtonText}>{formatDate(selectedDate)}</Text>
+            <Ionicons name="chevron-down" size={16} color="#666" />
+          </TouchableOpacity>
+          
+          {showDatePicker && (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={handleDateChange}
+              maximumDate={new Date()}
+            />
+          )}
+        </View>
+
+        {/* Image */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
+          {selectedImage ? (
+            <View style={styles.imagePreviewContainer}>
+              <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+              <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
+                <Ionicons name="close-circle" size={24} color="#FF3B30" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.imageUploadButton} 
+              onPress={showImageOptions}
+              disabled={isUploading}
+            >
+              <Ionicons name="camera" size={24} color="#007AFF" />
+              <Text style={styles.imageUploadText}>
+                {isUploading ? 'מעלה...' : 'הוסף תמונה'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </>
+    );
+  };
+
+  const renderRegularForm = () => {
+    return (
+      <>
+        {renderCategoryButtons()}
+        {renderOtherCategorySelector()}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>סכום</Text>
+          <TextInput
+            style={styles.amountInput}
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="0.00"
+            keyboardType="numeric"
+            textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
+          />
+        </View>
+
+        {renderPayerSelector()}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>תיאור (אופציונלי)</Text>
+          <TextInput
+            style={styles.descriptionInput}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="תיאור ההוצאה..."
+            multiline
+            numberOfLines={3}
+            textAlign="right"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+            blurOnSubmit={true}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>תאריך ההוצאה</Text>
+          <TouchableOpacity 
+            style={styles.dateButton}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Ionicons name="calendar-outline" size={20} color="#007AFF" />
+            <Text style={styles.dateButtonText}>{formatDate(selectedDate)}</Text>
+            <Ionicons name="chevron-down" size={16} color="#666" />
+          </TouchableOpacity>
+          
+          {showDatePicker && (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={handleDateChange}
+              maximumDate={new Date()}
+            />
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
+          {selectedImage ? (
+            <View style={styles.imagePreviewContainer}>
+              <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+              <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
+                <Ionicons name="close-circle" size={24} color="#FF3B30" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.imageUploadButton} 
+              onPress={showImageOptions}
+              disabled={isUploading}
+            >
+              <Ionicons name="camera" size={24} color="#007AFF" />
+              <Text style={styles.imageUploadText}>
+                {isUploading ? 'מעלה...' : 'הוסף תמונה'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </>
+    );
+  };
+
   const renderCategoryButtons = () => {
     // Only use categories from server (selected in settings)
     let displayCategories: Array<{ name: string; icon: string; color: string }> = [];
@@ -656,78 +1045,7 @@ const AddExpenseScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.form}>
-            {renderCategoryButtons()}
-            {renderOtherCategorySelector()}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>סכום</Text>
-              <TextInput
-                style={styles.amountInput}
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="0.00"
-                keyboardType="numeric"
-                textAlign="right"
-                returnKeyType="done"
-                onSubmitEditing={() => Keyboard.dismiss()}
-                blurOnSubmit={true}
-              />
-            </View>
-
-            {renderPayerSelector()}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>תיאור (אופציונלי)</Text>
-              <TextInput
-                style={styles.descriptionInput}
-                value={description}
-                onChangeText={setDescription}
-                placeholder="תיאור ההוצאה..."
-                multiline
-                numberOfLines={3}
-                textAlign="right"
-                returnKeyType="done"
-                onSubmitEditing={() => Keyboard.dismiss()}
-                blurOnSubmit={true}
-              />
-            </View>
-
-
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>תמונה (אופציונלי)</Text>
-              {selectedImage ? (
-                <View style={styles.imagePreviewContainer}>
-                  <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
-                  <TouchableOpacity onPress={removeImage} style={styles.removeImageButton}>
-                    <Ionicons name="close-circle" size={24} color="#FF3B30" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.imageUploadButton} 
-                  onPress={showImageOptions}
-                  disabled={isUploading}
-                >
-                  <Ionicons name="camera" size={24} color="#007AFF" />
-                  <Text style={styles.imageUploadText}>
-                    {isUploading ? 'מעלה...' : 'הוסף תמונה'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* <View style={styles.section}>
-              <TouchableOpacity
-                style={styles.recurringContainer}
-                onPress={() => setIsRecurring(!isRecurring)}
-              >
-                <View style={[styles.checkbox, isRecurring && styles.checkedCheckbox]}>
-                  {isRecurring && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.recurringText}>הוצאה חוזרת</Text>
-              </TouchableOpacity>
-            </View> */}
+            {isWorkManagement ? renderWorkManagementForm() : renderRegularForm()}
           </View>
         </ScrollView>
 
@@ -746,11 +1064,97 @@ const AddExpenseScreen: React.FC = () => {
             disabled={isLoading}
           >
             <Text style={styles.submitButtonText}>
-              {isLoading ? 'מוסיף...' : 'הוסף הוצאה'}
+              {isLoading ? (isWorkManagement ? 'מוסיף עבודה...' : 'מוסיף...') : (isWorkManagement ? 'הוסף עבודה' : 'הוסף הוצאה')}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Work Item Modal */}
+      <Modal
+        visible={showWorkItemModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowWorkItemModal(false)}
+      >
+        <View style={styles.workItemModalOverlay}>
+          <View style={styles.workItemModalContent}>
+            <Text style={styles.workItemModalTitle}>הוסף עבודה - {selectedWorkCategory}</Text>
+            
+            <View style={styles.workItemModalSection}>
+              <Text style={styles.workItemModalLabel}>מחיר (אופציונלי)</Text>
+              <TextInput
+                style={styles.workItemModalInput}
+                value={workItemPrice}
+                onChangeText={setWorkItemPrice}
+                placeholder="0.00"
+                keyboardType="numeric"
+                textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+            </View>
+
+            <View style={styles.workItemModalSection}>
+              <Text style={styles.workItemModalLabel}>תיאור (אופציונלי)</Text>
+              <TextInput
+                style={styles.workItemModalInput}
+                value={workItemDescription}
+                onChangeText={setWorkItemDescription}
+                placeholder="פרטים נוספים..."
+                textAlign="right"
+                multiline
+                numberOfLines={2}
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+            </View>
+
+            <View style={styles.workItemModalSection}>
+              <Text style={styles.workItemModalLabel}>שעות עבודה (אופציונלי)</Text>
+              <TextInput
+                style={styles.workItemModalInput}
+                value={workItemHours}
+                onChangeText={setWorkItemHours}
+                placeholder="מספר שעות..."
+                keyboardType="numeric"
+                textAlign="right"
+                returnKeyType="done"
+                onSubmitEditing={() => Keyboard.dismiss()}
+                blurOnSubmit={true}
+              />
+            </View>
+
+            <View style={styles.workItemModalButtons}>
+              <TouchableOpacity
+                style={styles.workItemModalCancelButton}
+                onPress={() => {
+                  setShowWorkItemModal(false);
+                  setSelectedWorkCategory('');
+                  setWorkItemPrice('');
+                  setWorkItemDescription('');
+                  setWorkItemHours('');
+                }}
+              >
+                <Text style={styles.workItemModalCancelText}>ביטול</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.workItemModalAddButton,
+                  !selectedWorkCategory && styles.workItemModalDisabledButton
+                ]}
+                onPress={handleAddWorkItem}
+                disabled={!selectedWorkCategory}
+              >
+                <Text style={styles.workItemModalAddText}>הוסף</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -1091,6 +1495,165 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#2c3e50',
     lineHeight: 13,
+  },
+  
+  // Date picker styles
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    backgroundColor: '#f9f9f9',
+  },
+  dateButtonText: {
+    fontSize: 16,
+    color: '#2c3e50',
+    flex: 1,
+    textAlign: 'right',
+    marginHorizontal: 12,
+  },
+
+  // Work management styles
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    textAlign: 'right',
+  },
+  workItemCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  workItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  workItemCategory: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    flex: 1,
+  },
+  removeWorkItemButton: {
+    fontSize: 18,
+    color: '#e74c3c',
+    fontWeight: 'bold',
+    padding: 4,
+  },
+  workItemPrice: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#27ae60',
+    marginBottom: 4,
+  },
+  workItemDescription: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    marginBottom: 4,
+  },
+  workItemHours: {
+    fontSize: 14,
+    color: '#3498db',
+    fontWeight: '500',
+  },
+  totalWorkAmount: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  totalWorkAmountText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#27ae60',
+  },
+
+  // Work item modal styles
+  workItemModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  workItemModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+  },
+  workItemModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  workItemModalSection: {
+    marginBottom: 16,
+  },
+  workItemModalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 8,
+    textAlign: 'right',
+  },
+  workItemModalInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    textAlign: 'right',
+    backgroundColor: '#fafafa',
+  },
+  workItemModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  workItemModalCancelButton: {
+    flex: 1,
+    backgroundColor: '#ecf0f1',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  workItemModalCancelText: {
+    color: '#7f8c8d',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  workItemModalAddButton: {
+    flex: 1,
+    backgroundColor: '#27ae60',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  workItemModalAddText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  workItemModalDisabledButton: {
+    backgroundColor: '#bdc3c7',
+    opacity: 0.6,
   },
 });
 
