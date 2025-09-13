@@ -2,15 +2,16 @@
   "expo": {
     "name": "Homeis - מנהל ההוצאות שלך",
     "slug": "home-expense-manager",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
-    "icon": "./assets/images/main_logo_icon.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "home-expense-manager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "description": "אפליקציה חכמה לניהול הוצאות משותפות בין חברים או שותפים. מאפשרת מעקב אחר הוצאות, ניהול תקציב משותף, חלוקת הוצאות בין דיירים, וניתוח מגמות צריכה. כוללת תמיכה בקטגוריות מותאמות אישית, העלאת קבלות, והתראות חכמות.",
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "2",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "אפליקציה זו זקוקה לגישה לגלריה כדי להוסיף תמונות להוצאות",
         "NSCameraUsageDescription": "אפליקציה זו זקוקה לגישה למצלמה כדי לצלם תמונות להוצאות",
@@ -19,10 +20,11 @@
       "bundleIdentifier": "com.sarusiziv96.homeexpensemanager"
     },
     "android": {
-
+      "versionCode": 2,
+      "icon": "./assets/android/playstore-icon.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/main_logo_icon.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/android/mipmap-xxxhdpi/ic_launcher_foreground.png",
+        "backgroundColor": "#3DDC84"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -38,14 +40,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/main_logo_icon.png"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/main_logo_icon.png",
+          "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"

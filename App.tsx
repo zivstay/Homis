@@ -2,7 +2,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Modal, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppTutorial from './components/AppTutorial';
 import CreateBoardWizard from './components/CreateBoardWizard';
 import GuestDisclaimer from './components/GuestDisclaimer';
@@ -34,6 +35,7 @@ function BoardSwitcherHeader() {
   const [showBoardModal, setShowBoardModal] = useState(false);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const insets = useSafeAreaInsets();
   const handleBoardSelect = async (board: Board) => {
     // בדיקה אם מחליפים לוח אחר (לא אותו לוח)
     const shouldShowAd = selectedBoard && selectedBoard.id !== board.id;
@@ -104,30 +106,33 @@ function BoardSwitcherHeader() {
     setShowCreateWizard(false);
     setShowBoardModal(false);
     
-    // Wait 300ms and then refresh board data to ensure categories are updated
-    setTimeout(async () => {
-      try {
-        console.log('🔄 App: Refreshing board data after board creation...');
-        if (refreshBoardData) {
-          await refreshBoardData();
-          console.log('✅ App: Board data refreshed successfully');
-        }
-        
-        // Also refresh the expense context categories (for quick categories)
-        if (refreshBoardCategories) {
-          await refreshBoardCategories();
-          console.log('✅ App: Expense categories refreshed successfully');
-        }
-        
-        // Auto-select the newly created board
-        if (newBoard && selectBoard) {
-          console.log('🎯 App: Auto-selecting newly created board:', newBoard.name);
-          selectBoard(newBoard);
-        }
-      } catch (error) {
-        console.error('❌ App: Error refreshing board data:', error);
+    try {
+      console.log('🔄 App: Refreshing board data after board creation...');
+      if (refreshBoardData) {
+        await refreshBoardData();
+        console.log('✅ App: Board data refreshed successfully');
       }
-    }, 300);
+      
+      // Also refresh the expense context categories (for quick categories)
+      if (refreshBoardCategories) {
+        await refreshBoardCategories();
+        console.log('✅ App: Expense categories refreshed successfully');
+      }
+      
+      // Auto-select the newly created board after data is refreshed
+      if (newBoard && selectBoard) {
+        console.log('🎯 App: Auto-selecting newly created board:', newBoard.name);
+        selectBoard(newBoard);
+      }
+    } catch (error) {
+      console.error('❌ App: Error refreshing board data:', error);
+      
+      // Even if refresh fails, still select the board
+      if (newBoard && selectBoard) {
+        console.log('🎯 App: Auto-selecting newly created board (after error):', newBoard.name);
+        selectBoard(newBoard);
+      }
+    }
   };
 
   const handleDeleteBoard = (board: Board) => {
@@ -217,8 +222,19 @@ function BoardSwitcherHeader() {
 
 
 
+  // Calculate padding based on platform
+  const getTopPadding = () => {
+    if (Platform.OS === 'ios') {
+      // On iOS, SafeAreaView already handles safe area, just use minimal padding
+      return 12;
+    } else {
+      // On Android, add safe area padding for status bar
+      return insets.top + 12;
+    }
+  };
+
   return (
-    <View style={styles.boardSwitcherContainer}>
+    <View style={[styles.boardSwitcherContainer, { paddingTop: getTopPadding() }]}>
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.boardSwitcherIconButton}
@@ -680,7 +696,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
   },
   headerRow: {
     flexDirection: 'row',
@@ -1194,18 +1210,20 @@ const styles = StyleSheet.create({
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BoardProvider>
-        <ExpenseProvider>
-          <NotificationProvider>
-            <TutorialProvider>
-              <NavigationContainer>
-                <AppContent />
-              </NavigationContainer>
-            </TutorialProvider>
-          </NotificationProvider>
-        </ExpenseProvider>
-      </BoardProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <BoardProvider>
+          <ExpenseProvider>
+            <NotificationProvider>
+              <TutorialProvider>
+                <NavigationContainer>
+                  <AppContent />
+                </NavigationContainer>
+              </TutorialProvider>
+            </NotificationProvider>
+          </ExpenseProvider>
+        </BoardProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 } 
