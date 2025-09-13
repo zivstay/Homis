@@ -2,7 +2,7 @@
   "expo": {
     "name": "Homeis - מנהל ההוצאות שלך",
     "slug": "home-expense-manager",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "home-expense-manager",
@@ -11,7 +11,7 @@
     "description": "אפליקציה חכמה לניהול הוצאות משותפות בין חברים או שותפים. מאפשרת מעקב אחר הוצאות, ניהול תקציב משותף, חלוקת הוצאות בין דיירים, וניתוח מגמות צריכה. כוללת תמיכה בקטגוריות מותאמות אישית, העלאת קבלות, והתראות חכמות.",
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "2",
+      "buildNumber": "35",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "אפליקציה זו זקוקה לגישה לגלריה כדי להוסיף תמונות להוצאות",
         "NSCameraUsageDescription": "אפליקציה זו זקוקה לגישה למצלמה כדי לצלם תמונות להוצאות",
