@@ -3,22 +3,22 @@ import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Image,
-    InteractionManager,
-    Modal,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  InteractionManager,
+  Modal,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { showAdConsentModal } from '../components/AdConsentModal';
 // DISABLED: BudgetEditModal temporarily removed
 // import { BudgetEditModal } from '../components/BudgetEditModal';
-import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { CategoryImage } from '../components/CategoryImage';
+import CategoryManagerModal from '../components/CategoryManagerModal';
+import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
 import { getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,7 +50,7 @@ import { formatCurrency } from '../utils/currencyUtils';
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses, updateSelectedBoard, boards } = useBoard();
+  const { selectedBoard, boardMembers, boardExpenses, refreshBoardExpenses, updateSelectedBoard, boards, shouldOpenCategoryModal, setShouldOpenCategoryModal } = useBoard();
   const { user, logout } = useAuth();
   const { refreshBoardCategories, quickCategories } = useExpenses();
   const { isGuestMode } = useAuth();
@@ -65,6 +65,7 @@ const HomeScreen: React.FC = () => {
   const [exportData, setExportData] = useState<{blob: Blob, filename: string} | null>(null);
   const [forceUpdate, setForceUpdate] = useState(0);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
   // DISABLED: Budget-related states temporarily removed
   // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
   
@@ -79,6 +80,9 @@ const HomeScreen: React.FC = () => {
   
   // Check if current user is the board owner
   const isBoardOwner = selectedBoard?.user_role === 'owner';
+  
+  // Track if this is a newly created board to auto-open category manager
+  const [lastBoardId, setLastBoardId] = useState<string | null>(null);
 
   // פונקציה לניקוי מלא של כל ה-states
   const resetAllExportStates = () => {
@@ -141,8 +145,47 @@ const HomeScreen: React.FC = () => {
       // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
       // Also refresh ExpenseContext categories when board changes
       refreshBoardCategories();
+
+      // Check if this is a newly created board (different from last one)
+      if (lastBoardId !== selectedBoard.id && isBoardOwner) {
+        console.log('📋 HomeScreen: New board detected, checking if should open category manager...');
+        setLastBoardId(selectedBoard.id);
+      }
     }
-  }, [selectedBoard, refreshBoardCategories]);
+  }, [selectedBoard, refreshBoardCategories, lastBoardId, isBoardOwner]);
+
+  // Effect to handle opening category modal when flag is set
+  useEffect(() => {
+    if (shouldOpenCategoryModal && selectedBoard && isBoardOwner) {
+      console.log('📋 HomeScreen: Flag set to open category manager for board:', selectedBoard.id);
+      console.log('📋 HomeScreen: Current states - isLoading:', isLoading, 'refreshing:', refreshing);
+      console.log('📋 HomeScreen: Modal states - showDateModal:', showDateModal, 'showDownloadModal:', showDownloadModal);
+      
+      // Check if any other modals are open or if we're in a loading state
+      const hasOtherModalsOpen = showDateModal || showDownloadModal || selectedExpense !== null;
+      const isCurrentlyLoading = isLoading || refreshing;
+      
+      if (!hasOtherModalsOpen && !isCurrentlyLoading) {
+        // Wait for the screen to settle
+        const timer = setTimeout(() => {
+          console.log('📋 HomeScreen: Opening category manager modal now');
+          setShowCategoryManagerModal(true);
+          setShouldOpenCategoryModal(false); // Reset the flag after opening
+        }, 2000); // Increased delay to let everything settle
+        
+        return () => clearTimeout(timer);
+      } else {
+        console.log('📋 HomeScreen: Delaying category modal - other modals open or loading');
+        // Try again after a short delay
+        const retryTimer = setTimeout(() => {
+          // Don't reset the flag, let it try again
+          console.log('📋 HomeScreen: Retrying category modal check...');
+        }, 1000);
+        
+        return () => clearTimeout(retryTimer);
+      }
+    }
+  }, [shouldOpenCategoryModal, selectedBoard, isBoardOwner, setShouldOpenCategoryModal, isLoading, refreshing, showDateModal, showDownloadModal, selectedExpense]);
 
   // Additional effect to listen for board data changes (e.g., after category updates)
   useEffect(() => {
@@ -257,6 +300,7 @@ const HomeScreen: React.FC = () => {
         .filter(cat => cat.name !== 'אחר') // Exclude "אחר" as it's added separately
         .slice(0, maxCategories)
         .map(cat => ({
+          id: cat.id, // Include category ID (for guest mode, this will be like 'guest_0')
           name: cat.name,
           icon: cat.icon,
           color: cat.color,
@@ -274,6 +318,7 @@ const HomeScreen: React.FC = () => {
     // Limit to max 7 categories (keeping space for "אחר" button)
     const maxCategories = 7;
     const selectedCategories = categories.slice(0, maxCategories).map(cat => ({
+      id: cat.id, // Include category ID for API calls
       name: cat.name,
       icon: cat.icon,
       color: cat.color,
@@ -519,6 +564,16 @@ const HomeScreen: React.FC = () => {
   const renderQuickCategories = () => {
     const selectedCategories = getSelectedCategories();
     
+    console.log('🏠 HomeScreen: Rendering quick categories:', selectedCategories.length);
+    selectedCategories.forEach((cat, index) => {
+      console.log(`🏠 HomeScreen: Category ${index}:`, {
+        name: cat.name,
+        id: cat.id,
+        imageUrl: cat.imageUrl,
+        hasImage: !!cat.imageUrl
+      });
+    });
+    
     return (
       <View style={styles.quickCategoriesContainer}>
         {selectedCategories.map((category, index) => (
@@ -528,7 +583,11 @@ const HomeScreen: React.FC = () => {
             onPress={() => handleQuickAddExpense(category.name)}
           >
         {category.imageUrl ? (
-          <CategoryImage imageUrl={category.imageUrl} style={styles.quickCategoryImage} />
+          <CategoryImage 
+            categoryId={category.id && !category.id.startsWith('guest_') ? category.id : undefined}
+            imageUrl={category.imageUrl}
+            style={styles.quickCategoryImage} 
+          />
         ) : (
           <Text style={styles.quickCategoryIcon}>{category.icon}</Text>
         )}
@@ -976,6 +1035,20 @@ const HomeScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Category Manager Modal */}
+      {selectedBoard && (
+        <CategoryManagerModal
+          isVisible={showCategoryManagerModal}
+          onClose={() => setShowCategoryManagerModal(false)}
+          boardId={selectedBoard.id}
+          boardType={selectedBoard.board_type}
+          onCategoriesUpdated={() => {
+            loadCategories();
+            refreshBoardCategories();
+          }}
+        />
+      )}
 
       {/* DISABLED: Budget Edit Modal temporarily removed */}
       {/* TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת */}

@@ -10,6 +10,7 @@ interface BoardContextType {
   boardMembers: BoardMember[];
   boardExpenses: Expense[];
   isLoading: boolean;
+  shouldOpenCategoryModal: boolean;
   selectBoard: (board: Board) => void;
   updateSelectedBoard: (boardId: string) => Promise<void>;
   createBoard: (boardData: {
@@ -30,6 +31,7 @@ interface BoardContextType {
   setDefaultBoard: (boardId: string) => Promise<{ success: boolean; error?: string }>;
   clearDefaultBoard: () => Promise<{ success: boolean; error?: string }>;
   deleteBoard: (boardId: string) => Promise<{ success: boolean; error?: string }>;
+  setShouldOpenCategoryModal: (shouldOpen: boolean) => void;
 }
 
 const BoardContext = createContext<BoardContextType | undefined>(undefined);
@@ -53,6 +55,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
   const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
   const [boardExpenses, setBoardExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [shouldOpenCategoryModal, setShouldOpenCategoryModal] = useState(false);
   const isRefreshingBoards = useRef(false);
   const isRefreshingMembers = useRef(false);
   const isRefreshingExpenses = useRef(false);
@@ -123,14 +126,20 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
         // For guest mode, create a fake member representing the guest user
         const guestMember: BoardMember = {
           id: 'guest',
-          board_id: selectedBoard.id,
           user_id: 'guest',
-          email: 'guest@local',
-          first_name: 'אורח',
-          last_name: '',
           role: 'owner',
-          status: 'active',
           joined_at: new Date().toISOString(),
+          permissions: ['read', 'write', 'admin'],
+          user: {
+            id: 'guest',
+            email: 'guest@local',
+            username: 'guest',
+            first_name: 'אורח',
+            last_name: '',
+            is_active: true,
+            created_at: new Date().toISOString(),
+            email_verified: false,
+          },
         };
         setBoardMembers([guestMember]);
       } else {
@@ -546,6 +555,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     boardMembers,
     boardExpenses,
     isLoading,
+    shouldOpenCategoryModal,
     selectBoard,
     updateSelectedBoard,
     createBoard,
@@ -559,6 +569,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     setDefaultBoard,
     clearDefaultBoard,
     deleteBoard,
+    setShouldOpenCategoryModal,
   };
 
   return (

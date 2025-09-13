@@ -12,6 +12,7 @@ export interface QuickCategory {
   color: string;
   id?: string;
   imageUrl?: string; // Optional image URL for custom categories
+  filename?: string; // Optional filename for backend reference
 }
 
 export interface WorkItem {

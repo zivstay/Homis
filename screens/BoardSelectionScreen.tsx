@@ -1,13 +1,13 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    FlatList,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import CreateBoardWizard from '../components/CreateBoardWizard';
+import CreateBoardButton from '../components/CreateBoardButton';
 import GuestDisclaimer from '../components/GuestDisclaimer';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
@@ -20,18 +20,11 @@ const BoardSelectionScreen: React.FC = () => {
   const { boards, selectedBoard, selectBoard, createBoard, refreshBoards, isLoading } = useBoard();
   const { setCurrentScreen, checkScreenTutorial, startTutorial } = useTutorial();
   
-  const [showCreateWizard, setShowCreateWizard] = useState(false);
 
   // Update tutorial context when this screen is focused
   useEffect(() => {
     console.log('🎓 BoardSelectionScreen: Setting tutorial screen to BoardSelection');
     setCurrentScreen('BoardSelection');
-    
-    // If no boards exist, automatically show create wizard
-    if (boards.length === 0) {
-      console.log('🎯 BoardSelectionScreen: No boards exist, auto-showing create wizard');
-      setShowCreateWizard(true);
-    }
     
     // Check if we should show tutorial for this screen
     const checkAndStartTutorial = async () => {
@@ -55,7 +48,7 @@ const BoardSelectionScreen: React.FC = () => {
     setTimeout(() => {
       checkAndStartTutorial();
     }, 500);
-  }, [setCurrentScreen, checkScreenTutorial, startTutorial, boards.length]);
+  }, [setCurrentScreen, checkScreenTutorial, startTutorial]);
 
   const [pendingBoardSelection, setPendingBoardSelection] = useState<string | null>(null);
 
@@ -71,10 +64,7 @@ const BoardSelectionScreen: React.FC = () => {
     }
   }, [boards, pendingBoardSelection, selectBoard]);
 
-  const handleBoardCreated = async (newBoard?: any) => {
-    // Close the create wizard
-    setShowCreateWizard(false);
-    
+  const handleBoardCreated = async (newBoard?: any, shouldOpenCategories?: boolean) => {
     // Refresh boards after creation
     if (refreshBoards) {
       await refreshBoards();
@@ -84,6 +74,8 @@ const BoardSelectionScreen: React.FC = () => {
         setPendingBoardSelection(newBoard.name);
       }
     }
+    
+    // Note: shouldOpenCategories will be handled by HomeScreen when the board is selected
   };
 
   const handleLogout = () => {
@@ -131,20 +123,20 @@ const BoardSelectionScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {boards.length === 0 && !showCreateWizard ? (
+      {boards.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateTitle}>אין לך לוחות עדיין</Text>
           <Text style={styles.emptyStateSubtitle}>
             צור לוח ראשון כדי להתחיל לנהל הוצאות משותפות
           </Text>
-          <TouchableOpacity
+          <CreateBoardButton
+            variant="primary"
+            size="large"
             style={styles.createFirstButton}
-            onPress={() => setShowCreateWizard(true)}
-          >
-            <Text style={styles.createFirstButtonText}>צור לוח ראשון</Text>
-          </TouchableOpacity>
+            onBoardCreated={handleBoardCreated}
+          />
         </View>
-      ) : boards.length > 0 && (
+      ) : (
         <>
           <FlatList
             data={boards}
@@ -154,28 +146,15 @@ const BoardSelectionScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
           />
           
-          <TouchableOpacity
+          <CreateBoardButton
+            variant="primary"
+            size="medium"
             style={styles.createButton}
-            onPress={() => setShowCreateWizard(true)}
-          >
-            <Text style={styles.createButtonText}>+ צור לוח חדש</Text>
-          </TouchableOpacity>
+            onBoardCreated={handleBoardCreated}
+          />
         </>
       )}
 
-      <CreateBoardWizard
-        isVisible={showCreateWizard}
-        onClose={() => {
-          setShowCreateWizard(false);
-          // If no boards exist and user cancels, go back to HomeScreen
-          if (boards.length === 0) {
-            // Navigate back to HomeScreen
-            navigation.goBack();
-          }
-        }}
-        onBoardCreated={handleBoardCreated}
-        createBoard={createBoard}
-      />
     </View>
   );
 };
@@ -236,15 +215,8 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   createFirstButton: {
-    backgroundColor: '#3498db',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 8,
-  },
-  createFirstButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+    maxWidth: 300,
+    alignSelf: 'center',
   },
   boardList: {
     padding: 20,
@@ -319,18 +291,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   createButton: {
-    backgroundColor: '#3498db',
     margin: 20,
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
     maxWidth: 300,
     alignSelf: 'center',
-  },
-  createButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   modalOverlay: {
     flex: 1,

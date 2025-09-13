@@ -981,6 +981,44 @@ class ApiService {
     }
   }
 
+  async getCategoryImage(categoryId: string): Promise<ApiResponse<{ image: string }>> {
+    console.log('🖼️ API: Getting category image for:', categoryId);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/categories/${categoryId}/image`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+      });
+
+      // Handle 404 errors silently for images (they're not real errors)
+      if (response.status === 404) {
+        console.log('🟡 API: Image not found for category:', categoryId, '(this is normal)');
+        return { success: false, error: 'Image not found' };
+      }
+
+      // For other errors, use the normal error handling
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || errorData.message || 'Failed to fetch image';
+        console.log('🔴 API: Category image fetch failed:', errorMessage);
+        return { success: false, error: errorMessage };
+      }
+
+      // Success case
+      const data = await response.json();
+      if (data && data.image) {
+        console.log('✅ API: Category image fetched successfully for category:', categoryId);
+        return { success: true, data: { image: data.image } };
+      } else {
+        console.log('🟡 API: Category image data missing for category:', categoryId);
+        return { success: false, error: 'Image data missing' };
+      }
+    } catch (error) {
+      console.log('🟡 API: Network error fetching category image for category:', categoryId, '(this is normal)');
+      return { success: false, error: 'Network error' };
+    }
+  }
+
   // Categories
   async getBoardCategories(boardId: string): Promise<ApiResponse<{ categories: Category[] }>> {
     return this.makeAuthenticatedRequest<{ categories: Category[] }>(

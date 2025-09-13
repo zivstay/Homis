@@ -1520,6 +1520,7 @@ def create_app(config_name='default'):
                     'name': category_data.get('name'),
                     'icon': category_data.get('icon', 'ellipsis-horizontal'),
                     'color': category_data.get('color', '#9370DB'),
+                    'image_url': category_data.get('imageUrl'),  # Add image URL support
                     'created_by': current_user_id,
                     'is_default': False
                 }
@@ -2421,6 +2422,60 @@ def create_app(config_name='default'):
         return jsonify({'error': 'Failed to delete expense'}), 500
 
     # File upload endpoints
+    @app.route('/api/uploads/expense_images/<filename>', methods=['GET'])
+    def serve_expense_image(filename):
+        """Serve uploaded expense images"""
+        try:
+            print(f"📁 Serving image: {filename}")
+            
+            # Security check - ensure filename is safe
+            if '..' in filename or '/' in filename or '\\' in filename:
+                return jsonify({'error': 'Invalid filename'}), 400
+            
+            # Serve the image based on storage method
+            if app.config.get('UPLOAD_METHOD') == 'b2' and app.b2_service:
+                # Get from B2
+                file_path = f'expense_images/{filename}'
+                try:
+                    success, file_content, error = app.b2_service.download_file(file_path)
+                    
+                    if not success:
+                        print(f"❌ B2 file not found: {file_path}")
+                        return jsonify({'error': 'Image not found'}), 404
+                    
+                    # Return the image with proper headers
+                    return Response(
+                        file_content,
+                        mimetype='image/jpeg',
+                        headers={'Content-Disposition': f'inline; filename="{filename}"'}
+                    )
+                        
+                except Exception as e:
+                    print(f"❌ Error getting B2 image {filename}: {str(e)}")
+                    return jsonify({'error': 'Error loading image'}), 500
+            else:
+                # Get from local storage
+                try:
+                    file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], filename)
+                    
+                    if not os.path.exists(file_path):
+                        print(f"❌ Local file not found: {file_path}")
+                        return jsonify({'error': 'Image not found'}), 404
+                    
+                    return send_from_directory(
+                        app.config['EXPENSE_IMAGES_FOLDER'], 
+                        filename,
+                        mimetype='image/jpeg'
+                    )
+                        
+                except Exception as e:
+                    print(f"❌ Error reading local image {filename}: {str(e)}")
+                    return jsonify({'error': 'Image not found'}), 404
+                    
+        except Exception as e:
+            print(f"❌ Error serving image {filename}: {str(e)}")
+            return jsonify({'error': 'Internal server error'}), 500
+
     @app.route('/api/upload/expense-image', methods=['POST'])
     @require_auth
     def upload_expense_image_endpoint():
@@ -2465,6 +2520,33 @@ def create_app(config_name='default'):
         except Exception as e:
             traceback.print_exc()
             print(f"🔍 Auth error: {e}")
+            return jsonify({'error': 'Authentication failed'}), 401
+
+    @app.route('/api/categories/<category_id>/image', methods=['POST'])
+    @require_auth
+    def get_category_image(category_id):
+        """Get image for a specific category with proper authorization checks"""
+        print(f"🖼️ === CATEGORY IMAGE ENDPOINT CALLED ===")
+        print(f"🖼️ Request URL: {request.url}")
+        print(f"🖼️ Request method: {request.method}")
+        print(f"🖼️ Category ID: {category_id}")
+        print(f"🖼️ Request headers: {dict(request.headers)}")
+        
+        # Get current user ID here where auth context is available
+        try:
+            current_user_result = auth_manager.get_current_user()
+            print(f"🖼️ Auth result: {current_user_result}")
+            
+            if not current_user_result.get('valid'):
+                return jsonify({'error': 'Authentication failed'}), 401
+            
+            current_user_id = current_user_result['user']['id']
+            print(f"🖼️ Current user ID: {current_user_id}")
+            
+            return get_category_image_actual(category_id, current_user_id)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"🖼️ Auth error: {e}")
             return jsonify({'error': 'Authentication failed'}), 401
     
     def get_expense_image_actual(expense_id, current_user_id):
@@ -2556,6 +2638,101 @@ def create_app(config_name='default'):
         except Exception as e:
             traceback.print_exc()
             current_app.logger.error(f"Error in get_expense_image: {str(e)}")
+            return jsonify({'error': 'Internal server error'}), 500
+
+    def get_category_image_actual(category_id, current_user_id):
+        """Get image for a specific category with proper authorization checks"""
+        print(f"🖼️ === CATEGORY IMAGE ENDPOINT ACTUAL CALLED ===")
+        
+        try:
+            print(f"🖼️ Category image endpoint called for category_id: {category_id}")
+            print(f"🖼️ Current user ID: {current_user_id}")
+            
+            # Always return base64 data for React Native (since we're using POST)
+            return_base64 = True
+            print(f"🖼️ Return base64: {return_base64}")
+            
+            # Find the category and check if user has access
+            category = None
+            user_boards = db_manager.get_user_boards(current_user_id)
+            print(f"🖼️ User has access to {len(user_boards)} boards")
+            
+            for board in user_boards:
+                board_categories = db_manager.get_board_categories(board.id)
+                print(f"🖼️ Board {board.name} has {len(board_categories)} categories")
+                category = next((c for c in board_categories if c.id == category_id), None)
+                if category:
+                    print(f"🖼️ Found category in board {board.name}")
+                    break
+            
+            if not category:
+                print(f"🖼️ Category {category_id} not found or access denied")
+                return jsonify({'error': 'Category not found or access denied'}), 404
+            
+            print(f"🖼️ Category image_url: {category.image_url}")
+            if not category.image_url:
+                print(f"🖼️ No image found for category {category_id}")
+                return jsonify({'error': 'No image found for this category'}), 404
+            
+            # Extract filename from the image_url
+            # Format: /api/uploads/expense_images/filename.jpg
+            if category.image_url.startswith('/api/uploads/expense_images/'):
+                filename = category.image_url.split('/')[-1]
+            else:
+                print(f"🖼️ Invalid image URL format: {category.image_url}")
+                return jsonify({'error': 'Invalid image URL format'}), 400
+            
+            # Get file content from storage
+            file_content = None
+            
+            # Serve the image based on storage method
+            if app.config.get('UPLOAD_METHOD') == 'b2' and app.b2_service:
+                # Get from B2
+                file_path = f'expense_images/{filename}'
+                try:
+                    logger.info(f'🖼️ Getting category image from B2: {file_path}')
+                    success, file_content, error = app.b2_service.download_file(file_path)
+                    
+                    if not success:
+                        current_app.logger.error(f"🖼️ Failed to download B2 file {file_path}: {error}")
+                        return jsonify({'error': 'Image not found'}), 404
+                        
+                except Exception as e:
+                    current_app.logger.error(f"🖼️ Error getting B2 category image {filename}: {str(e)}")
+                    return jsonify({'error': 'Error loading image'}), 500
+            else:
+                # Get from local storage
+                try:
+                    file_path = os.path.join(app.config['EXPENSE_IMAGES_FOLDER'], filename)
+                    
+                    if not os.path.exists(file_path):
+                        print(f"🖼️ Local file not found: {file_path}")
+                        return jsonify({'error': 'Image not found'}), 404
+                    
+                    with open(file_path, 'rb') as f:
+                        file_content = f.read()
+                        
+                except Exception as e:
+                    current_app.logger.error(f"🖼️ Error reading local category image {filename}: {str(e)}")
+                    return jsonify({'error': 'Image not found'}), 404
+            
+            # Check if we got file content
+            if not file_content:
+                print(f"🖼️ No file content for category image: {filename}")
+                return jsonify({'error': 'Image not found'}), 404
+            
+            # Always return as base64 JSON for React Native
+            import base64
+            base64_data = base64.b64encode(file_content).decode('utf-8')
+            
+            print(f"🖼️ Successfully returning base64 image data for category {category_id}")
+            return jsonify({
+                'image': base64_data
+            }), 200
+                    
+        except Exception as e:
+            traceback.print_exc()
+            current_app.logger.error(f"🖼️ Error in get_category_image: {str(e)}")
             return jsonify({'error': 'Internal server error'}), 500
 
     # Debt routes
@@ -2982,6 +3159,7 @@ def create_app(config_name='default'):
                 'name': category.name,
                 'icon': category.icon,
                 'color': category.color,
+                'image_url': category.image_url,
                 'created_by': category.created_by,
                 'created_at': category.created_at,
                 'is_default': category.is_default,

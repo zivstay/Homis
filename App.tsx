@@ -4,7 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AppTutorial from './components/AppTutorial';
-import CreateBoardWizard from './components/CreateBoardWizard';
+import CreateBoardButton from './components/CreateBoardButton';
 import GuestDisclaimer from './components/GuestDisclaimer';
 import NotificationModal from './components/NotificationModal';
 import TermsAndConditionsModal from './components/TermsAndConditionsModal';
@@ -27,12 +27,11 @@ const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function BoardSwitcherHeader() {
-  const { boards, selectedBoard, selectBoard, createBoard, setDefaultBoard, clearDefaultBoard, deleteBoard, refreshBoardData } = useBoard();
+  const { boards, selectedBoard, selectBoard, createBoard, setDefaultBoard, clearDefaultBoard, deleteBoard, refreshBoardData, setShouldOpenCategoryModal } = useBoard();
   const { unreadCount } = useNotifications();
   const { refreshBoardCategories } = useExpenses();
   const { isGuestMode, logout } = useAuth();
   const [showBoardModal, setShowBoardModal] = useState(false);
-  const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const handleBoardSelect = async (board: Board) => {
     // בדיקה אם מחליפים לוח אחר (לא אותו לוח)
@@ -99,9 +98,8 @@ function BoardSwitcherHeader() {
     );
   };
 
-  const handleBoardCreated = async (newBoard?: any) => {
-    // Close the create wizard
-    setShowCreateWizard(false);
+  const handleBoardCreated = async (newBoard?: any, shouldOpenCategories?: boolean) => {
+    // Close the board modal
     setShowBoardModal(false);
     
     // Wait 300ms and then refresh board data to ensure categories are updated
@@ -122,7 +120,15 @@ function BoardSwitcherHeader() {
         // Auto-select the newly created board
         if (newBoard && selectBoard) {
           console.log('🎯 App: Auto-selecting newly created board:', newBoard.name);
-          selectBoard(newBoard);
+          // Add user_role to the new board since the creator is always the owner
+          const boardWithRole = { ...newBoard, user_role: 'owner' };
+          selectBoard(boardWithRole);
+        }
+
+        // If we should open categories modal, set the flag in BoardContext
+        if (shouldOpenCategories && newBoard) {
+          console.log('📋 App: Setting flag to open categories modal for new board:', newBoard.id);
+          setShouldOpenCategoryModal(true);
         }
       } catch (error) {
         console.error('❌ App: Error refreshing board data:', error);
@@ -275,38 +281,12 @@ function BoardSwitcherHeader() {
             </View>
             
             <View style={styles.boardSwitcherModalButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.boardSwitcherModalButton, 
-                  styles.boardSwitcherCreateNewButton,
-                  { opacity: isGuestMode ? 0.5 : 1 }
-                ]}
-                onPress={() => {
-                  if (isGuestMode) {
-                    Alert.alert(
-                      'פונקציה נעולה',
-                      'כדי ליצור לוחות נוספים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
-                      [
-                        { text: 'אולי מאוחר יותר', style: 'cancel' },
-                        { 
-                          text: 'התחבר עכשיו', 
-                          onPress: () => {
-                            setShowBoardModal(false);
-                            logout();
-                          }
-                        }
-                      ]
-                    );
-                  } else {
-                    setShowBoardModal(false);
-                    setShowCreateWizard(true);
-                  }
-                }}
-              >
-                <Text style={styles.boardSwitcherCreateNewText}>
-                  + צור לוח חדש {isGuestMode ? '🔒' : ''}
-                </Text>
-              </TouchableOpacity>
+              <CreateBoardButton
+                variant="secondary"
+                size="medium"
+                style={styles.boardSwitcherCreateNewButton}
+                onBoardCreated={handleBoardCreated}
+              />
               
               <TouchableOpacity
                 style={[styles.boardSwitcherModalButton, styles.boardSwitcherCancelButton]}
@@ -319,12 +299,6 @@ function BoardSwitcherHeader() {
         </View>
       </Modal>
 
-      <CreateBoardWizard
-        isVisible={showCreateWizard}
-        onClose={() => setShowCreateWizard(false)}
-        onBoardCreated={handleBoardCreated}
-        createBoard={createBoard}
-      />
       
       <NotificationModal
         visible={showNotificationModal}
