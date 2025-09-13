@@ -104,6 +104,32 @@ class LocalStorageService {
     }
   }
 
+  async updateBoard(boardId: string, updateData: Partial<GuestBoard>): Promise<GuestBoard | null> {
+    try {
+      const boards = await this.getBoards();
+      const boardIndex = boards.findIndex(board => board.id === boardId);
+      
+      if (boardIndex === -1) {
+        console.error('Board not found:', boardId);
+        return null;
+      }
+      
+      const updatedBoard = {
+        ...boards[boardIndex],
+        ...updateData,
+        updated_at: new Date().toISOString(),
+      };
+      
+      boards[boardIndex] = updatedBoard;
+      await this.saveBoards(boards);
+      
+      return updatedBoard;
+    } catch (error) {
+      console.error('Error updating guest board:', error);
+      return null;
+    }
+  }
+
   async setDefaultBoard(boardId: string): Promise<boolean> {
     try {
       const boards = await this.getBoards();

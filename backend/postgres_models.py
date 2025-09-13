@@ -158,6 +158,7 @@ class CategoryDataclass:
     created_at: str
     image_url: Optional[str] = None  # Add image URL field
     is_default: bool = False
+    is_custom: bool = False  # Add is_custom field
     is_active: bool = True
 
 
@@ -499,6 +500,7 @@ class Category(db.Model):
     created_by = Column(String, ForeignKey('users.id'), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_default = Column(Boolean, default=False)
+    is_custom = Column(Boolean, default=False)  # Add is_custom field
     is_active = Column(Boolean, default=True)
 
     # Relationships
@@ -516,6 +518,7 @@ class Category(db.Model):
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'is_default': self.is_default,
+            'is_custom': self.is_custom,  # Add is_custom to dict
             'is_active': self.is_active
         }
 
@@ -718,7 +721,8 @@ class PostgreSQLDatabaseManager:
                         'icon': "flash",
                         'color': "#FFD700",
                         'created_by': admin_user.id,  # Use the actual admin user ID
-                        'is_default': True
+                        'is_default': True,
+                        'is_custom': False
                     },
                     {
                         'board_id': global_board.id,
@@ -726,7 +730,8 @@ class PostgreSQLDatabaseManager:
                         'icon': "water",
                         'color': "#00BFFF",
                         'created_by': admin_user.id,
-                        'is_default': True
+                        'is_default': True,
+                        'is_custom': False
                     },
                     {
                         'board_id': global_board.id,
@@ -734,7 +739,8 @@ class PostgreSQLDatabaseManager:
                         'icon': "home",
                         'color': "#32CD32",
                         'created_by': admin_user.id,
-                        'is_default': True
+                        'is_default': True,
+                        'is_custom': False
                     },
                     {
                         'board_id': global_board.id,
@@ -742,7 +748,8 @@ class PostgreSQLDatabaseManager:
                         'icon': "cart",
                         'color': "#FF6347",
                         'created_by': admin_user.id,
-                        'is_default': True
+                        'is_default': True,
+                        'is_custom': False
                     },
                     {
                         'board_id': global_board.id,
@@ -750,7 +757,8 @@ class PostgreSQLDatabaseManager:
                         'icon': "ellipsis-horizontal",
                         'color': "#9370DB",
                         'created_by': admin_user.id,
-                        'is_default': True
+                        'is_default': True,
+                        'is_custom': False
                     }
                 ]
 
@@ -1336,8 +1344,10 @@ class PostgreSQLDatabaseManager:
             name=category_data['name'],
             icon=category_data['icon'],
             color=category_data['color'],
+            image_url=category_data.get('image_url'),  # Add image URL support
             created_by=category_data['created_by'],
-            is_default=category_data.get('is_default', False)
+            is_default=category_data.get('is_default', False),
+            is_custom=category_data.get('is_custom', False)  # Add is_custom support
         )
         self.db.session.add(category)
         self.db.session.commit()

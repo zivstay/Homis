@@ -1,23 +1,19 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Image,
-    Keyboard,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Keyboard,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { uploadExpenseImage } from '../config/api';
 import { BOARD_TYPES, BoardType, QuickCategory } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
-import { CategoryImage } from './CategoryImage';
+import CategorySelector from './CategorySelector';
 
 interface CreateBoardWizardProps {
   isVisible: boolean;
@@ -56,8 +52,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
     setShowCustomCategoryModal(false);
     setNewCustomCategoryName('');
     setSelectedCustomIcon('📝');
-    setSelectedCategoryImage(null);
-    setIsUploadingImage(false);
+    // DISABLED: setSelectedCategoryImage(null);
+    // DISABLED: setIsUploadingImage(false);
   };
 
   const handleBoardTypeSelect = (boardType: BoardType) => {
@@ -91,6 +87,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
     '🍎', '🥗', '🍰', '🧸', '📦', '🔑', '🛡️', '⚖️', '📋', '💝'
   ];
 
+  // DISABLED: Image upload functionality for categories
+  /*
   const handleImagePicker = async () => {
     try {
       // Request permissions
@@ -145,11 +143,15 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
       Alert.alert('שגיאה', 'שגיאה בבחירת התמונה');
     }
   };
+  */
 
+  // DISABLED: Clear image functionality
+  /*
   const handleClearImage = () => {
     setSelectedCategoryImage(null);
     setSelectedCustomIcon('📝'); // Reset to default icon
   };
+  */
 
   const handleAddCustomCategory = () => {
     if (!newCustomCategoryName.trim()) {
@@ -173,9 +175,9 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
 
     const newCategory: QuickCategory = {
       name: newCustomCategoryName.trim(),
-      icon: selectedCategoryImage ? '' : selectedCustomIcon, // Empty icon if image is selected
+      icon: selectedCustomIcon, // Always use selected icon (no image support)
       color: '#9370DB', // Default purple color
-      imageUrl: selectedCategoryImage || undefined, // Add image URL if selected
+      // DISABLED: imageUrl: selectedCategoryImage || undefined, // Image upload disabled
     };
 
     console.log('📝 Creating new category:', newCategory);
@@ -282,75 +284,6 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
     </TouchableOpacity>
   );
 
-  const renderCategoryItem = ({ item }: { item: QuickCategory }) => {
-    const isSelected = selectedCategories.some(cat => cat.name === item.name);
-    const totalSelected = selectedCategories.length + customCategories.length;
-    const isDisabled = !isSelected && totalSelected >= 7;
-    
-    return (
-      <TouchableOpacity
-        style={[
-          styles.categoryItem,
-          isSelected && styles.selectedCategoryItem,
-          isDisabled && styles.disabledCategoryItem,
-        ]}
-        onPress={() => {
-          if (!isDisabled) {
-            handleCategoryToggle(item);
-          }
-        }}
-        disabled={isDisabled}
-      >
-        <Text style={[
-          styles.categoryIcon,
-          isDisabled && { opacity: 0.5 }
-        ]}>
-          {item.icon}
-        </Text>
-        <Text 
-          style={[
-            styles.categoryName,
-            isSelected && styles.selectedCategoryName,
-            isDisabled && styles.disabledCategoryName
-          ]}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}
-        >
-          {item.name}
-        </Text>
-        
-        {isSelected && (
-          <Text style={styles.checkmark}>✓</Text>
-        )}
-        
-        {isDisabled && (
-          <Text style={styles.disabledIndicator}>🔒</Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  const renderCustomCategoryItem = ({ item }: { item: QuickCategory }) => {
-    return (
-      <View style={[styles.categoryItem, styles.customCategoryItem]}>
-        {item.imageUrl ? (
-          <CategoryImage imageUrl={item.imageUrl} style={styles.categoryImage} />
-        ) : (
-          <Text style={styles.categoryIcon}>{item.icon}</Text>
-        )}
-        <Text style={[styles.categoryName, styles.customCategoryName]}>
-          {item.name}
-        </Text>
-        <TouchableOpacity
-          onPress={() => handleRemoveCustomCategory(item.name)}
-          style={styles.removeCustomCategoryButton}
-        >
-          <Text style={styles.removeCustomCategoryIcon}>✕</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
 
   const renderIconItem = ({ item }: { item: string }) => {
     const isSelected = selectedCustomIcon === item;
@@ -412,126 +345,22 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
   );
 
   const renderWizardStep3 = () => {
-    // Get all available categories (current board type first, then all others)
-    const getAllAvailableCategories = () => {
-      if (!selectedBoardType) return [];
-      
-      const allCategories: QuickCategory[] = [];
-      const addedNames = new Set<string>();
-      
-      // First: Add categories from selected board type (priority) - excluding "אחר"
-      selectedBoardType.quickCategories.forEach(category => {
-        if (!addedNames.has(category.name) && category.name !== 'אחר') {
-          allCategories.push(category);
-          addedNames.add(category.name);
-        }
-      });
-      
-      // Second: Add categories from all other board types - excluding "אחר"
-      BOARD_TYPES.forEach(boardType => {
-        if (boardType.id !== selectedBoardType.id) {
-          boardType.quickCategories.forEach(category => {
-            if (!addedNames.has(category.name) && category.name !== 'אחר') {
-              allCategories.push(category);
-              addedNames.add(category.name);
-            }
-          });
-        }
-      });
-      
-      // Third: Add additional common/useful categories (excluding "אחר")
-      const additionalCategories = [
-        { name: 'תחזוקה', icon: '🔧', color: '#FF8C00' },
-        { name: 'ביטוח', icon: '🛡️', color: '#F7DC6F' },
-        { name: 'מיסים', icon: '📋', color: '#95A5A6' },
-        { name: 'תרומות', icon: '💝', color: '#FF69B4' },
-        { name: 'חיות מחמד', icon: '🐕', color: '#98D8C8' },
-        { name: 'טכנולוגיה', icon: '📱', color: '#4ECDC4' },
-        { name: 'ספרים', icon: '📚', color: '#E74C3C' },
-        { name: 'מתנות', icon: '🎁', color: '#9B59B6' },
-        { name: 'עבודה', icon: '💼', color: '#3498DB' },
-        { name: 'חינוך', icon: '🎓', color: '#E67E22' },
-        { name: 'בריאות', icon: '🏥', color: '#E74C3C' },
-        { name: 'ספורט', icon: '⚽', color: '#2ECC71' },
-        { name: 'נסיעות', icon: '✈️', color: '#9B59B6' },
-        { name: 'תחביבים', icon: '🎨', color: '#F39C12' },
-        { name: 'קניות', icon: '🛒', color: '#8E44AD' },
-        { name: 'תקשורת', icon: '📞', color: '#34495E' },
-        { name: 'משפט', icon: '⚖️', color: '#2C3E50' },
-        { name: 'יופי', icon: '💄', color: '#EC7063' },
-        { name: 'משחקים', icon: '🎮', color: '#AF7AC5' },
-        { name: 'אירועים', icon: '🎉', color: '#F1C40F' },
-        { name: 'שכר דירה', icon: '🏠', color: '#FF8C00' },
-        { name: 'משכנתא', icon: '🏦', color: '#96CEB4' },
-      ];
-      
-      additionalCategories.forEach(category => {
-        if (!addedNames.has(category.name) && category.name !== 'אחר') {
-          allCategories.push(category);
-          addedNames.add(category.name);
-        }
-      });
-      
-      return allCategories;
-    };
-
     return (
       <View style={styles.wizardContent}>
-        <Text style={styles.wizardTitle}>שלב 3: בחר קטגוריות</Text>
-        
-        {selectedBoardType && (
-          <Text style={styles.wizardSubtitle}>
-            קטגוריות עבור לוח "{selectedBoardType.name}"
-          </Text>
-        )}
-        
-        <Text style={styles.selectedCountText}>
-          נבחרו: {selectedCategories.length + customCategories.length}/7 קטגוריות
-        </Text>
-        
-        <Text style={styles.wizardHelpText}>
-          בחר עד 7 קטגוריות עבור הלוח שלך. הקטגוריות של סוג הלוח מוצגות בראש הרשימה.
-        </Text>
-        
-        {/* Custom Categories Section */}
-        {customCategories.length > 0 && (
-          <View style={styles.customCategoriesSection}>
-            <Text style={styles.customCategoriesTitle}>קטגוריות מותאמות אישית:</Text>
-            <FlatList
-              data={customCategories}
-              renderItem={renderCustomCategoryItem}
-              keyExtractor={(item) => item.name}
-              style={styles.customCategoriesList}
-              numColumns={2}
-              columnWrapperStyle={customCategories.length > 1 ? styles.categoriesRow : undefined}
-              showsVerticalScrollIndicator={true}
-              nestedScrollEnabled={true}
-            />
-          </View>
-        )}
-        
-        {/* Add Custom Category Button */}
-        <TouchableOpacity
-          style={[
-            styles.addCustomCategoryButton,
-            (selectedCategories.length + customCategories.length >= 7) && styles.disabledAddButton
-          ]}
-          onPress={handleOpenCustomCategoryModal}
-          disabled={selectedCategories.length + customCategories.length >= 7}
-        >
-          <Text style={styles.addCustomCategoryIcon}>+</Text>
-          <Text style={styles.addCustomCategoryText}>הוסף קטגוריה מותאמת אישית</Text>
-        </TouchableOpacity>
-        
-        <FlatList
-          data={getAllAvailableCategories()}
-          renderItem={renderCategoryItem}
-          keyExtractor={(item) => item.name}
-          style={styles.categoriesList}
-          numColumns={2}
-          columnWrapperStyle={styles.categoriesRow}
-          showsVerticalScrollIndicator={true}
-          nestedScrollEnabled={true}
+        <CategorySelector
+          selectedBoardType={selectedBoardType}
+          selectedCategories={selectedCategories}
+          customCategories={customCategories}
+          onCategoryToggle={handleCategoryToggle}
+          onRemoveCustomCategory={handleRemoveCustomCategory}
+          onAddCustomCategory={handleOpenCustomCategoryModal}
+          maxCategories={7}
+          showCustomCategories={true}
+          showAddCustomButton={true}
+          showHeader={true}
+          headerTitle="שלב 3: בחר קטגוריות"
+          headerSubtitle={selectedBoardType ? `קטגוריות עבור לוח "${selectedBoardType.name}"` : undefined}
+          helpText="בחר עד 7 קטגוריות עבור הלוח שלך. הקטגוריות של סוג הלוח מוצגות בראש הרשימה."
         />
       </View>
     );
@@ -639,7 +468,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
             
             <Text style={styles.iconSelectorTitle}>בחר אייקון:</Text>
             
-            {/* Image upload section */}
+            {/* DISABLED: Image upload section */}
+            {/*
             <View style={styles.imageUploadSection}>
               <TouchableOpacity
                 style={styles.imageUploadButton}
@@ -663,6 +493,7 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
                 </View>
               )}
             </View>
+            */}
             
             <ScrollView style={styles.iconSelector} showsVerticalScrollIndicator={false}>
               <FlatList
@@ -682,8 +513,8 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
                   setShowCustomCategoryModal(false);
                   setNewCustomCategoryName('');
                   setSelectedCustomIcon('📝');
-                  setSelectedCategoryImage(null);
-                  setIsUploadingImage(false);
+                  // DISABLED: setSelectedCategoryImage(null);
+                  // DISABLED: setIsUploadingImage(false);
                 }}
               >
                 <Text style={styles.customCategoryCancelText}>ביטול</Text>
@@ -718,10 +549,11 @@ const styles = StyleSheet.create({
   wizardModalContent: {
     backgroundColor: 'white',
     borderRadius: 16,
-    padding: 28,
+    padding: 20,
     width: '95%',
     maxWidth: 500,
     maxHeight: '90%',
+    minHeight: '70%',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -740,7 +572,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2c3e50',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   wizardSteps: {
     flexDirection: 'row',
@@ -748,9 +580,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   wizardStepIndicator: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 35,
+    height: 35,
+    borderRadius: 17.5,
     borderWidth: 2,
     borderColor: '#e0e0e0',
     justifyContent: 'center',
@@ -760,7 +592,7 @@ const styles = StyleSheet.create({
     borderColor: '#2ecc71',
   },
   wizardStepNumber: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#e0e0e0',
   },
@@ -768,10 +600,12 @@ const styles = StyleSheet.create({
     color: '#2ecc71',
   },
   wizardContent: {
+    flex: 1,
     marginBottom: 20,
+    paddingHorizontal: 4,
   },
   wizardTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#2c3e50',
     marginBottom: 16,
@@ -800,9 +634,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
+    minHeight: 50,
   },
   boardTypeList: {
-    maxHeight: 220,
+    maxHeight: 250,
   },
   boardTypeItem: {
     padding: 18,
@@ -819,6 +654,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
+    minHeight: 100,
   },
   selectedBoardTypeItem: {
     backgroundColor: '#e3f2fd',
@@ -827,7 +663,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
   },
   boardTypeIcon: {
-    fontSize: 32,
+    fontSize: 36,
     color: '#2c3e50',
     marginBottom: 10,
     textAlign: 'center',
@@ -846,103 +682,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  selectedCountText: {
-    fontSize: 16,
-    color: '#4caf50',
-    marginBottom: 12,
-    textAlign: 'center',
-    fontWeight: '600',
-    backgroundColor: '#e8f5e8',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    alignSelf: 'center',
-  },
-  wizardHelpText: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginBottom: 18,
-    textAlign: 'center',
-    lineHeight: 20,
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
-  },
-  categoriesList: {
-    maxHeight: 200,
-    marginTop: 12,
-  },
-  categoriesRow: {
-    justifyContent: 'space-around',
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    marginVertical: 6,
-    backgroundColor: '#fafbfc',
-    borderWidth: 2,
-    borderColor: '#e0e6ed',
-    width: '48%',
-    minHeight: 70,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  selectedCategoryItem: {
-    backgroundColor: '#e8f5e8',
-    borderWidth: 2,
-    borderColor: '#4caf50',
-    shadowColor: '#4caf50',
-    shadowOpacity: 0.2,
-  },
-  categoryIcon: {
-    fontSize: 18,
-    marginRight: 6,
-    minWidth: 22,
-  },
-  categoryName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2c3e50',
-    flex: 1,
-    flexWrap: 'wrap',
-    textAlign: 'center',
-    paddingHorizontal: 4,
-  },
-  selectedCategoryName: {
-    color: '#4caf50',
-    fontWeight: 'bold',
-  },
-  disabledCategoryItem: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#ddd',
-    opacity: 0.6,
-  },
-  disabledCategoryName: {
-    color: '#999',
-  },
-  checkmark: {
-    fontSize: 18,
-    color: '#4caf50',
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  disabledIndicator: {
-    fontSize: 16,
-    color: '#999',
-    marginLeft: 8,
-  },
   wizardButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -959,7 +698,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 50,
+    minHeight: 55,
   },
   wizardCancelButton: {
     backgroundColor: '#ecf0f1',
@@ -980,61 +719,6 @@ const styles = StyleSheet.create({
   disabledWizardButton: {
     backgroundColor: '#bdc3c7',
     opacity: 0.7,
-  },
-  customCategoriesSection: {
-    marginBottom: 16,
-  },
-  customCategoriesTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 8,
-    textAlign: 'right',
-  },
-  customCategoriesList: {
-    maxHeight: 80,
-  },
-  customCategoryItem: {
-    backgroundColor: '#e8f5e8',
-    borderColor: '#4caf50',
-  },
-  customCategoryName: {
-    color: '#4caf50',
-    fontWeight: 'bold',
-  },
-  removeCustomCategoryButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  removeCustomCategoryIcon: {
-    fontSize: 16,
-    color: '#e74c3c',
-    fontWeight: 'bold',
-  },
-  addCustomCategoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#3498db',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  disabledAddButton: {
-    backgroundColor: '#bdc3c7',
-    opacity: 0.6,
-  },
-  addCustomCategoryIcon: {
-    fontSize: 18,
-    color: 'white',
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
-  addCustomCategoryText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
   },
   customCategoryModalOverlay: {
     flex: 1,

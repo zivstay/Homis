@@ -3,7 +3,7 @@ rules:
   - תמיד לכתוב קוד קריא וברור, עם שמות משתנים ופונקציות באנגלית בלבד.
   - להשתמש ב־Git-friendly code style (שורות קצרות, עקביות, ללא קוד מת).
   - לא להחזיר קוד חלקי – כל דוגמה צריכה להיות runnable.
-
+  - שינויי סטייל על אותו קובץ אל תציג לי שורה אחרי שורה
   # === React Native (Frontend) ===
   - להשתמש תמיד ב־Functional Components עם Hooks, לא ב־Class Components.
   - להשתמש ב־TypeScript כשאפשר, עם טיפוסים ברורים ל־props ול־state.
@@ -16,7 +16,7 @@ rules:
   - להימנע מ־any – להשתמש ב־interfaces ו־types ב־TypeScript.
   - בכל API call – להשתמש ב־axios/fetch עטוף בפונקציית שירות (service), לא ישירות בקומפוננטה.
   - תמיד לעטוף קריאות API ב־try/catch + error handling ידידותי למשתמש.
-  - תמיד תעדיף להשתמש בקוד קיים ולא לכתוב קוד חדש.
+
   # === Python Backend (Flask/FastAPI/Django) ===
   - שמות משתנים ופונקציות ב־snake_case.
   - להוסיף type hints לכל פונקציה.

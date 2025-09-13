@@ -23,7 +23,7 @@ import { BoardMember, apiService } from '../services/api';
 
 const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { selectedBoard, boardMembers, inviteMember, removeMember } = useBoard();
+  const { selectedBoard, boardMembers, inviteMember, removeMember, updateBoard } = useBoard();
   const { user, logout, isGuestMode, clearGuestData } = useAuth();
   const { startTutorial, forceStartTutorial, resetTutorial, setCurrentScreen, checkScreenTutorial, clearAllTutorialData } = useTutorial();
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -37,6 +37,9 @@ const SettingsScreen: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showEditBoardNameModal, setShowEditBoardNameModal] = useState(false);
+  const [editBoardName, setEditBoardName] = useState('');
+  const [isUpdatingBoard, setIsUpdatingBoard] = useState(false);
   
   const handleResetAdCooldown = async () => {
     await adManager.resetAdCooldown();
@@ -383,11 +386,59 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleEditBoardName = () => {
+    if (!selectedBoard) return;
+    
+    setEditBoardName(selectedBoard.name);
+    setShowEditBoardNameModal(true);
+  };
+
+  const handleUpdateBoardName = async () => {
+    if (!selectedBoard || !editBoardName.trim()) {
+      Alert.alert('שגיאה', 'נא להזין שם לוח תקין');
+      return;
+    }
+
+    if (editBoardName.trim() === selectedBoard.name) {
+      setShowEditBoardNameModal(false);
+      setEditBoardName('');
+      return;
+    }
+
+    setIsUpdatingBoard(true);
+    try {
+      const result = await updateBoard(selectedBoard.id, { name: editBoardName.trim() });
+      
+      if (result.success) {
+        Alert.alert('הצלחה', 'שם הלוח עודכן בהצלחה');
+        setShowEditBoardNameModal(false);
+        setEditBoardName('');
+      } else {
+        Alert.alert('שגיאה', result.error || 'שגיאה בעדכון שם הלוח');
+      }
+    } catch (error) {
+      console.error('Error updating board name:', error);
+      Alert.alert('שגיאה', 'שגיאה בתקשורת עם השרת');
+    } finally {
+      setIsUpdatingBoard(false);
+    }
+  };
+
 
 
   const renderBoardInfo = () => (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>מידע על הלוח</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>מידע על הלוח</Text>
+        {canManageMembers() && (
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={handleEditBoardName}
+          >
+            <Text style={styles.editButtonText}>✏️ ערוך שם</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <View style={styles.infoContainer}>
         <View style={styles.infoItem}>
           <Text style={styles.infoLabel}>שם הלוח</Text>
@@ -746,6 +797,57 @@ const SettingsScreen: React.FC = () => {
         visible={showCategoryManager}
         onClose={() => setShowCategoryManager(false)}
       />
+
+      {/* Edit Board Name Modal */}
+      <Modal
+        visible={showEditBoardNameModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowEditBoardNameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>ערוך שם לוח</Text>
+            <Text style={styles.modalText}>
+              הזן שם חדש עבור הלוח:
+            </Text>
+            
+            <TextInput
+              style={styles.modalInput}
+              placeholder="שם הלוח"
+              value={editBoardName}
+              onChangeText={setEditBoardName}
+              textAlign="right"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
+              autoFocus={true}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowEditBoardNameModal(false);
+                  setEditBoardName('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.inviteButton]}
+                onPress={handleUpdateBoardName}
+                disabled={isUpdatingBoard || !editBoardName.trim()}
+              >
+                <Text style={styles.inviteButtonText}>
+                  {isUpdatingBoard ? 'מעדכן...' : 'עדכן שם'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Delete User Modal */}
       <Modal
@@ -1262,6 +1364,17 @@ const styles = StyleSheet.create({
   },
   roleButtonSubtextActive: {
     color: '#2980b9',
+  },
+  editButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  editButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 

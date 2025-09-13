@@ -1521,7 +1521,8 @@ def create_app(config_name='default'):
                     'icon': category_data.get('icon', 'ellipsis-horizontal'),
                     'color': category_data.get('color', '#9370DB'),
                     'created_by': current_user_id,
-                    'is_default': False
+                    'is_default': False,
+                    'is_custom': True  # Mark as custom category
                 }
                 try:
                     db_manager.create_category(category_info)
@@ -3008,7 +3009,8 @@ def create_app(config_name='default'):
             'color': data.get('color', '#9370DB'),
             'image_url': data.get('image_url'),  # Add image URL support
             'created_by': current_user_id,
-            'is_default': data.get('is_default', False)
+            'is_default': data.get('is_default', False),
+            'is_custom': data.get('is_custom', True)  # Default to custom for manually created categories
         }
         
         category = db_manager.create_category(category_data)
@@ -3022,7 +3024,8 @@ def create_app(config_name='default'):
             'image_url': category.image_url,  # Include image URL in response
             'created_by': category.created_by,
             'created_at': category.created_at,
-            'is_default': category.is_default
+            'is_default': category.is_default,
+            'is_custom': category.is_custom  # Include is_custom in response
         }), 201
 
     @app.route('/api/boards/<board_id>/categories/update', methods=['PUT'])
@@ -3057,7 +3060,8 @@ def create_app(config_name='default'):
                     'color': category_data.get('color', '#9370DB'),
                     'image_url': category_data.get('image_url'),  # Add image URL support
                     'created_by': current_user_id,
-                    'is_default': False
+                    'is_default': False,
+                    'is_custom': True  # Mark as custom category
                 }
                 try:
                     db_manager.create_category(category_info)

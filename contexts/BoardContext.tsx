@@ -20,6 +20,7 @@ interface BoardContextType {
     board_type?: string;
     custom_categories?: QuickCategory[];
   }) => Promise<{ success: boolean; error?: string; board?: Board }>;
+  updateBoard: (boardId: string, updateData: Partial<Board>) => Promise<{ success: boolean; error?: string; board?: Board }>;
   saveBoardCategories: (boardId: string, categories: { name: string; icon: string; color: string }[]) => Promise<{ success: boolean; error?: string; message?: string }>;
   refreshBoards: () => Promise<void>;
   refreshBoardMembers: () => Promise<void>;
@@ -123,14 +124,20 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
         // For guest mode, create a fake member representing the guest user
         const guestMember: BoardMember = {
           id: 'guest',
-          board_id: selectedBoard.id,
           user_id: 'guest',
-          email: 'guest@local',
-          first_name: 'אורח',
-          last_name: '',
           role: 'owner',
-          status: 'active',
           joined_at: new Date().toISOString(),
+          permissions: ['read', 'write', 'admin'],
+          user: {
+            id: 'guest',
+            email: 'guest@local',
+            username: 'guest',
+            first_name: 'אורח',
+            last_name: '',
+            created_at: new Date().toISOString(),
+            is_active: true,
+            email_verified: true,
+          },
         };
         setBoardMembers([guestMember]);
       } else {
@@ -361,6 +368,75 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     }
   };
 
+  const updateBoard = async (boardId: string, updateData: Partial<Board>) => {
+    try {
+      console.log('🔄 BoardContext: Updating board:', boardId, updateData);
+      
+      if (isGuestMode) {
+        const updatedBoard = await localStorageService.updateBoard(boardId, updateData as Partial<import('../services/localStorageService').GuestBoard>);
+        if (updatedBoard) {
+          console.log('✅ Guest board updated successfully:', updatedBoard.id);
+          
+          // Update the boards list
+          await refreshBoards();
+          
+          // Update selected board if it's the one being updated
+          if (selectedBoard && selectedBoard.id === boardId) {
+            setSelectedBoard(updatedBoard);
+          }
+          
+          return { success: true, board: updatedBoard };
+        } else {
+          return { success: false, error: 'Failed to update board' };
+        }
+      } else {
+        const result = await apiService.updateBoard(boardId, updateData);
+        
+        // Handle retry if token was refreshed
+        if (!result.success && result.needsRetry) {
+          console.log('🔄 BoardContext: Retrying updateBoard after token refresh');
+          const retryResult = await apiService.updateBoard(boardId, updateData);
+          if (retryResult.success && retryResult.data) {
+            const updatedBoard = retryResult.data;
+            console.log('✅ Board updated successfully:', updatedBoard.id);
+            
+            // Update the boards list
+            await refreshBoards();
+            
+            // Update selected board if it's the one being updated
+            if (selectedBoard && selectedBoard.id === boardId) {
+              setSelectedBoard(updatedBoard);
+            }
+            
+            return { success: true, board: updatedBoard };
+          } else {
+            return { success: false, error: retryResult.error || 'Failed to update board' };
+          }
+        }
+        
+        if (result.success && result.data) {
+          const updatedBoard = result.data;
+          console.log('✅ Board updated successfully:', updatedBoard.id);
+          
+          // Update the boards list
+          await refreshBoards();
+          
+          // Update selected board if it's the one being updated
+          if (selectedBoard && selectedBoard.id === boardId) {
+            setSelectedBoard(updatedBoard);
+          }
+          
+          return { success: true, board: updatedBoard };
+        } else {
+          return { success: false, error: result.error || 'Failed to update board' };
+        }
+      }
+    } catch (error) {
+      console.error('Error updating board:', error);
+      return { success: false, error: 'Network error occurred' };
+    }
+  };
+
   const saveBoardCategories = useCallback(async (boardId: string, categories: { name: string; icon: string; color: string }[]) => {
     try {
       console.log('💾 Saving categories for board:', boardId, categories);
@@ -549,6 +625,7 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
     selectBoard,
     updateSelectedBoard,
     createBoard,
+    updateBoard,
     saveBoardCategories,
     refreshBoards,
     refreshBoardMembers,
