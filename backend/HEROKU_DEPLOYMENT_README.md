@@ -132,8 +132,7 @@ heroku config
 # Restart dynos
 heroku restart
 
-# Run one-off commands
-heroku run python clean_db_simple.py
+
 ```
 
 ## Production Recommendations

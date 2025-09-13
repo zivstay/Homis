@@ -57,6 +57,9 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
                 }));
                 setCurrentCategories(serverCategories);
                 setSelectedCategories([...serverCategories]);
+                // Always clear custom categories when loading from server
+                setCustomCategories([]);
+                console.log('🧹 CategoryManager: Cleared custom categories when loading from server');
             }
         } catch (error) {
             console.error('Error loading categories:', error);
@@ -79,11 +82,19 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
             if (isSelected) {
                 return prev.filter(cat => cat.name !== category.name);
             } else {
-                // Check if we already have 7 categories selected
-                if (prev.length >= 7) {
+                // Check if we already have 7 categories selected (including custom categories)
+                const totalSelected = prev.length + customCategories.length;
+                if (totalSelected >= 7) {
                     Alert.alert('שגיאה', 'ניתן לבחור עד 7 קטגוריות בלבד');
                     return prev;
                 }
+                
+                // Double-check for duplicates (shouldn't happen but safety first)
+                if (prev.some(cat => cat.name.toLowerCase() === category.name.toLowerCase())) {
+                    console.warn('⚠️ Attempted to add duplicate category:', category.name);
+                    return prev;
+                }
+                
                 return [...prev, category];
             }
         });
@@ -108,40 +119,38 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
             const allCategories = [...selectedCategories, ...customCategories];
             const result = await apiService.updateBoardCategories(selectedBoard.id, allCategories);
             if (result.success) {
+                console.log('✅ CategoryManager: Categories updated successfully');
+                
+                // Clear custom categories since they're now saved to server
+                setCustomCategories([]);
+                console.log('🧹 CategoryManager: Cleared local custom categories after successful save');
+                
                 // Close modal first
                 onClose();
                 
                 Alert.alert('הצלחה', 'הקטגוריות עודכנו בהצלחה');
                 
-                // Wait 500ms and then refresh all board data to ensure categories are updated everywhere
+                // Single coordinated refresh to prevent duplication
                 setTimeout(async () => {
                     try {
-                        console.log('🔄 CategoryManager: Refreshing all board data after category update...');
+                        console.log('🔄 CategoryManager: Starting coordinated refresh after category update...');
                         
-                        // Refresh the board data to get updated categories
+                        // First refresh board data (includes categories)
                         if (refreshBoardData) {
                             await refreshBoardData();
-                            console.log('✅ CategoryManager: Board data refreshed successfully');
+                            console.log('✅ CategoryManager: Board data refreshed');
                         }
                         
-                        // Also refresh the expense context categories (for quick categories)
+                        // Then refresh expense context categories (for quick categories)
                         if (refreshBoardCategories) {
                             await refreshBoardCategories();
-                            console.log('✅ CategoryManager: Expense categories refreshed successfully');
+                            console.log('✅ CategoryManager: Expense categories refreshed');
                         }
                         
-                        // Force reload current categories for this modal
-                        await loadCurrentCategories();
-                        console.log('✅ CategoryManager: Current categories reloaded');
-                        
-                        // Trigger a re-render by forcing a small delay and re-loading
-                        setTimeout(async () => {
-                            await loadCurrentCategories();
-                            console.log('✅ CategoryManager: Double refresh completed');
-                        }, 100);
+                        console.log('✅ CategoryManager: All refreshes completed successfully');
                         
                     } catch (error) {
-                        console.error('❌ CategoryManager: Error refreshing board data:', error);
+                        console.error('❌ CategoryManager: Error refreshing data:', error);
                     }
                 }, 500);
             } else {
@@ -174,8 +183,8 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
             return;
         }
 
-        // Check if category name already exists
-        const allCategories = [...selectedCategories, ...customCategories];
+        // Check if category name already exists (including current categories from server)
+        const allCategories = [...selectedCategories, ...customCategories, ...currentCategories];
         if (allCategories.some(cat => cat.name.toLowerCase() === newCustomCategoryName.trim().toLowerCase())) {
             Alert.alert('שגיאה', 'קטגוריה עם השם הזה כבר קיימת');
             return;
@@ -201,9 +210,10 @@ const CategoryManager: React.FC<CategoryManagerProps> = ({ visible, onClose }) =
     };
 
     const handleCancel = () => {
-        // Reset to current categories
+        // Reset to current categories and clear custom categories
         setSelectedCategories([...currentCategories]);
         setCustomCategories([]);
+        console.log('🧹 CategoryManager: Cleared custom categories on cancel');
         onClose();
     };
 

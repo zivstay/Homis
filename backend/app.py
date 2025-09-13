@@ -2088,7 +2088,8 @@ def create_app(config_name='default'):
             
             # Category summary header
             ws_category['A1'] = "קטגוריה"
-            ws_category['B1'] = f"מספר {'עבודות' if is_work_management else 'הוצאות'}"
+            item_type_hebrew = 'עבודות' if is_work_management else 'הוצאות'
+            ws_category['B1'] = f"מספר {item_type_hebrew}"
             ws_category['C1'] = "סה\"כ סכום"
             
             for col in range(1, 4):
@@ -2132,7 +2133,7 @@ def create_app(config_name='default'):
             
             # Monthly summary header
             ws_monthly['A1'] = "חודש"
-            ws_monthly['B1'] = f"מספר {'עבודות' if is_work_management else 'הוצאות'}"
+            ws_monthly['B1'] = f"מספר {item_type_hebrew}"
             ws_monthly['C1'] = "סה\"כ סכום"
             
             for col in range(1, 4):
@@ -2200,13 +2201,15 @@ def create_app(config_name='default'):
                 }
             )
             
-            print(f"✅ Excel export successful for board '{board.name}' - {len(expenses)} {'works' if is_work_management else 'expenses'}")
+            export_type_english = 'works' if is_work_management else 'expenses'
+            print(f"✅ Excel export successful for board '{board.name}' - {len(expenses)} {export_type_english}")
             return response
             
         except Exception as e:
-            print(f"Error exporting {'works' if is_work_management else 'expenses'}: {e}")
+            export_type = 'works' if is_work_management else 'expenses'
+            print(f"Error exporting {export_type}: {e}")
             logger.error(traceback.format_exc())
-            return jsonify({'error': f'Failed to export {'works' if is_work_management else 'expenses'}'}), 500
+            return jsonify({'error': f'Failed to export {export_type}'}), 500
 
     # Expense routes
     @app.route('/api/boards/<board_id>/expenses', methods=['GET'])
@@ -2991,7 +2994,8 @@ def create_app(config_name='default'):
         
         return jsonify({'categories': category_list}), 200
 
-    @app.route('/api/boards/<board_id>/categories', methods=['POST'])
+    @app.route('/api/board'
+               's/<board_id>/categories', methods=['POST'])
     @require_auth
     @require_board_admin
     def create_category(board_id):
@@ -3040,22 +3044,48 @@ def create_app(config_name='default'):
         current_user_id = auth_manager.get_current_user()['user']['id']
         categories = data['categories']
         
+        print(f"🔄 Updating categories for board {board_id}: {len(categories)} categories")
+        
         try:
-            # First, delete all existing custom categories for this board (keep default ones)
-            # Find all custom categories for this board
+            # Use a transaction to ensure atomicity and prevent duplication
             from postgres_models import Category
+            
+            # First, delete all existing custom categories for this board (keep default ones)
+            print(f"🗑️ Removing existing custom categories for board {board_id}")
             custom_categories = Category.query.filter_by(board_id=board_id, is_default=False).all()
+            print(f"🗑️ Found {len(custom_categories)} existing custom categories to remove")
             
             # Remove each custom category by ID
             for category in custom_categories:
+                print(f"🗑️ Removing category: {category.name}")
                 postgres_db.session.delete(category)
-            postgres_db.session.commit()
+            
+            # Flush to ensure deletions are processed before insertions
+            postgres_db.session.flush()
             
             # Create new categories
+            print(f"➕ Creating {len(categories)} new categories")
+            created_count = 0
             for category_data in categories:
+                category_name = category_data.get('name')
+                if not category_name:
+                    print(f"⚠️ Skipping category with empty name")
+                    continue
+                    
+                # Check if category with this name already exists (to prevent duplicates)
+                existing_category = Category.query.filter_by(
+                    board_id=board_id, 
+                    name=category_name,
+                    is_active=True
+                ).first()
+                
+                if existing_category:
+                    print(f"⚠️ Category '{category_name}' already exists, skipping")
+                    continue
+                
                 category_info = {
                     'board_id': board_id,
-                    'name': category_data.get('name'),
+                    'name': category_name,
                     'icon': category_data.get('icon', 'ellipsis-horizontal'),
                     'color': category_data.get('color', '#9370DB'),
                     'image_url': category_data.get('image_url'),  # Add image URL support
@@ -3065,14 +3095,21 @@ def create_app(config_name='default'):
                 }
                 try:
                     db_manager.create_category(category_info)
-                    print(f"✅ Updated category: {category_info['name']}")
+                    created_count += 1
+                    print(f"✅ Created category: {category_info['name']}")
                 except Exception as e:
                     print(f"❌ Failed to create category {category_info['name']}: {str(e)}")
+                    # Continue with other categories even if one fails
+            
+            # Commit all changes at once
+            postgres_db.session.commit()
+            print(f"✅ Successfully updated categories for board {board_id}: created {created_count} new categories")
             
             return jsonify({'message': 'Categories updated successfully'}), 200
             
         except Exception as e:
             print(f"❌ Error updating board categories: {str(e)}")
+            postgres_db.session.rollback()  # Rollback on error
             return jsonify({'error': 'Failed to update categories'}), 500
 
     @app.route('/api/boards/<board_id>/budget/status', methods=['GET'])

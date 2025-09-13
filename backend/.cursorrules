@@ -18,6 +18,7 @@ rules:
   - תמיד לעטוף קריאות API ב־try/catch + error handling ידידותי למשתמש.
   - תמיד תעדיף להשתמש בקוד קיים ולא לכתוב קוד חדש.
   # === Python Backend (Flask/FastAPI/Django) ===
+  - python version 3.11
   - שמות משתנים ופונקציות ב־snake_case.
   - להוסיף type hints לכל פונקציה.
   - להשתמש ב־Pydantic models (ב־FastAPI) או dataclasses (ב־Flask/Django) ל־request/response.

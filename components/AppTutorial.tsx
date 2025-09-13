@@ -3,11 +3,13 @@ import React, { useEffect, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -389,6 +391,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [tooltipOpacity] = useState(new Animated.Value(0));
   const [highlightScale] = useState(new Animated.Value(0));
+  const insets = useSafeAreaInsets();
 
   // קבלת השלבים המתאימים למסך הנוכחי
   const getCurrentSteps = () => {
@@ -681,9 +684,27 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
         break;
     }
 
-    // Ensure tooltip stays within screen bounds
-    tooltipX = Math.max(20, Math.min(tooltipX, screenWidth - 290));
-    tooltipY = Math.max(50, Math.min(tooltipY, screenHeight - 200));
+    // Calculate safe area bounds
+    const topSafeArea = insets.top;
+    const bottomSafeArea = insets.bottom;
+    const leftSafeArea = insets.left;
+    const rightSafeArea = insets.right;
+
+    // Ensure tooltip stays within screen bounds including safe areas
+    tooltipX = Math.max(20 + leftSafeArea, Math.min(tooltipX, screenWidth - 290 - rightSafeArea));
+    
+    // Special handling for bottom positioning to avoid Android navigation bar
+    const minTop = 50 + topSafeArea;
+    // Add extra margin for Android navigation bar (at least 80px from bottom)
+    const extraBottomMargin = Platform.OS === 'android' ? 80 : 0;
+    const maxBottom = screenHeight - 200 - bottomSafeArea - extraBottomMargin;
+    
+    // If tooltip would be too close to bottom, move it up
+    if (tooltipY > maxBottom) {
+      tooltipY = maxBottom;
+    } else if (tooltipY < minTop) {
+      tooltipY = minTop;
+    }
 
     return { top: tooltipY, left: tooltipX };
   };
@@ -729,7 +750,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({ isVisible, onComplete, curren
           </View>
         </View>
         
-        <View style={styles.buttonContainer} pointerEvents="auto">
+        <View style={[styles.buttonContainer, { paddingBottom: Math.max(insets.bottom, 20) }]} pointerEvents="auto">
           <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
             <Text style={styles.skipButtonText}>דלג</Text>
           </TouchableOpacity>
@@ -819,6 +840,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 8,
   },
   skipButton: {
     paddingVertical: 6,

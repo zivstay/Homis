@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  FlatList,
+  Dimensions,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -41,6 +43,15 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
   const [selectedCustomIcon, setSelectedCustomIcon] = useState('📝');
   const [selectedCategoryImage, setSelectedCategoryImage] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [screenHeight, setScreenHeight] = useState(Dimensions.get('window').height);
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenHeight(window.height);
+    });
+
+    return () => subscription?.remove();
+  }, []);
 
   const resetWizard = () => {
     setWizardStep(1);
@@ -334,13 +345,17 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
     <View style={styles.wizardContent}>
       <Text style={styles.wizardTitle}>שלב 2: בחר סוג לוח</Text>
       
-      <FlatList
-        data={BOARD_TYPES}
-        renderItem={renderBoardTypeItem}
-        keyExtractor={(item) => item.id}
+      <ScrollView 
         style={styles.boardTypeList}
         showsVerticalScrollIndicator={false}
-      />
+        contentContainerStyle={styles.boardTypeScrollContent}
+      >
+        {BOARD_TYPES.map((item) => (
+          <View key={item.id}>
+            {renderBoardTypeItem({ item })}
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 
@@ -374,7 +389,11 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
       onRequestClose={handleClose}
     >
       <View style={styles.wizardModalOverlay}>
-        <View style={styles.wizardModalContent}>
+        <KeyboardAvoidingView 
+          style={[styles.wizardModalContent, { height: screenHeight * 0.9 }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
           <View style={styles.wizardHeader}>
             <Text style={styles.wizardModalTitle}>צור לוח חדש</Text>
             <View style={styles.wizardSteps}>
@@ -397,8 +416,26 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
             </View>
           </View>
 
-          {wizardStep === 1 && renderWizardStep1()}
-          {wizardStep === 2 && renderWizardStep2()}
+          {wizardStep === 1 && (
+            <ScrollView 
+              style={styles.wizardScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.wizardScrollContentContainer}
+            >
+              {renderWizardStep1()}
+            </ScrollView>
+          )}
+          {wizardStep === 2 && (
+            <ScrollView 
+              style={styles.wizardScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.wizardScrollContentContainer}
+            >
+              {renderWizardStep2()}
+            </ScrollView>
+          )}
           {wizardStep === 3 && renderWizardStep3()}
           
           <View style={styles.wizardButtons}>
@@ -443,7 +480,7 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
               </TouchableOpacity>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
       
       {/* Custom Category Modal */}
@@ -454,7 +491,11 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
         onRequestClose={() => setShowCustomCategoryModal(false)}
       >
         <View style={styles.customCategoryModalOverlay}>
-          <View style={styles.customCategoryModalContent}>
+          <KeyboardAvoidingView 
+            style={[styles.customCategoryModalContent, { height: screenHeight * 0.8 }]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          >
             <Text style={styles.customCategoryModalTitle}>הוסף קטגוריה מותאמת אישית</Text>
             
             <TextInput
@@ -496,14 +537,23 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
             */}
             
             <ScrollView style={styles.iconSelector} showsVerticalScrollIndicator={false}>
-              <FlatList
-                data={availableIcons}
-                renderItem={renderIconItem}
-                keyExtractor={(item) => item}
-                numColumns={5}
-                columnWrapperStyle={styles.iconRow}
-                scrollEnabled={false}
-              />
+              <View style={styles.iconGrid}>
+                {availableIcons.reduce((rows: any[], item, index) => {
+                  if (index % 5 === 0) {
+                    const rowIcons = availableIcons.slice(index, index + 5);
+                    rows.push(
+                      <View key={`icon-row-${index}`} style={styles.iconRow}>
+                        {rowIcons.map((icon, iconIndex) => (
+                          <View key={`icon-${index + iconIndex}`} style={styles.iconItemContainer}>
+                            {renderIconItem({ item: icon })}
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  }
+                  return rows;
+                }, [])}
+              </View>
             </ScrollView>
             
             <View style={styles.customCategoryModalButtons}>
@@ -532,7 +582,7 @@ const CreateBoardWizard: React.FC<CreateBoardWizardProps> = ({
                 <Text style={styles.customCategoryAddText}>הוסף</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </Modal>
@@ -552,8 +602,6 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '95%',
     maxWidth: 500,
-    maxHeight: '90%',
-    minHeight: '70%',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -563,16 +611,24 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
-  wizardHeader: {
-    alignItems: 'center',
+  wizardScrollContent: {
+    flex: 1,
     marginBottom: 20,
   },
+  wizardScrollContentContainer: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  wizardHeader: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   wizardModalTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#2c3e50',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   wizardSteps: {
     flexDirection: 'row',
@@ -601,14 +657,14 @@ const styles = StyleSheet.create({
   },
   wizardContent: {
     flex: 1,
-    marginBottom: 20,
     paddingHorizontal: 4,
+    paddingBottom: 10,
   },
   wizardTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#2c3e50',
-    marginBottom: 16,
+    marginBottom: 12,
     textAlign: 'center',
   },
   wizardSubtitle: {
@@ -637,14 +693,17 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   boardTypeList: {
-    maxHeight: 250,
+    flex: 1,
+  },
+  boardTypeScrollContent: {
+    paddingBottom: 10,
   },
   boardTypeItem: {
-    padding: 18,
+    padding: 14,
     borderWidth: 2,
     borderColor: '#e0e6ed',
-    borderRadius: 12,
-    marginBottom: 14,
+    borderRadius: 10,
+    marginBottom: 10,
     backgroundColor: '#fafbfc',
     shadowColor: '#000',
     shadowOffset: {
@@ -654,7 +713,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
-    minHeight: 100,
+    minHeight: 80,
   },
   selectedBoardTypeItem: {
     backgroundColor: '#e3f2fd',
@@ -663,42 +722,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
   },
   boardTypeIcon: {
-    fontSize: 36,
+    fontSize: 28,
     color: '#2c3e50',
-    marginBottom: 10,
+    marginBottom: 6,
     textAlign: 'center',
   },
   boardTypeName: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#2c3e50',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 3,
   },
   boardTypeDescription: {
-    fontSize: 15,
+    fontSize: 13,
     color: '#7f8c8d',
-    marginTop: 6,
+    marginTop: 3,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 16,
   },
   wizardButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'stretch',
-    marginTop: 20,
-    paddingTop: 16,
+    marginTop: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
   },
   wizardButton: {
     width: '48%',
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 55,
+    minHeight: 50,
   },
   wizardCancelButton: {
     backgroundColor: '#ecf0f1',
@@ -732,7 +791,6 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '70%',
   },
   customCategoryModalTitle: {
     fontSize: 20,
@@ -761,9 +819,17 @@ const styles = StyleSheet.create({
     maxHeight: 200,
     marginBottom: 20,
   },
+  iconGrid: {
+    flex: 1,
+  },
   iconRow: {
+    flexDirection: 'row',
     justifyContent: 'space-around',
     marginBottom: 12,
+  },
+  iconItemContainer: {
+    flex: 1,
+    alignItems: 'center',
   },
   iconItem: {
     width: 50,
