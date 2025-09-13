@@ -34,6 +34,8 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
   boardType,
   onCategoriesUpdated,
 }) => {
+  console.log('📋 CategoryManagerModal: Props received:', { isVisible, boardId, boardType });
+  
   const { user } = useAuth();
   const [selectedCategories, setSelectedCategories] = useState<QuickCategory[]>([]);
   const [customCategories, setCustomCategories] = useState<QuickCategory[]>([]);
@@ -351,10 +353,12 @@ const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
       animationType="slide"
       transparent={true}
       onRequestClose={() => {
+        console.log('📋 CategoryManagerModal: onRequestClose called');
         onClose();
         resetModal();
       }}
     >
+      {console.log('📋 CategoryManagerModal: Rendering modal with isVisible:', isVisible)}
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.header}>

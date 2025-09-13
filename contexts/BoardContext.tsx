@@ -55,7 +55,12 @@ export const BoardProvider: React.FC<BoardProviderProps> = ({ children }) => {
   const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
   const [boardExpenses, setBoardExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [shouldOpenCategoryModal, setShouldOpenCategoryModal] = useState(false);
+  const [shouldOpenCategoryModal, setShouldOpenCategoryModalState] = useState(false);
+  
+  const setShouldOpenCategoryModal = (shouldOpen: boolean) => {
+    console.log('📋 BoardContext: Setting shouldOpenCategoryModal to:', shouldOpen);
+    setShouldOpenCategoryModalState(shouldOpen);
+  };
   const isRefreshingBoards = useRef(false);
   const isRefreshingMembers = useRef(false);
   const isRefreshingExpenses = useRef(false);

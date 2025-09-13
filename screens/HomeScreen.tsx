@@ -66,6 +66,11 @@ const HomeScreen: React.FC = () => {
   const [forceUpdate, setForceUpdate] = useState(0);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
+  
+  // Add effect to log when showCategoryManagerModal changes
+  useEffect(() => {
+    console.log('📋 HomeScreen: showCategoryManagerModal changed to:', showCategoryManagerModal);
+  }, [showCategoryManagerModal]);
   // DISABLED: Budget-related states temporarily removed
   // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
   
@@ -80,6 +85,12 @@ const HomeScreen: React.FC = () => {
   
   // Check if current user is the board owner
   const isBoardOwner = selectedBoard?.user_role === 'owner';
+  
+  console.log('📋 HomeScreen: Board owner check:', {
+    selectedBoardId: selectedBoard?.id,
+    userRole: selectedBoard?.user_role,
+    isBoardOwner: isBoardOwner
+  });
   
   // Track if this is a newly created board to auto-open category manager
   const [lastBoardId, setLastBoardId] = useState<string | null>(null);
@@ -156,6 +167,11 @@ const HomeScreen: React.FC = () => {
 
   // Effect to handle opening category modal when flag is set
   useEffect(() => {
+    console.log('📋 HomeScreen: Category modal effect triggered');
+    console.log('📋 HomeScreen: shouldOpenCategoryModal:', shouldOpenCategoryModal);
+    console.log('📋 HomeScreen: selectedBoard:', selectedBoard?.id, selectedBoard?.name);
+    console.log('📋 HomeScreen: isBoardOwner:', isBoardOwner);
+    
     if (shouldOpenCategoryModal && selectedBoard && isBoardOwner) {
       console.log('📋 HomeScreen: Flag set to open category manager for board:', selectedBoard.id);
       console.log('📋 HomeScreen: Current states - isLoading:', isLoading, 'refreshing:', refreshing);
@@ -164,6 +180,8 @@ const HomeScreen: React.FC = () => {
       // Check if any other modals are open or if we're in a loading state
       const hasOtherModalsOpen = showDateModal || showDownloadModal || selectedExpense !== null;
       const isCurrentlyLoading = isLoading || refreshing;
+      
+      console.log('📋 HomeScreen: hasOtherModalsOpen:', hasOtherModalsOpen, 'isCurrentlyLoading:', isCurrentlyLoading);
       
       if (!hasOtherModalsOpen && !isCurrentlyLoading) {
         // Wait for the screen to settle
@@ -180,12 +198,16 @@ const HomeScreen: React.FC = () => {
         const retryTimer = setTimeout(() => {
           // Don't reset the flag, let it try again
           console.log('📋 HomeScreen: Retrying category modal check...');
+          // Force a re-render to trigger the effect again
+          setForceUpdate(prev => prev + 1);
         }, 1000);
         
         return () => clearTimeout(retryTimer);
       }
+    } else {
+      console.log('📋 HomeScreen: Conditions not met for opening category modal');
     }
-  }, [shouldOpenCategoryModal, selectedBoard, isBoardOwner, setShouldOpenCategoryModal, isLoading, refreshing, showDateModal, showDownloadModal, selectedExpense]);
+  }, [shouldOpenCategoryModal, selectedBoard, isBoardOwner, setShouldOpenCategoryModal, isLoading, refreshing, showDateModal, showDownloadModal, selectedExpense, forceUpdate]);
 
   // Additional effect to listen for board data changes (e.g., after category updates)
   useEffect(() => {
@@ -1038,16 +1060,27 @@ const HomeScreen: React.FC = () => {
 
       {/* Category Manager Modal */}
       {selectedBoard && (
-        <CategoryManagerModal
-          isVisible={showCategoryManagerModal}
-          onClose={() => setShowCategoryManagerModal(false)}
-          boardId={selectedBoard.id}
-          boardType={selectedBoard.board_type}
-          onCategoriesUpdated={() => {
-            loadCategories();
-            refreshBoardCategories();
-          }}
-        />
+        <>
+          {console.log('📋 HomeScreen: Rendering CategoryManagerModal with:', {
+            isVisible: showCategoryManagerModal,
+            boardId: selectedBoard.id,
+            boardType: selectedBoard.board_type
+          })}
+          <CategoryManagerModal
+            isVisible={showCategoryManagerModal}
+            onClose={() => {
+              console.log('📋 HomeScreen: CategoryManagerModal closing');
+              setShowCategoryManagerModal(false);
+            }}
+            boardId={selectedBoard.id}
+            boardType={selectedBoard.board_type}
+            onCategoriesUpdated={() => {
+              console.log('📋 HomeScreen: Categories updated, reloading...');
+              loadCategories();
+              refreshBoardCategories();
+            }}
+          />
+        </>
       )}
 
       {/* DISABLED: Budget Edit Modal temporarily removed */}

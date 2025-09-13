@@ -128,12 +128,18 @@ function BoardSwitcherHeader() {
         // If we should open categories modal, set the flag in BoardContext
         if (shouldOpenCategories && newBoard) {
           console.log('📋 App: Setting flag to open categories modal for new board:', newBoard.id);
-          setShouldOpenCategoryModal(true);
+          console.log('📋 App: Board with role:', { ...newBoard, user_role: 'owner' });
+          
+          // Add a small delay before setting the flag to ensure board is fully selected
+          setTimeout(() => {
+            console.log('📋 App: Setting shouldOpenCategoryModal flag now');
+            setShouldOpenCategoryModal(true);
+          }, 1000);
         }
       } catch (error) {
         console.error('❌ App: Error refreshing board data:', error);
       }
-    }, 300);
+    }, 500); // Increased delay to ensure board is properly selected
   };
 
   const handleDeleteBoard = (board: Board) => {
