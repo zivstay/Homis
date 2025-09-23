@@ -214,7 +214,7 @@ const LoginScreen: React.FC = () => {
       '⚠️ במצב אורח, הנתונים יישמרו רק על המכשיר ויימחקו עם הסרת האפליקציה, בנוסף לא תוכל לצפות במסכי הסיכום.\n\nהאם אתה בטוח שברצונך להמשיך?',
       [
         {
-          text: 'הרשם/התחבר',
+          text: ' הרשם/התחבר בחינם!',
           style: 'cancel',
         },
         {
@@ -295,13 +295,13 @@ const LoginScreen: React.FC = () => {
       <TouchableOpacity
         style={styles.linkButton}
         onPress={() => {
-          console.log('🔍 LoginScreen: User clicked "אין לך חשבון? הירשם כאן" at top - switching to register');
+          console.log('🔍 LoginScreen: User clicked "אין לך חשבון? הירשם כאן בחינם ובמהירות!" at top - switching to register');
           setIsLogin(false);
           clearErrors();
           // Don't clear form data when switching TO register mode
         }}
       >
-        <Text style={styles.linkText}>אין לך חשבון? הירשם כאן</Text>
+        <Text style={styles.linkText}>אין לך חשבון? הירשם כאן בחינם ובמהירות!</Text>
       </TouchableOpacity>
       
       <TextInput

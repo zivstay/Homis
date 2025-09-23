@@ -743,6 +743,53 @@ class AuthManager:
             print(f"❌ Unexpected error sending password reset email: {e}")
             return False
     
+    def send_feedback_email(self, sender_email: str, sender_name: str, feedback_type: str, message: str, app_config: dict) -> bool:
+        """Send a feedback/support email to the configured support address via Brevo."""
+        if not self.brevo_client:
+            print("❌ Brevo client not initialized")
+            return False
+
+        try:
+            support_email = app_config.get('SUPPORT_EMAIL', 'sarusiziv96@gmail.com')
+            subject_prefix = 'עזרה' if feedback_type == 'help' else 'פידבק'
+            subject = f"{subject_prefix} מהאפליקציה - Homis"
+
+            html_content = f"""
+                <div dir=\"rtl\" style=\"font-family: Arial, sans-serif; padding: 20px;\">
+                  <h2 style=\"color: #2c3e50; margin-top: 0;\">פניה חדשה - Homis</h2>
+                  <p style=\"margin: 0 0 10px 0;\"><strong>סוג פניה:</strong> {subject_prefix}</p>
+                  <p style=\"margin: 0 0 10px 0;\"><strong>שם שולח:</strong> {sender_name}</p>
+                  <p style=\"margin: 0 0 20px 0;\"><strong>אימייל שולח:</strong> {sender_email}</p>
+                  <div style=\"background:#f8f9fa;border-radius:8px;padding:16px;white-space:pre-wrap;\">{message}</div>
+                </div>
+            """
+
+            text_content = (
+                "פניה חדשה - Homis\n"
+                f"סוג פניה: {subject_prefix}\n"
+                f"שם שולח: {sender_name}\n"
+                f"אימייל שולח: {sender_email}\n\n"
+                f"הודעה:\n{message}"
+            )
+
+            send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+                to=[{"email": support_email, "name": "Homis Support"}],
+                sender={"name": sender_name or "Homis User", "email": sender_email or "no-reply@homis.app"},
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+            )
+
+            self.brevo_client.send_transac_email(send_smtp_email)
+            print(f"✅ Feedback email forwarded to support <{support_email}> from <{sender_email}>")
+            return True
+        except ApiException as e:
+            print(f"❌ Failed to send feedback email: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Unexpected error sending feedback email: {e}")
+            return False
+
     def request_password_reset(self, email: str) -> dict:
         """Request password reset by sending verification code"""
         try:

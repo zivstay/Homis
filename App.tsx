@@ -21,7 +21,6 @@ import HomeScreen from './screens/HomeScreen';
 import LoginScreen from './screens/LoginScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SummaryScreen from './screens/SummaryScreen';
-import { adManager } from './services/adManager';
 import { Board, apiService } from './services/api';
 
 const Stack = createStackNavigator();
@@ -37,30 +36,10 @@ function BoardSwitcherHeader() {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const insets = useSafeAreaInsets();
   const handleBoardSelect = async (board: Board) => {
-    // בדיקה אם מחליפים לוח אחר (לא אותו לוח)
-    const shouldShowAd = selectedBoard && selectedBoard.id !== board.id;
-    
-    if (shouldShowAd) {
-      // הצגת פרסומת תגמול לפני החלפת הלוח
-      console.log('🎯 Board Switch: Showing rewarded ad before board switch');
-      const adShown = await adManager.showAdIfAllowed('board_switch');
-      console.log(`🎯 Board Switch: Rewarded ad completed: ${adShown}`);
-      
-      // תמיד מחליפים לוח, לא משנה אם הפרסומת הוצגה או לא
-      // אם הפרסומת לא הוצגה (cooldown) - זה בסדר, המשתמש עדיין יכול להחליף
-      selectBoard(board);
-      setShowBoardModal(false);
-      
-      if (adShown) {
-        console.log('🎯 Board Switch: Ad shown successfully');
-      } else {
-        console.log('🎯 Board Switch: Ad not shown (cooldown active), but board switch allowed');
-      }
-    } else {
-      // אם אין צורך בפרסומת - מחליפים ישירות
-      selectBoard(board);
-      setShowBoardModal(false);
-    }
+    // מחליפים לוח ישירות ללא פרסומת
+    console.log('🎯 Board Switch: Switching board without ad');
+    selectBoard(board);
+    setShowBoardModal(false);
   };
 
   const handleSetDefaultBoard = async (board: Board) => {
@@ -300,12 +279,12 @@ function BoardSwitcherHeader() {
                 onPress={() => {
                   if (isGuestMode) {
                     Alert.alert(
-                      'פונקציה נעולה',
-                      'כדי ליצור לוחות נוספים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
+                      'פונקציה למשתמשים רשומים- ההרשמה חינם',
+                      'כדי ליצור לוחות נוספים, יש להתחבר בחינם עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
                       [
                         { text: 'אולי מאוחר יותר', style: 'cancel' },
                         { 
-                          text: 'התחבר עכשיו', 
+                          text: 'התחבר עכשיו בחינם!', 
                           onPress: () => {
                             setShowBoardModal(false);
                             logout();
@@ -403,12 +382,12 @@ function TabNavigatorWithTutorial({ activeTab, setActiveTab }: { activeTab: stri
               if (isGuestMode) {
                 e.preventDefault();
                 Alert.alert(
-                  'פונקציה נעולה',
-                  'כדי לגשת לסיכומים מתקדמים, יש להתחבר עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
+                  'פונקציה למשתמשים רשומים- ההרשמה חינם',
+                  'כדי לגשת לסיכומים מתקדמים, יש להתחבר חינם עם חשבון משתמש.\n\nהתחבר או הירשם כדי לקבל גישה לכל הפונקציות!',
                   [
                     { text: 'אולי מאוחר יותר', style: 'cancel' },
                     { 
-                      text: 'התחבר עכשיו', 
+                      text: ' התחבר עכשיו בחינם!', 
                       onPress: () => {
                         logout();
                       }

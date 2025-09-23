@@ -28,7 +28,7 @@ const GuestDisclaimer: React.FC<GuestDisclaimerProps> = ({ onLoginPress }) => {
         <View style={styles.textContainer}>
           <Text style={styles.title}>מצב אורח</Text>
           <Text style={styles.description}>
-            התחבר כדי לגשת לכל הפונקציות ולשמור את הנתונים בענן
+            התחבר עכשיו חינם כדי לגשת לכל הפונקציות ולשמור את הנתונים בענן
           </Text>
         </View>
         <TouchableOpacity style={styles.loginButton} onPress={handleLoginPress}>

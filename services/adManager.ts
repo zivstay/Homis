@@ -5,8 +5,11 @@ class AdManager {
   private static instance: AdManager;
   private readonly AD_COOLDOWN_KEY = 'ad_last_shown_time';
   private readonly FIRST_LAUNCH_KEY = 'app_first_launch_time';
+  private readonly DAILY_ADS_KEY = 'daily_ads_count';
+  private readonly DAILY_ADS_DATE_KEY = 'daily_ads_date';
   private readonly COOLDOWN_MINUTES = 10; // 30 שניות (לבדיקה)
   private readonly GRACE_PERIOD_HOURS = 0.25; // 6 שעות ללא פרסומות למשתמשים חדשים
+  private readonly MAX_DAILY_ADS = 2; // מקסימום 2 פרסומות ביום
 
   public static getInstance(): AdManager {
     if (!AdManager.instance) {
@@ -65,7 +68,7 @@ class AdManager {
   }
 
   /**
-   * בדיקה אם ניתן להציג פרסומת (עברה תקופת החסד של 6 שעות ולא הוצגה פרסומת בזמן האחרון)
+   * בדיקה אם ניתן להציג פרסומת (עברה תקופת החסד של 6 שעות, לא הוצגה פרסומת בזמן האחרון, ולא הגענו למגבלת היומית)
    */
   private async canShowAd(): Promise<boolean> {
     try {
@@ -77,12 +80,20 @@ class AdManager {
         return false;
       }
 
-      // בדיקה שנייה: בדיקת הקירור הרגיל בין פרסומות
+      // בדיקה שנייה: בדיקת המגבלה היומית
+      const dailyLimitReached = await this.hasReachedDailyLimit();
+      
+      if (dailyLimitReached) {
+        console.log('🎯 AdManager: Cannot show ad - daily limit reached (2 ads per day)');
+        return false;
+      }
+
+      // בדיקה שלישית: בדיקת הקירור הרגיל בין פרסומות
       const lastShownTime = await AsyncStorage.getItem(this.AD_COOLDOWN_KEY);
       
       if (!lastShownTime) {
-        console.log('🎯 AdManager: Grace period passed and no previous ad shown, can show ad');
-        return true; // אם עברה תקופת החסד ולא הוצגה פרסומת מעולם
+        console.log('🎯 AdManager: Grace period passed, daily limit not reached, and no previous ad shown, can show ad');
+        return true; // אם עברה תקופת החסד, לא הגענו למגבלה היומית, ולא הוצגה פרסומת מעולם
       }
 
       const lastShown = parseInt(lastShownTime, 10);
@@ -94,12 +105,68 @@ class AdManager {
       console.log(`🎯 AdManager: Last ad shown ${secondsAgo} seconds ago (need ${this.COOLDOWN_MINUTES * 60}+ seconds)`);
       
       const canShow = timeDiff >= cooldownMs;
-      console.log(`🎯 AdManager: Grace period passed, cooldown check: ${canShow}`);
+      console.log(`🎯 AdManager: Grace period passed, daily limit not reached, cooldown check: ${canShow}`);
       
       return canShow;
     } catch (error) {
       console.error('🎯 AdManager: Error checking ad cooldown:', error);
       return false; // במקרה של שגיאה, אל תציג פרסומות (בטיחות)
+    }
+  }
+
+  /**
+   * בדיקה אם הגענו למגבלת הפרסומות היומית
+   */
+  private async hasReachedDailyLimit(): Promise<boolean> {
+    try {
+      const today = new Date().toDateString(); // YYYY-MM-DD format
+      const storedDate = await AsyncStorage.getItem(this.DAILY_ADS_DATE_KEY);
+      const storedCount = await AsyncStorage.getItem(this.DAILY_ADS_KEY);
+      
+      // אם זה יום חדש, איפוס המונה
+      if (storedDate !== today) {
+        console.log('🎯 AdManager: New day detected, resetting daily ad count');
+        await AsyncStorage.setItem(this.DAILY_ADS_DATE_KEY, today);
+        await AsyncStorage.setItem(this.DAILY_ADS_KEY, '0');
+        return false; // יום חדש - לא הגענו למגבלה
+      }
+      
+      // בדיקה אם הגענו למגבלה
+      const currentCount = parseInt(storedCount || '0', 10);
+      const hasReachedLimit = currentCount >= this.MAX_DAILY_ADS;
+      
+      console.log(`🎯 AdManager: Daily ad count: ${currentCount}/${this.MAX_DAILY_ADS}, limit reached: ${hasReachedLimit}`);
+      
+      return hasReachedLimit;
+    } catch (error) {
+      console.error('🎯 AdManager: Error checking daily limit:', error);
+      return false; // במקרה של שגיאה, אל תגביל
+    }
+  }
+
+  /**
+   * עדכון מונה הפרסומות היומי
+   */
+  private async incrementDailyAdCount(): Promise<void> {
+    try {
+      const today = new Date().toDateString();
+      const storedDate = await AsyncStorage.getItem(this.DAILY_ADS_DATE_KEY);
+      const storedCount = await AsyncStorage.getItem(this.DAILY_ADS_KEY);
+      
+      // אם זה יום חדש, איפוס המונה
+      if (storedDate !== today) {
+        await AsyncStorage.setItem(this.DAILY_ADS_DATE_KEY, today);
+        await AsyncStorage.setItem(this.DAILY_ADS_KEY, '1');
+        console.log('🎯 AdManager: New day, daily ad count set to 1');
+      } else {
+        // עדכון המונה
+        const currentCount = parseInt(storedCount || '0', 10);
+        const newCount = currentCount + 1;
+        await AsyncStorage.setItem(this.DAILY_ADS_KEY, newCount.toString());
+        console.log(`🎯 AdManager: Daily ad count incremented to ${newCount}`);
+      }
+    } catch (error) {
+      console.error('🎯 AdManager: Error incrementing daily ad count:', error);
     }
   }
 
@@ -111,13 +178,16 @@ class AdManager {
   }
 
   /**
-   * עדכון זמן הצגת הפרסומת האחרונה
+   * עדכון זמן הצגת הפרסומת האחרונה ומונה יומי
    */
   private async updateLastShownTime(): Promise<void> {
     try {
       const currentTime = Date.now();
       await AsyncStorage.setItem(this.AD_COOLDOWN_KEY, currentTime.toString());
       console.log(`🎯 AdManager: Updated last shown time to ${new Date(currentTime).toLocaleTimeString()}`);
+      
+      // עדכון המונה היומי
+      await this.incrementDailyAdCount();
     } catch (error) {
       console.error('🎯 AdManager: Error updating ad last shown time:', error);
     }
@@ -318,6 +388,10 @@ class AdManager {
     lastAdDate: string | null;
     minutesFromLastAd: number | null;
     canShowAd: boolean;
+    dailyAdCount: number;
+    maxDailyAds: number;
+    dailyLimitReached: boolean;
+    todayDate: string;
   }> {
     try {
       const firstLaunchTime = await this.getFirstLaunchTime();
@@ -334,6 +408,13 @@ class AdManager {
 
       const isInGracePeriod = await this.isInGracePeriod();
       const canShowAd = await this.canShowAd();
+      const dailyLimitReached = await this.hasReachedDailyLimit();
+      
+      // קבלת מונה הפרסומות היומי
+      const today = new Date().toDateString();
+      const storedDate = await AsyncStorage.getItem(this.DAILY_ADS_DATE_KEY);
+      const storedCount = await AsyncStorage.getItem(this.DAILY_ADS_KEY);
+      const dailyAdCount = (storedDate === today) ? parseInt(storedCount || '0', 10) : 0;
 
       return {
         firstLaunchTime,
@@ -343,7 +424,11 @@ class AdManager {
         lastAdTime,
         lastAdDate: lastAdTime ? new Date(lastAdTime).toLocaleString('he-IL') : null,
         minutesFromLastAd,
-        canShowAd
+        canShowAd,
+        dailyAdCount,
+        maxDailyAds: this.MAX_DAILY_ADS,
+        dailyLimitReached,
+        todayDate: today
       };
     } catch (error) {
       console.error('🎯 AdManager: Error getting ad status:', error);
@@ -355,7 +440,11 @@ class AdManager {
         lastAdTime: null,
         lastAdDate: null,
         minutesFromLastAd: null,
-        canShowAd: false
+        canShowAd: false,
+        dailyAdCount: 0,
+        maxDailyAds: this.MAX_DAILY_ADS,
+        dailyLimitReached: false,
+        todayDate: new Date().toDateString()
       };
     }
   }

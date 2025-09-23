@@ -5,7 +5,7 @@ import { QuickCategory } from '../constants/boardTypes';
 // const API_BASE_URL = 'http://10.0.2.2:5000/api';
 
 // If you're on a real device on Wi-Fi
-// const API_BASE_URL = 'http://192.168.7.7:5000/api';   // <-- your IP
+// const API_BASE_URL = 'http://192.168.7.5:5000/api';   // <-- your IP
 const API_BASE_URL = 'https://homis-backend-06302e58f4ca.herokuapp.com/api';   // <-- your IP
 
 // Types
@@ -1327,6 +1327,17 @@ class ApiService {
     });
 
     return this.handleResponse<{ message: string }>(response);
+  }
+
+  // Support / Feedback
+  async sendFeedback(params: { type: 'help' | 'feedback'; message: string }): Promise<ApiResponse<{ message: string }>> {
+    return this.makeAuthenticatedRequest<{ message: string }>(
+      `${API_BASE_URL}/support/feedback`,
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }
+    );
   }
 
   // Delete user account

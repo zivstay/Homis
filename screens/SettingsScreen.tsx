@@ -40,6 +40,10 @@ const SettingsScreen: React.FC = () => {
   const [showEditBoardNameModal, setShowEditBoardNameModal] = useState(false);
   const [editBoardName, setEditBoardName] = useState('');
   const [isUpdatingBoard, setIsUpdatingBoard] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<'help' | 'feedback'>('help');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   
   const handleResetAdCooldown = async () => {
     await adManager.resetAdCooldown();
@@ -424,6 +428,31 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleSendFeedback = async () => {
+    if (!feedbackMessage.trim() || feedbackMessage.trim().length < 5) {
+      Alert.alert('שגיאה', 'נא להזין הודעה (לפחות 5 תווים)');
+      return;
+    }
+
+    setIsSendingFeedback(true);
+    try {
+      const result = await apiService.sendFeedback({ type: feedbackType, message: feedbackMessage.trim() });
+      if (result.success) {
+        Alert.alert('הצלחה', 'הפניה נשלחה בהצלחה');
+        setShowFeedbackModal(false);
+        setFeedbackMessage('');
+        setFeedbackType('help');
+      } else {
+        Alert.alert('שגיאה', result.error || 'שגיאה בשליחת הפניה');
+      }
+    } catch (error) {
+      console.error('Error sending feedback:', error);
+      Alert.alert('שגיאה', 'שגיאה בתקשורת עם השרת');
+    } finally {
+      setIsSendingFeedback(false);
+    }
+  };
+
 
 
   const renderBoardInfo = () => (
@@ -688,6 +717,23 @@ const SettingsScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Support / Feedback Section */}
+      <View style={styles.section}>        
+        <TouchableOpacity
+          style={styles.settingButton}
+          onPress={() => {
+            if (isGuestMode) {
+              Alert.alert('שגיאה', 'פניה לתמיכה זמינה לאחר התחברות לחשבון.');
+              return;
+            }
+            setShowFeedbackModal(true);
+          }}
+        >
+          <Text style={styles.settingButtonText}>✉️ פידבק / תמיכה</Text>
+          <Text style={styles.settingButtonSubtext}>שלח הודעה לצוות התמיכה</Text>
+        </TouchableOpacity>
+      </View>
+
       {selectedBoard ? (
         <>
           {renderBoardInfo()}
@@ -843,6 +889,70 @@ const SettingsScreen: React.FC = () => {
                 <Text style={styles.inviteButtonText}>
                   {isUpdatingBoard ? 'מעדכן...' : 'עדכן שם'}
                 </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Feedback / Support Modal */}
+      <Modal
+        visible={showFeedbackModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFeedbackModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>✉️ פידבק / פניה לתמיכה</Text>
+
+            <View style={styles.inviteModeContainer}>
+              <TouchableOpacity
+                style={[styles.modeButton, feedbackType === 'help' && styles.modeButtonActive]}
+                onPress={() => setFeedbackType('help')}
+              >
+                <Text style={[styles.modeButtonText, feedbackType === 'help' && styles.modeButtonTextActive]}>🛟 עזרה</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeButton, feedbackType === 'feedback' && styles.modeButtonActive]}
+                onPress={() => setFeedbackType('feedback')}
+              >
+                <Text style={[styles.modeButtonText, feedbackType === 'feedback' && styles.modeButtonTextActive]}>💬 ביקורת</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modeDescription}>כתוב את ההודעה שלך לצוות התמיכה</Text>
+
+            <TextInput
+              style={[styles.modalInput, styles.modalTextArea]}
+              placeholder="הודעתך..."
+              value={feedbackMessage}
+              onChangeText={setFeedbackMessage}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              blurOnSubmit={true}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowFeedbackModal(false);
+                  setFeedbackMessage('');
+                  setFeedbackType('help');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>ביטול</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.inviteButton]}
+                onPress={handleSendFeedback}
+                disabled={isSendingFeedback}
+              >
+                <Text style={styles.inviteButtonText}>{isSendingFeedback ? 'שולח...' : 'שלח'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1091,6 +1201,9 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     fontSize: 16,
+  },
+  modalTextArea: {
+    height: 120,
   },
   modalButtons: {
     flexDirection: 'row',

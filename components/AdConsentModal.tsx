@@ -9,7 +9,7 @@ interface AdConsentModalProps {
 export const showAdConsentModal = async (props: AdConsentModalProps = {}): Promise<boolean> => {
   const {
     title = '🎉 תודה על השימוש',
-    message = 'בשביל שתוכל להוסיף הוצאה, נשמח שתצפה בפרסומת קטנה שתעזור לנו להמשיך לפתח את Homeis!\n\n**חשוב לדעת:**\n•תצטרך לצפות בה עד הסוף כדי שההוצאה תתווסף',
+    message = 'בשביל שתוכל להוסיף הוצאה, נשמח שתצפה בפרסומת קטנה שתעזור לנו להמשיך לפתח את Homeis!\n\n**חשוב לדעת:**\n•תצטרך לצפות בה עד הסוף כדי שההוצאה תתווסף\n•אנחנו דואגים לחווית משתמש נעימה - לא נציג יותר מ-2 פרסומות ביום',
     alwaysRequireAd = false
   } = props;
 

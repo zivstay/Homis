@@ -68,6 +68,9 @@ class Config:
     IMAGE_QUALITY = int(os.environ.get('IMAGE_QUALITY', 85))
     IMAGE_MAX_FILE_SIZE = int(os.environ.get('IMAGE_MAX_FILE_SIZE', 10 * 1024 * 1024))  # 10MB
 
+    # Support / feedback settings
+    SUPPORT_EMAIL = os.environ.get('SUPPORT_EMAIL', 'sarusiziv96@gmail.com')
+
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True

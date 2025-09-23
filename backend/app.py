@@ -783,6 +783,45 @@ def create_app(config_name='default'):
             'timestamp': datetime.now().isoformat()
         })
 
+    @app.route('/api/support/feedback', methods=['POST'])
+    @require_auth
+    def send_feedback():
+        """Receive feedback/support from authenticated users and forward via email."""
+        try:
+            data = request.get_json() or {}
+            feedback_type = (data.get('type') or '').strip().lower()
+            message = (data.get('message') or '').strip()
+
+            if feedback_type not in ['help', 'feedback']:
+                return jsonify({'error': 'Invalid type. Must be "help" or "feedback"'}), 400
+
+            if not message or len(message) < 5:
+                return jsonify({'error': 'Message is too short'}), 400
+
+            current_user_info = auth_manager.get_current_user()
+            if not current_user_info.get('valid'):
+                return jsonify({'error': 'Authentication required'}), 401
+
+            user = current_user_info['user']
+            sender_email = user['email']
+            sender_name = f"{user.get('first_name','')} {user.get('last_name','')}".strip()
+
+            ok = auth_manager.send_feedback_email(
+                sender_email=sender_email,
+                sender_name=sender_name,
+                feedback_type=feedback_type,
+                message=message,
+                app_config=app.config
+            )
+
+            if not ok:
+                return jsonify({'error': 'Failed to send feedback'}), 500
+
+            return jsonify({'message': 'Feedback sent successfully'}), 200
+        except Exception as e:
+            print(f"❌ Error in /api/support/feedback: {e}")
+            return jsonify({'error': 'Server error'}), 500
+
     # Authentication routes
     @app.route('/api/auth/register', methods=['POST'])
     def register():
