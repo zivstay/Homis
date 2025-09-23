@@ -774,7 +774,7 @@ class AuthManager:
 
             send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
                 to=[{"email": support_email, "name": "Homis Support"}],
-                sender={"name": sender_name or "Homis User", "email": sender_email or "no-reply@homis.app"},
+                sender={"name": "Homis Team", "email": "sarusiziv96@gmail.com"},
                 subject=subject,
                 html_content=html_content,
                 text_content=text_content,
