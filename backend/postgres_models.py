@@ -44,6 +44,7 @@ class UserDataclass:
     terms_accepted_at: Optional[str] = None
     terms_version_signed: Optional[int] = None
     is_virtual: bool = False
+    is_admin: bool = False
 
 
 @dataclass
@@ -163,6 +164,44 @@ class CategoryDataclass:
 
 
 @dataclass
+class ShoppingListDataclass:
+    id: str
+    board_id: str
+    name: str
+    created_by: str
+    created_at: str
+    updated_at: str
+    description: Optional[str] = None
+    date: Optional[str] = None
+    is_active: bool = True
+
+
+@dataclass
+class ShoppingListItemDataclass:
+    id: str
+    shopping_list_id: str
+    item_name: str
+    is_completed: bool
+    created_by: str
+    created_at: str
+    updated_at: str
+    description: Optional[str] = None
+    completed_at: Optional[str] = None
+    completed_by: Optional[str] = None
+
+
+@dataclass
+class ShoppingListQuickItemDataclass:
+    id: str
+    board_id: str
+    item_name: str
+    display_order: int
+    created_at: str
+    updated_at: str
+    icon: Optional[str] = None
+
+
+@dataclass
 class InvitationDataclass:
     id: str
     board_id: str
@@ -188,6 +227,19 @@ class PendingRegistrationDataclass:
     expiry_time: str
     created_at: str
     attempts: int = 0
+
+
+@dataclass
+class PushTokenDataclass:
+    id: str
+    user_id: str
+    expo_push_token: str
+    device_id: str
+    created_at: str
+    updated_at: str
+    is_active: bool = True
+    device_name: Optional[str] = None
+    device_os: Optional[str] = None
 
 
 db = SQLAlchemy()
@@ -220,6 +272,9 @@ class User(db.Model):
     
     # Virtual user field - for users added without email/account
     is_virtual = Column(Boolean, default=False, nullable=False)
+    
+    # Admin user field - for administrative privileges
+    is_admin = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     owned_boards = relationship("Board", back_populates="owner", foreign_keys="Board.owner_id")
@@ -242,6 +297,8 @@ class User(db.Model):
     # Add relationship for notifications created by this user
     created_notifications = relationship("Notification", back_populates="creator",
                                          foreign_keys="Notification.created_by")
+    # Add relationship for push tokens
+    push_tokens = relationship("PushToken", back_populates="user")
 
     def to_dict(self):
         return {
@@ -259,7 +316,8 @@ class User(db.Model):
             'accepted_terms': self.accepted_terms,
             'terms_accepted_at': self.terms_accepted_at if self.terms_accepted_at else None,
             'terms_version_signed': self.terms_version_signed,
-            'is_virtual': self.is_virtual
+            'is_virtual': self.is_virtual,
+            'is_admin': self.is_admin
         }
 
     def to_dataclass(self) -> UserDataclass:
@@ -328,6 +386,8 @@ class Board(db.Model):
     expenses = relationship("Expense", back_populates="board")
     categories = relationship("Category", back_populates="board")
     notifications = relationship("Notification", back_populates="board")
+    shopping_lists = relationship("ShoppingList", back_populates="board")
+    shopping_list_quick_items = relationship("ShoppingListQuickItem", back_populates="board")
 
     def to_dict(self):
         return {
@@ -527,6 +587,120 @@ class Category(db.Model):
         return CategoryDataclass(**self.to_dict())
 
 
+class ShoppingList(db.Model):
+    __tablename__ = 'shopping_lists'
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    board_id = Column(String, ForeignKey('boards.id'), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    date = Column(DateTime, nullable=True)
+    created_by = Column(String, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True, nullable=False)
+    all_items_completed = Column(Boolean, default=False, nullable=False)
+
+    # Relationships
+    board = relationship("Board", back_populates="shopping_lists")
+    creator = relationship("User", foreign_keys=[created_by])
+    items = relationship("ShoppingListItem", back_populates="shopping_list", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'board_id': self.board_id,
+            'name': self.name,
+            'description': self.description,
+            'date': self.date.isoformat() if self.date else None,
+            'created_by': self.created_by,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'is_active': self.is_active,
+            'all_items_completed': self.all_items_completed
+        }
+
+    def to_dataclass(self) -> ShoppingListDataclass:
+        """Convert SQLAlchemy model to dataclass for compatibility"""
+        return ShoppingListDataclass(**self.to_dict())
+    
+    def update_completion_status(self):
+        """Update all_items_completed based on current items status"""
+        if not self.items:
+            self.all_items_completed = False
+        else:
+            self.all_items_completed = all(item.is_completed for item in self.items)
+        self.updated_at = datetime.utcnow()
+
+
+class ShoppingListItem(db.Model):
+    __tablename__ = 'shopping_list_items'
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    shopping_list_id = Column(String, ForeignKey('shopping_lists.id'), nullable=False)
+    item_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    is_completed = Column(Boolean, default=False, nullable=False)
+    created_by = Column(String, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    completed_by = Column(String, ForeignKey('users.id'), nullable=True)
+
+    # Relationships
+    shopping_list = relationship("ShoppingList", back_populates="items")
+    creator = relationship("User", foreign_keys=[created_by])
+    completer = relationship("User", foreign_keys=[completed_by])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'shopping_list_id': self.shopping_list_id,
+            'item_name': self.item_name,
+            'description': self.description,
+            'is_completed': self.is_completed,
+            'created_by': self.created_by,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'completed_by': self.completed_by
+        }
+
+    def to_dataclass(self) -> ShoppingListItemDataclass:
+        """Convert SQLAlchemy model to dataclass for compatibility"""
+        return ShoppingListItemDataclass(**self.to_dict())
+
+
+class ShoppingListQuickItem(db.Model):
+    __tablename__ = 'shopping_list_quick_items'
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    board_id = Column(String, ForeignKey('boards.id'), nullable=False)
+    item_name = Column(String(255), nullable=False)
+    icon = Column(String(10), nullable=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    board = relationship("Board", back_populates="shopping_list_quick_items")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'board_id': self.board_id,
+            'item_name': self.item_name,
+            'icon': self.icon,
+            'display_order': self.display_order,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def to_dataclass(self) -> ShoppingListQuickItemDataclass:
+        """Convert SQLAlchemy model to dataclass for compatibility"""
+        return ShoppingListQuickItemDataclass(**self.to_dict())
+
+
 class Notification(db.Model):
     __tablename__ = 'notifications'
 
@@ -637,6 +811,41 @@ class PendingRegistration(db.Model):
     def to_dataclass(self) -> PendingRegistrationDataclass:
         """Convert SQLAlchemy model to dataclass for compatibility"""
         return PendingRegistrationDataclass(**self.to_dict())
+
+
+class PushToken(db.Model):
+    """Model for storing Expo push notification tokens"""
+    __tablename__ = 'push_tokens'
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey('users.id'), nullable=False, index=True)
+    expo_push_token = Column(String(500), nullable=False, unique=True, index=True)
+    device_id = Column(String(255), nullable=False)
+    device_name = Column(String(255), nullable=True)
+    device_os = Column(String(50), nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="push_tokens")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'expo_push_token': self.expo_push_token,
+            'device_id': self.device_id,
+            'device_name': self.device_name,
+            'device_os': self.device_os,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def to_dataclass(self) -> PushTokenDataclass:
+        """Convert SQLAlchemy model to dataclass for compatibility"""
+        return PushTokenDataclass(**self.to_dict())
 
 
 # PostgreSQL Database Manager (SQLAlchemy-based)

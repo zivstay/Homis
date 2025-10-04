@@ -22,6 +22,8 @@ import LoginScreen from './screens/LoginScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SummaryScreen from './screens/SummaryScreen';
 import { Board, apiService } from './services/api';
+import EngagementTracker from './services/engagementTracker';
+import NotificationService from './services/notificationService';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -432,6 +434,91 @@ function AppContent() {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [requireTermsAcceptance, setRequireTermsAcceptance] = useState(false);
   const [termsCheckCompleted, setTermsCheckCompleted] = useState(false);
+
+  // Initialize notification service (only once on app start)
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        const notificationService = NotificationService.getInstance();
+        
+        // Request permissions
+        const hasPermission = await notificationService.requestPermissions();
+        if (hasPermission) {
+          console.log('✅ Notification permissions granted');
+          
+          // ⚙️ CONFIGURATION: Switch between TEST MODE and PRODUCTION MODE
+          const TEST_MODE = false; // Set to false for production
+          
+          if (TEST_MODE) {
+            // 🧪 TEST MODE: Show all notification types 1 minute apart
+            await notificationService.scheduleTestMode();
+            console.log('🧪 TEST MODE: All notifications will appear starting in 1 minute');
+          } else {
+            // 📅 PRODUCTION MODE: Refresh notifications (clear old + schedule new for 8 weeks)
+            await notificationService.refreshNotifications();
+            console.log('📅 Notifications refreshed - scheduled for next 8 weeks');
+            
+            // 🔍 DEBUG: Show all scheduled notifications
+            await notificationService.debugScheduledNotifications();
+            
+            // 🔍 DEBUG: Check all weekly notifications status
+            const allNotificationsStatus = notificationService.checkAllWeeklyNotificationsStatus();
+            console.log(`📅 All Weekly Notifications Status:`, allNotificationsStatus);
+            
+            // Show detailed status for each day
+            if (allNotificationsStatus.sunday.isToday) {
+              if (allNotificationsStatus.sunday.timePassed) {
+                console.log('⚠️ Today is Sunday but 12:00 has already passed');
+              } else {
+                console.log(`✅ Today is Sunday, notification will appear in ${allNotificationsStatus.sunday.minutesUntil} minutes`);
+              }
+            }
+            
+            if (allNotificationsStatus.wednesday.isToday) {
+              if (allNotificationsStatus.wednesday.timePassed) {
+                console.log('⚠️ Today is Wednesday but 19:00 has already passed');
+              } else {
+                console.log(`✅ Today is Wednesday, notification will appear in ${allNotificationsStatus.wednesday.minutesUntil} minutes`);
+              }
+            }
+            
+            if (allNotificationsStatus.saturday.isToday) {
+              if (allNotificationsStatus.saturday.timePassed) {
+                console.log('⚠️ Today is Saturday but 18:00 has already passed');
+              } else {
+                console.log(`✅ Today is Saturday, notification will appear in ${allNotificationsStatus.saturday.minutesUntil} minutes`);
+              }
+            }
+            
+            // 🧪 DEBUG: Send immediate test notification to verify it works
+            await notificationService.sendInstantTestNotification();
+            console.log('🧪 Sent immediate test notification for verification');
+          }
+        } else {
+          console.log('❌ Notification permissions denied');
+        }
+      } catch (error) {
+        console.error('❌ Error initializing notifications:', error);
+      }
+    };
+
+    initializeNotifications();
+  }, []); // Empty dependency array = runs only once on mount
+
+  // Track app visits whenever user navigates or interacts with the app
+  useEffect(() => {
+    const recordVisitPeriodically = async () => {
+      const engagementTracker = EngagementTracker.getInstance();
+      await engagementTracker.recordVisit();
+    };
+
+    // Record visit every 30 minutes while app is active (changed from 1 minute for testing)
+    const visitInterval = setInterval(recordVisitPeriodically, 30 * 60 * 1000);
+
+    return () => {
+      clearInterval(visitInterval);
+    };
+  }, [isAuthenticated]); // When user logs in
 
   console.log('🔍 AppContent - Auth status:', { isAuthenticated, isLoading, selectedBoard });
   console.log('🔍 AppContent - User object:', user);

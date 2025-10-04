@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Script to list all users from PostgreSQL database
-Displays user count and then a table with user details
+Displays user count, activity statistics, and a table with user details including last activity
+Shows when users last performed actions like adding expenses, creating boards, etc.
 """
 
 import os
@@ -132,14 +133,26 @@ def get_users_count(engine):
         return None
 
 def get_all_users(engine):
-    """Get all users from database"""
+    """Get all users from database with their last activity"""
     try:
         with engine.connect() as conn:
             query = text("""
-                SELECT id, email, username, first_name, last_name, 
-                       created_at, is_active, email_verified
-                FROM users 
-                ORDER BY created_at DESC
+                SELECT u.id, u.email, u.username, u.first_name, u.last_name, 
+                       u.created_at, u.is_active, u.email_verified,
+                       GREATEST(
+                           COALESCE(MAX(e.created_at), '1900-01-01'::timestamp),
+                           COALESCE(MAX(e.updated_at), '1900-01-01'::timestamp),
+                           COALESCE(MAX(b.created_at), '1900-01-01'::timestamp),
+                           COALESCE(MAX(b.updated_at), '1900-01-01'::timestamp),
+                           COALESCE(MAX(n.created_at), '1900-01-01'::timestamp)
+                       ) as last_activity
+                FROM users u
+                LEFT JOIN expenses e ON (u.id = e.created_by OR u.id = e.paid_by)
+                LEFT JOIN boards b ON u.id = b.owner_id
+                LEFT JOIN notifications n ON u.id = n.created_by
+                GROUP BY u.id, u.email, u.username, u.first_name, u.last_name, 
+                         u.created_at, u.is_active, u.email_verified
+                ORDER BY last_activity DESC NULLS LAST, u.created_at DESC
             """)
             
             result = conn.execute(query)
@@ -158,11 +171,11 @@ def display_users_table(users):
         return
     
     print(f"\n👥 Users List ({len(users)} users):")
-    print("=" * 120)
+    print("=" * 140)
     
     # Table header
-    print(f"{'ID':<5} {'Email':<30} {'First Name':<15} {'Last Name':<15} {'Username':<15} {'Active':<8} {'Verified':<10} {'Created':<12}")
-    print("-" * 120)
+    print(f"{'ID':<5} {'Email':<30} {'First Name':<15} {'Last Name':<15} {'Username':<15} {'Active':<8} {'Verified':<10} {'Created':<12} {'Last Activity':<20}")
+    print("-" * 140)
     
     # Table rows
     for user in users:
@@ -186,12 +199,22 @@ def display_users_table(users):
         active_status = "✅ Yes" if user.is_active else "❌ No"
         verified_status = "✅ Yes" if user.email_verified else "❌ No"
         
-        # Format date
+        # Format dates
         created_date = user.created_at.strftime("%Y-%m-%d") if user.created_at else "-"
         
-        print(f"{user.id:<5} {email:<30} {first_name:<15} {last_name:<15} {username:<15} {active_status:<8} {verified_status:<10} {created_date:<12}")
+        # Format last activity
+        if hasattr(user, 'last_activity') and user.last_activity:
+            # Check if last_activity is not the default '1900-01-01' timestamp
+            if user.last_activity.year > 1900:
+                last_activity = user.last_activity.strftime("%Y-%m-%d %H:%M")
+            else:
+                last_activity = "Never"
+        else:
+            last_activity = "Never"
+        
+        print(f"{user.id:<5} {email:<30} {first_name:<15} {last_name:<15} {username:<15} {active_status:<8} {verified_status:<10} {created_date:<12} {last_activity:<20}")
     
-    print("-" * 120)
+    print("-" * 140)
 
 def display_detailed_users(users, limit=10):
     """Display detailed user information for first N users"""
@@ -211,9 +234,50 @@ def display_detailed_users(users, limit=10):
         print(f"   Active: {'✅ Yes' if user.is_active else '❌ No'}")
         print(f"   Email Verified: {'✅ Yes' if user.email_verified else '❌ No'}")
         print(f"   Created: {user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else 'Unknown'}")
+        
+        # Display last activity
+        if hasattr(user, 'last_activity') and user.last_activity:
+            if user.last_activity.year > 1900:
+                print(f"   Last Activity: {user.last_activity.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                print(f"   Last Activity: Never")
+        else:
+            print(f"   Last Activity: Never")
     
     if len(users) > limit:
         print(f"\n... and {len(users) - limit} more users")
+
+def get_user_activity_stats(engine):
+    """Get user activity statistics"""
+    try:
+        with engine.connect() as conn:
+            # Get activity statistics
+            query = text("""
+                SELECT 
+                    COUNT(DISTINCT u.id) as total_users,
+                    COUNT(DISTINCT CASE WHEN e.created_at > NOW() - INTERVAL '7 days' THEN u.id END) as active_7_days,
+                    COUNT(DISTINCT CASE WHEN e.created_at > NOW() - INTERVAL '30 days' THEN u.id END) as active_30_days,
+                    COUNT(DISTINCT CASE WHEN b.created_at > NOW() - INTERVAL '7 days' THEN u.id END) as created_board_7_days,
+                    COUNT(DISTINCT CASE WHEN b.created_at > NOW() - INTERVAL '30 days' THEN u.id END) as created_board_30_days
+                FROM users u
+                LEFT JOIN expenses e ON (u.id = e.created_by OR u.id = e.paid_by)
+                LEFT JOIN boards b ON u.id = b.owner_id
+            """)
+            
+            result = conn.execute(query)
+            stats = result.fetchone()
+            
+            print(f"\n📊 User Activity Statistics:")
+            print("=" * 50)
+            print(f"Total Users: {stats.total_users}")
+            print(f"Active in last 7 days: {stats.active_7_days}")
+            print(f"Active in last 30 days: {stats.active_30_days}")
+            print(f"Created boards in last 7 days: {stats.created_board_7_days}")
+            print(f"Created boards in last 30 days: {stats.created_board_30_days}")
+            print("=" * 50)
+            
+    except SQLAlchemyError as e:
+        print(f"❌ Database error: {e}")
 
 def get_user_board_counts(engine):
     """Get board membership counts for users"""
@@ -293,7 +357,10 @@ def main():
     display_users_table(users)
     
     # Display detailed information for first few users
-    display_detailed_users(users, limit=5)
+    display_detailed_users(users, limit=30)
+    
+    # Display activity statistics
+    get_user_activity_stats(engine)
     
     # Display board statistics
     get_user_board_counts(engine)

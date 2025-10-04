@@ -2,17 +2,17 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import BarChart from '../components/BarChart';
 import { useAuth } from '../contexts/AuthContext';
@@ -72,7 +72,7 @@ const SummaryScreen: React.FC = () => {
   const debtsTimeoutRef = useRef<any>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter | null>(null);
   const [selectedBoards, setSelectedBoards] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('expenses');
+  const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('debts');
 
   const [showCharts, setShowCharts] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -100,6 +100,11 @@ const SummaryScreen: React.FC = () => {
 
   // Function to get current period filters with fresh dates
   const getCurrentPeriodFilters = (): PeriodFilter[] => [
+    {
+      label: 'הכל',
+      startDate: '',
+      endDate: '',
+    },
     {
       label: 'השבוע',
       startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -234,12 +239,12 @@ const SummaryScreen: React.FC = () => {
         if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
           filters.start_date = customPeriod.startDate;
           filters.end_date = customPeriod.endDate;
-        } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
-          // Get fresh dates for current period filters
+        } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם' && selectedPeriod.label !== 'הכל') {
+          // Get fresh dates for current period filters (skip "הכל" option)
           const currentFilters = getCurrentPeriodFilters();
           const currentPeriod = currentFilters.find(p => p.label === selectedPeriod.label);
           
-          if (currentPeriod) {
+          if (currentPeriod && currentPeriod.startDate && currentPeriod.endDate) {
             filters.start_date = currentPeriod.startDate;
             filters.end_date = currentPeriod.endDate;
             console.log('📅 SummaryScreen: Using fresh dates:', { 
@@ -247,12 +252,13 @@ const SummaryScreen: React.FC = () => {
               end: currentPeriod.endDate,
               label: selectedPeriod.label 
             });
-          } else {
+          } else if (selectedPeriod.startDate && selectedPeriod.endDate) {
             // Fallback to stored dates
             filters.start_date = selectedPeriod.startDate;
             filters.end_date = selectedPeriod.endDate;
           }
         }
+        // If "הכל" is selected or no valid dates, don't add date filters
         
         if (selectedBoards.length > 0) {
           filters.board_ids = selectedBoards;
@@ -307,12 +313,12 @@ const SummaryScreen: React.FC = () => {
         if (customPeriod && selectedPeriod?.label === 'טווח מותאם') {
           filters.start_date = customPeriod.startDate;
           filters.end_date = customPeriod.endDate;
-        } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם') {
-          // Get fresh dates for current period filters
+        } else if (selectedPeriod && selectedPeriod.label !== 'טווח מותאם' && selectedPeriod.label !== 'הכל') {
+          // Get fresh dates for current period filters (skip "הכל" option)
           const currentFilters = getCurrentPeriodFilters();
           const currentPeriod = currentFilters.find(p => p.label === selectedPeriod.label);
           
-          if (currentPeriod) {
+          if (currentPeriod && currentPeriod.startDate && currentPeriod.endDate) {
             filters.start_date = currentPeriod.startDate;
             filters.end_date = currentPeriod.endDate;
             console.log('📅 SummaryScreen: Using fresh dates for debts:', { 
@@ -320,12 +326,13 @@ const SummaryScreen: React.FC = () => {
               end: currentPeriod.endDate,
               label: selectedPeriod.label 
             });
-          } else {
+          } else if (selectedPeriod.startDate && selectedPeriod.endDate) {
             // Fallback to stored dates
             filters.start_date = selectedPeriod.startDate;
             filters.end_date = selectedPeriod.endDate;
           }
         }
+        // If "הכל" is selected or no valid dates, don't add date filters
         
         if (selectedBoards.length > 0) {
           filters.board_ids = selectedBoards;

@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
         textAlign: 'right',
     },
     customCategoriesList: {
-        maxHeight: 80,
+        flexShrink: 1,
     },
     customCategoryItem: {
         backgroundColor: '#e8f5e8',

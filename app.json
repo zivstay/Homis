@@ -4,7 +4,7 @@
     "slug": "home-expense-manager",
     "version": "1.0.6",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/main_logo_icon.png",
     "scheme": "home-expense-manager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -15,15 +15,16 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "אפליקציה זו זקוקה לגישה לגלריה כדי להוסיף תמונות להוצאות",
         "NSCameraUsageDescription": "אפליקציה זו זקוקה לגישה למצלמה כדי לצלם תמונות להוצאות",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["remote-notification"]
       },
       "bundleIdentifier": "com.sarusiziv96.homeexpensemanager"
     },
     "android": {
       "versionCode": 2,
-      "icon": "./assets/android/playstore-icon.png",
+      "icon": "./assets/images/main_logo_icon.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android/mipmap-xxxhdpi/ic_launcher_foreground.png",
+        "foregroundImage": "./assets/images/main_logo_icon.png",
         "backgroundColor": "#3DDC84"
       },
       "edgeToEdgeEnabled": true,
@@ -33,7 +34,10 @@
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK"
       ],
       "package": "com.sarusiziv96.homeexpensemanager"
     },
@@ -47,7 +51,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/main_logo_icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
@@ -58,6 +62,14 @@
         {
           "androidAppId": "ca-app-pub-4216673023528064~5049656788",
           "iosAppId": "ca-app-pub-4216673023528064~5049656788"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/main_logo_icon.png",
+          "color": "#3DDC84",
+          "defaultChannel": "default"
         }
       ]
     ],

@@ -1549,6 +1549,29 @@ def create_app(config_name='default'):
         
         board = db_manager.create_board(board_data)
         
+        # Create default quick items for shopping list
+        try:
+            from postgres_models import ShoppingListQuickItem
+            default_quick_items = [
+                'חלב', 'לחם', 'ביצים', 'גבינה', 'יוגורט',
+                'עגבניות', 'מלפפונים', 'בצל', 'שום', 'תפוחי אדמה',
+                'תפוחים', 'בננות', 'תפוזים',
+                'בשר', 'עוף', 'דגים',
+                'אורז', 'פסטה', 'שמן', 'סוכר', 'מלח',
+                'קפה', 'תה', 'נייר טואלט', 'סבון'
+            ]
+            for index, item_name in enumerate(default_quick_items):
+                quick_item = ShoppingListQuickItem(
+                    id=str(uuid.uuid4()),
+                    board_id=board.id,
+                    item_name=item_name,
+                    display_order=index
+                )
+                postgres_db.session.add(quick_item)
+            postgres_db.session.commit()
+        except Exception as e:
+            print(f"Warning: Could not create default quick items: {e}")
+        
         # Handle custom categories if provided
         custom_categories = data.get('custom_categories', [])
         if custom_categories and len(custom_categories) > 0:
@@ -3404,6 +3427,246 @@ def create_app(config_name='default'):
         else:
             return jsonify({'error': 'Failed to delete notification'}), 500
 
+    # ==========================================
+    # Push Notification Endpoints
+    # ==========================================
+
+    @app.route('/api/push-tokens', methods=['POST'])
+    @require_auth
+    def register_push_token():
+        """
+        Register or update user's Expo push token
+        
+        Request body:
+        {
+            "expo_push_token": "ExponentPushToken[...]",
+            "device_id": "unique-device-identifier",
+            "device_name": "iPhone 12" (optional),
+            "device_os": "iOS 14.5" (optional)
+        }
+        """
+        from notifications import get_notification_service
+        from postgres_models import PushToken
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            data = request.get_json()
+            
+            expo_push_token = data.get('expo_push_token')
+            device_id = data.get('device_id')
+            device_name = data.get('device_name')
+            device_os = data.get('device_os')
+            
+            if not expo_push_token or not device_id:
+                return jsonify({'error': 'expo_push_token and device_id are required'}), 400
+            
+            # Validate token format
+            notification_service = get_notification_service()
+            if not notification_service.validate_push_token(expo_push_token):
+                return jsonify({'error': 'Invalid Expo push token format'}), 400
+            
+            # Check if token already exists
+            existing_token = PushToken.query.filter_by(
+                expo_push_token=expo_push_token
+            ).first()
+            
+            if existing_token:
+                # Update existing token
+                existing_token.user_id = current_user['id']
+                existing_token.device_id = device_id
+                existing_token.device_name = device_name
+                existing_token.device_os = device_os
+                existing_token.is_active = True
+                existing_token.updated_at = datetime.utcnow()
+            else:
+                # Create new token
+                new_token = PushToken(
+                    user_id=current_user['id'],
+                    expo_push_token=expo_push_token,
+                    device_id=device_id,
+                    device_name=device_name,
+                    device_os=device_os,
+                    is_active=True
+                )
+                postgres_db.session.add(new_token)
+            
+            postgres_db.session.commit()
+            
+            logger.info(f"Push token registered for user {current_user['id']}")
+            
+            return jsonify({
+                'message': 'Push token registered successfully',
+                'token_id': existing_token.id if existing_token else new_token.id
+            }), 200
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            logger.error(f"Error registering push token: {e}")
+            return jsonify({'error': 'Failed to register push token'}), 500
+
+    @app.route('/api/push-tokens', methods=['GET'])
+    @require_auth
+    def get_user_push_tokens():
+        """Get all push tokens for current user"""
+        from postgres_models import PushToken
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            
+            tokens = PushToken.query.filter_by(
+                user_id=current_user['id'],
+                is_active=True
+            ).all()
+            
+            return jsonify({
+                'tokens': [token.to_dict() for token in tokens]
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching push tokens: {e}")
+            return jsonify({'error': 'Failed to fetch push tokens'}), 500
+
+    @app.route('/api/push-tokens/<token_id>', methods=['DELETE'])
+    @require_auth
+    def delete_push_token(token_id):
+        """Deactivate a push token"""
+        from postgres_models import PushToken
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            
+            token = PushToken.query.filter_by(
+                id=token_id,
+                user_id=current_user['id']
+            ).first()
+            
+            if not token:
+                return jsonify({'error': 'Token not found'}), 404
+            
+            token.is_active = False
+            token.updated_at = datetime.utcnow()
+            postgres_db.session.commit()
+            
+            return jsonify({'message': 'Push token deactivated'}), 200
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            logger.error(f"Error deleting push token: {e}")
+            return jsonify({'error': 'Failed to delete push token'}), 500
+
+    @app.route('/api/push-notifications/test', methods=['POST'])
+    @require_auth
+    def send_test_push_notification():
+        """
+        Send a test push notification to current user
+        
+        Request body:
+        {
+            "title": "Test Title",
+            "body": "Test Body",
+            "data": {} (optional)
+        }
+        """
+        from notifications import get_notification_service
+        from postgres_models import PushToken
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            data = request.get_json()
+            
+            title = data.get('title', 'Test Notification')
+            body = data.get('body', 'This is a test notification from Homis!')
+            notification_data = data.get('data', {'type': 'test'})
+            
+            # Get user's active tokens
+            tokens = PushToken.query.filter_by(
+                user_id=current_user['id'],
+                is_active=True
+            ).all()
+            
+            if not tokens:
+                return jsonify({'error': 'No active push tokens found for user'}), 404
+            
+            token_strings = [token.expo_push_token for token in tokens]
+            
+            # Send notification
+            notification_service = get_notification_service()
+            result = notification_service.send_push_notification(
+                tokens=token_strings,
+                title=title,
+                body=body,
+                data=notification_data
+            )
+            
+            return jsonify({
+                'message': 'Test notification sent',
+                'result': result
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error sending test push notification: {e}")
+            return jsonify({'error': 'Failed to send test notification'}), 500
+
+    @app.route('/api/push-notifications/send', methods=['POST'])
+    @require_auth
+    def send_push_notification_endpoint():
+        """
+        Send push notification to specific users (admin only for now)
+        
+        Request body:
+        {
+            "user_ids": ["user-id-1", "user-id-2"],
+            "title": "Notification Title",
+            "body": "Notification Body",
+            "data": {} (optional)
+        }
+        """
+        from notifications import get_notification_service
+        from postgres_models import PushToken
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            data = request.get_json()
+            
+            user_ids = data.get('user_ids', [])
+            title = data.get('title')
+            body = data.get('body')
+            notification_data = data.get('data', {})
+            
+            if not user_ids or not title or not body:
+                return jsonify({'error': 'user_ids, title, and body are required'}), 400
+            
+            # Get all active tokens for these users
+            tokens = PushToken.query.filter(
+                PushToken.user_id.in_(user_ids),
+                PushToken.is_active == True
+            ).all()
+            
+            if not tokens:
+                return jsonify({'error': 'No active push tokens found for specified users'}), 404
+            
+            token_strings = [token.expo_push_token for token in tokens]
+            
+            # Send notifications
+            notification_service = get_notification_service()
+            result = notification_service.send_push_notification(
+                tokens=token_strings,
+                title=title,
+                body=body,
+                data=notification_data
+            )
+            
+            logger.info(f"Push notification sent to {len(user_ids)} users by {current_user['id']}")
+            
+            return jsonify({
+                'message': 'Notifications sent',
+                'result': result
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error sending push notifications: {e}")
+            return jsonify({'error': 'Failed to send notifications'}), 500
+
     @app.route('/api/auth/check-terms-acceptance', methods=['GET'])
     @require_auth
     def check_terms_acceptance():
@@ -3597,17 +3860,35 @@ def create_app(config_name='default'):
                 .header {
                     text-align: center;
                     color: white;
-                    padding: 60px 0 40px 0;
+                    padding: 40px 0 30px 0;
                 }
                 .header h1 {
                     font-size: 3.5rem;
-                    margin-bottom: 20px;
+                    margin-bottom: 10px;
                     text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
                 }
                 .header p {
                     font-size: 1.3rem;
                     margin-bottom: 30px;
                     opacity: 0.9;
+                }
+                .download-buttons-top {
+                    display: flex;
+                    gap: 20px;
+                    justify-content: center;
+                    margin: 30px 0;
+                    flex-wrap: wrap;
+                }
+                .store-badge {
+                    display: inline-block;
+                    transition: transform 0.2s;
+                }
+                .store-badge:hover {
+                    transform: translateY(-5px);
+                }
+                .store-badge img {
+                    height: 60px;
+                    width: auto;
                 }
                 .content {
                     background: white;
@@ -3632,54 +3913,55 @@ def create_app(config_name='default'):
                     color: #667eea;
                     margin-bottom: 15px;
                 }
-                .cta {
-                    text-align: center;
-                    background: #667eea;
-                    color: white;
-                    padding: 30px;
-                    border-radius: 10px;
-                    margin-top: 30px;
-                }
-                .cta h2 {
-                    margin-bottom: 20px;
-                }
-                .cta p {
-                    font-size: 1.1rem;
-                    margin-bottom: 25px;
-                }
-                .download-btn {
-                    display: inline-block;
-                    background: #28a745;
-                    color: white;
-                    padding: 15px 30px;
-                    text-decoration: none;
-                    border-radius: 25px;
-                    font-weight: bold;
-                    transition: all 0.3s ease;
-                }
-                .download-btn:hover {
-                    background: #218838;
-                    transform: translateY(-2px);
-                    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-                }
                 .footer {
                     text-align: center;
                     color: white;
                     padding: 20px 0;
                     opacity: 0.8;
                 }
+                @media (max-width: 600px) {
+                    .header h1 {
+                        font-size: 2.5rem;
+                    }
+                    .header p {
+                        font-size: 1.1rem;
+                    }
+                    .download-buttons-top {
+                        flex-direction: column;
+                        align-items: center;
+                    }
+                }
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>🏠 HOMIS</h1>
+                    <h1>🏠 HOMEIS</h1>
                     <p>הפתרון המושלם לניהול הוצאות משותפות</p>
+                    
+                    <div class="download-buttons-top">
+                        <a href="https://apps.apple.com/il/app/homeis-%D7%9E%D7%A0%D7%94%D7%9C-%D7%94%D7%95%D7%A6%D7%90%D7%95%D7%AA-%D7%94%D7%91%D7%99%D7%AA/id6749914796" 
+                           class="store-badge" 
+                           target="_blank" 
+                           rel="noopener noreferrer">
+                            <img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/he-il?size=250x83&amp;releaseDate=1234567890" 
+                                 alt="הורד מ-App Store" 
+                                 style="height: 60px;">
+                        </a>
+                        <a href="https://play.google.com/store/apps/details?id=com.homis.expensemanager" 
+                           class="store-badge" 
+                           target="_blank" 
+                           rel="noopener noreferrer">
+                            <img src="https://play.google.com/intl/en_us/badges/static/images/badges/he_badge_web_generic.png" 
+                                 alt="קבל את זה ב-Google Play" 
+                                 style="height: 60px;">
+                        </a>
+                    </div>
                 </div>
                 
                 <div class="content">
-                    <h2>מה זה HOMIS?</h2>
-                    <p>HOMIS היא אפליקציה חכמה לניהול הוצאות משותפות בין חברים, משפחה או שותפים לדירה. 
+                    <h2>מה זה HOMEIS?</h2>
+                    <p>HOMEIS היא אפליקציה חכמה לניהול הוצאות משותפות בין חברים, משפחה או שותפים לדירה. 
                     האפליקציה מאפשרת לכם לעקוב אחר הוצאות משותפות, לחשב חובות ולשמור על שקיפות מלאה.</p>
                     
                     <div class="features">
@@ -3707,12 +3989,6 @@ def create_app(config_name='default'):
                             <h3>📈 דוחות מפורטים</h3>
                             <p>קבלו דוחות מפורטים על ההוצאות והחובות שלכם.</p>
                         </div>
-                    </div>
-                    
-                    <div class="cta">
-                        <h2>מוכנים להתחיל?</h2>
-                        <p>הורידו את האפליקציה עכשיו והתחילו לנהל את ההוצאות המשותפות שלכם בצורה חכמה!</p>
-                        <a href="#" class="download-btn">📱 הורדת האפליקציה</a>
                     </div>
                 </div>
                 
@@ -4104,6 +4380,709 @@ def create_app(config_name='default'):
             import traceback
             traceback.print_exc()
             return jsonify({'error': 'Failed to delete user account'}), 500
+
+    # Shopping List endpoints
+    @app.route('/api/boards/<board_id>/shopping-lists', methods=['GET'])
+    @require_auth
+    @require_board_access(BoardPermission.READ.value)
+    def get_shopping_lists(board_id):
+        """Get all shopping lists for a board"""
+        try:
+            from postgres_models import ShoppingList
+            
+            # Get all active shopping lists for this board
+            lists = ShoppingList.query.filter_by(
+                board_id=board_id,
+                is_active=True
+            ).order_by(
+                ShoppingList.created_at.desc()
+            ).all()
+            
+            return jsonify({
+                'success': True,
+                'lists': [shopping_list.to_dict() for shopping_list in lists]
+            })
+            
+        except Exception as e:
+            print(f"Error getting shopping lists: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to get shopping lists'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists', methods=['POST'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def create_shopping_list(board_id):
+        """Create a new shopping list"""
+        try:
+            from postgres_models import ShoppingList
+            from datetime import datetime
+            
+            # Get current user
+            current_user_result = auth_manager.get_current_user()
+            if not current_user_result.get('valid'):
+                return jsonify({'error': 'Authentication failed'}), 401
+            
+            current_user_id = current_user_result['user']['id']
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            
+            name = data.get('name', '').strip()
+            description = data.get('description', '')
+            description = description if description else ''
+            description = description.strip()
+            date_str = data.get('date')
+            
+            if not name:
+                return jsonify({'error': 'List name is required'}), 400
+            
+            # Parse date if provided
+            date_obj = None
+            if date_str:
+                try:
+                    date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                except:
+                    pass
+            
+            # Create new shopping list
+            new_list = ShoppingList(
+                id=str(uuid.uuid4()),
+                board_id=board_id,
+                name=name,
+                description=description if description else None,
+                date=date_obj,
+                created_by=current_user_id
+            )
+            
+            postgres_db.session.add(new_list)
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'list': new_list.to_dict()
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error creating shopping list: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to create shopping list'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>', methods=['PUT'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def update_shopping_list(board_id, list_id):
+        """Update shopping list"""
+        try:
+            from postgres_models import ShoppingList
+            from datetime import datetime
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            
+            # Get the list
+            shopping_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not shopping_list:
+                return jsonify({'error': 'Shopping list not found'}), 404
+            
+            # Update fields
+            if 'name' in data:
+                shopping_list.name = data['name'].strip()
+            if 'description' in data:
+                shopping_list.description = data['description'].strip() if data['description'] else None
+            if 'date' in data:
+                if data['date']:
+                    try:
+                        shopping_list.date = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
+                    except:
+                        pass
+                else:
+                    shopping_list.date = None
+            
+            shopping_list.updated_at = datetime.utcnow()
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'list': shopping_list.to_dict()
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error updating shopping list: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to update shopping list'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>', methods=['DELETE'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def delete_shopping_list(board_id, list_id):
+        """Delete shopping list (soft delete)"""
+        try:
+            from postgres_models import ShoppingList
+            from datetime import datetime
+            
+            # Get the list
+            shopping_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not shopping_list:
+                return jsonify({'error': 'Shopping list not found'}), 404
+            
+            # Soft delete
+            shopping_list.is_active = False
+            shopping_list.updated_at = datetime.utcnow()
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Shopping list deleted successfully'
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error deleting shopping list: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to delete shopping list'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>/items', methods=['GET'])
+    @require_auth
+    @require_board_access(BoardPermission.READ.value)
+    def get_shopping_list_items(board_id, list_id):
+        """Get items in a shopping list"""
+        try:
+            from postgres_models import ShoppingList, ShoppingListItem
+            
+            # Verify list belongs to board
+            shopping_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not shopping_list:
+                return jsonify({'error': 'Shopping list not found'}), 404
+            
+            # Get all items for this list
+            items = ShoppingListItem.query.filter_by(
+                shopping_list_id=list_id
+            ).order_by(
+                ShoppingListItem.is_completed.asc(),  # Uncompleted items first
+                ShoppingListItem.created_at.desc()
+            ).all()
+            
+            return jsonify({
+                'success': True,
+                'items': [item.to_dict() for item in items]
+            })
+            
+        except Exception as e:
+            print(f"Error getting shopping list items: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to get shopping list items'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>/items', methods=['POST'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def add_shopping_list_item(board_id, list_id):
+        """Add item to shopping list"""
+        try:
+            from postgres_models import ShoppingList, ShoppingListItem
+            
+            # Get current user
+            current_user_result = auth_manager.get_current_user()
+            if not current_user_result.get('valid'):
+                return jsonify({'error': 'Authentication failed'}), 401
+            
+            current_user_id = current_user_result['user']['id']
+            
+            # Verify list belongs to board
+            shopping_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not shopping_list:
+                return jsonify({'error': 'Shopping list not found'}), 404
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            
+            item_name = data.get('item_name', '').strip()
+            description = data.get('description', '').strip()
+            
+            if not item_name:
+                return jsonify({'error': 'Item name is required'}), 400
+            
+            # Create new item
+            new_item = ShoppingListItem(
+                id=str(uuid.uuid4()),
+                shopping_list_id=list_id,
+                item_name=item_name,
+                description=description if description else None,
+                is_completed=False,
+                created_by=current_user_id
+            )
+            
+            postgres_db.session.add(new_item)
+            
+            # Update list completion status
+            shopping_list.update_completion_status()
+            
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'item': new_item.to_dict()
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error adding shopping list item: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to add item'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>/items/<item_id>', methods=['PUT'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def update_shopping_list_item(board_id, list_id, item_id):
+        """Update shopping list item"""
+        try:
+            from postgres_models import ShoppingList, ShoppingListItem
+            from datetime import datetime
+            
+            # Get current user
+            current_user_result = auth_manager.get_current_user()
+            if not current_user_result.get('valid'):
+                return jsonify({'error': 'Authentication failed'}), 401
+            
+            current_user_id = current_user_result['user']['id']
+            
+            # Verify list belongs to board
+            shopping_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not shopping_list:
+                return jsonify({'error': 'Shopping list not found'}), 404
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            
+            # Get the item
+            item = ShoppingListItem.query.filter_by(
+                id=item_id,
+                shopping_list_id=list_id
+            ).first()
+            
+            if not item:
+                return jsonify({'error': 'Item not found'}), 404
+            
+            # Update fields
+            if 'is_completed' in data:
+                item.is_completed = data['is_completed']
+                if data['is_completed']:
+                    item.completed_at = datetime.utcnow()
+                    item.completed_by = current_user_id
+                else:
+                    item.completed_at = None
+                    item.completed_by = None
+            
+            if 'item_name' in data:
+                item.item_name = data['item_name'].strip()
+            
+            if 'description' in data:
+                item.description = data['description'].strip() if data['description'] else None
+            
+            item.updated_at = datetime.utcnow()
+            
+            # Update list completion status
+            shopping_list = ShoppingList.query.get(list_id)
+            if shopping_list:
+                shopping_list.update_completion_status()
+            
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'item': item.to_dict()
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error updating shopping list item: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to update item'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>/items/<item_id>/move', methods=['POST'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def move_shopping_list_item(board_id, list_id, item_id):
+        """Move shopping list item to another list"""
+        try:
+            from postgres_models import ShoppingList, ShoppingListItem
+            from datetime import datetime
+            
+            # Verify source list belongs to board
+            source_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not source_list:
+                return jsonify({'error': 'Source shopping list not found'}), 404
+            
+            data = request.get_json()
+            if not data or 'target_list_id' not in data:
+                return jsonify({'error': 'Invalid request body'}), 400
+            
+            target_list_id = data['target_list_id']
+            
+            # Verify target list belongs to the same board
+            target_list = ShoppingList.query.filter_by(
+                id=target_list_id,
+                board_id=board_id
+            ).first()
+            
+            if not target_list:
+                return jsonify({'error': 'Target shopping list not found'}), 404
+            
+            # Get the item
+            item = ShoppingListItem.query.filter_by(
+                id=item_id,
+                shopping_list_id=list_id
+            ).first()
+            
+            if not item:
+                return jsonify({'error': 'Item not found'}), 404
+            
+            # Move the item
+            item.shopping_list_id = target_list_id
+            item.updated_at = datetime.utcnow()
+            
+            # Update completion status for both lists
+            source_list.update_completion_status()
+            target_list.update_completion_status()
+            
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'item': item.to_dict()
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error moving shopping list item: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to move item'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-lists/<list_id>/items/<item_id>', methods=['DELETE'])
+    @require_auth
+    @require_board_access(BoardPermission.WRITE.value)
+    def delete_shopping_list_item(board_id, list_id, item_id):
+        """Delete shopping list item"""
+        try:
+            from postgres_models import ShoppingList, ShoppingListItem
+            
+            # Verify list belongs to board
+            shopping_list = ShoppingList.query.filter_by(
+                id=list_id,
+                board_id=board_id
+            ).first()
+            
+            if not shopping_list:
+                return jsonify({'error': 'Shopping list not found'}), 404
+            
+            # Get the item
+            item = ShoppingListItem.query.filter_by(
+                id=item_id,
+                shopping_list_id=list_id
+            ).first()
+            
+            if not item:
+                return jsonify({'error': 'Item not found'}), 404
+            
+            postgres_db.session.delete(item)
+            
+            # Update list completion status
+            shopping_list.update_completion_status()
+            
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Item deleted successfully'
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error deleting shopping list item: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to delete item'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-list/quick-items', methods=['GET'])
+    @require_auth
+    @require_board_access(BoardPermission.READ.value)
+    def get_quick_items(board_id):
+        """Get quick access items for a board"""
+        try:
+            from postgres_models import ShoppingListQuickItem
+            
+            # Get all quick items for this board, ordered by display_order
+            items = ShoppingListQuickItem.query.filter_by(
+                board_id=board_id
+            ).order_by(
+                ShoppingListQuickItem.display_order.asc()
+            ).all()
+            
+            return jsonify({
+                'success': True,
+                'quick_items': [item.to_dict() for item in items]
+            })
+            
+        except Exception as e:
+            print(f"Error getting quick items: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to get quick items'}), 500
+
+    @app.route('/api/boards/<board_id>/shopping-list/quick-items', methods=['PUT'])
+    @require_auth
+    @require_board_admin
+    def update_quick_items(board_id):
+        """Update quick access items for a board"""
+        try:
+            from postgres_models import ShoppingListQuickItem
+            
+            data = request.get_json()
+            quick_items = data.get('quick_items', [])
+            
+            # Delete all existing quick items for this board
+            ShoppingListQuickItem.query.filter_by(board_id=board_id).delete()
+            
+            # Create new quick items
+            new_items = []
+            for index, item_data in enumerate(quick_items):
+                # Support both old format (string) and new format (object with name and icon)
+                if isinstance(item_data, str):
+                    item_name = item_data
+                    item_icon = None
+                else:
+                    item_name = item_data.get('name', '')
+                    item_icon = item_data.get('icon', None)
+                
+                if not item_name.strip():
+                    continue
+                
+                new_item = ShoppingListQuickItem(
+                    id=str(uuid.uuid4()),
+                    board_id=board_id,
+                    item_name=item_name.strip(),
+                    icon=item_icon,
+                    display_order=index
+                )
+                postgres_db.session.add(new_item)
+                new_items.append(new_item)
+            
+            postgres_db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'quick_items': [item.to_dict() for item in new_items]
+            })
+            
+        except Exception as e:
+            postgres_db.session.rollback()
+            print(f"Error updating quick items: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': 'Failed to update quick items'}), 500
+
+    # ==========================================
+    # ADMIN ENDPOINTS - Broadcast Notifications
+    # ==========================================
+
+    @app.route('/api/admin/broadcast-notification', methods=['POST'])
+    @require_auth
+    def send_broadcast_notification():
+        """
+        🎯 Send push notification to ALL users (Admin only)
+        
+        Request body:
+        {
+            "title": "כותרת ההודעה",
+            "body": "תוכן ההודעה", 
+            "data": {} (optional)
+        }
+        """
+        from notifications import get_notification_service
+        from postgres_models import PushToken, User
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            
+            # Check if user is admin
+            user = User.query.get(current_user['id'])
+            if not user or not hasattr(user, 'is_admin') or not user.is_admin:
+                return jsonify({'error': 'Admin privileges required'}), 403
+            
+            data = request.get_json()
+            title = data.get('title')
+            body = data.get('body')
+            notification_data = data.get('data', {'type': 'broadcast'})
+            
+            if not title or not body:
+                return jsonify({'error': 'title and body are required'}), 400
+            
+            # Get ALL active push tokens
+            from postgres_models import PushToken
+            all_tokens = PushToken.query.filter_by(is_active=True).all()
+            
+            if not all_tokens:
+                return jsonify({
+                    'error': 'No active push tokens found',
+                    'sent': 0,
+                    'failed': 0
+                }), 404
+            
+            token_strings = [token.expo_push_token for token in all_tokens]
+            unique_users = len(set([token.user_id for token in all_tokens]))
+            
+            # Send notifications
+            notification_service = get_notification_service()
+            result = notification_service.send_push_notification(
+                tokens=token_strings,
+                title=title,
+                body=body,
+                data=notification_data,
+                priority='high',  # High priority for admin broadcasts
+                sound='default'
+            )
+            
+            logger.info(
+                f"📢 BROADCAST: Admin {current_user['email']} sent notification "
+                f"to {len(token_strings)} devices ({unique_users} users)"
+            )
+            
+            return jsonify({
+                'message': 'Broadcast notification sent successfully',
+                'devices_sent': len(token_strings),
+                'unique_users': unique_users,
+                'result': result
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error sending broadcast notification: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/admin/stats/notifications', methods=['GET'])
+    @require_auth
+    def get_notification_stats():
+        """Get notification statistics (admin only)"""
+        from postgres_models import User
+        from sqlalchemy import func
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            user = User.query.get(current_user['id'])
+            
+            if not user or not hasattr(user, 'is_admin') or not user.is_admin:
+                return jsonify({'error': 'Admin privileges required'}), 403
+            
+            # Count statistics
+            from postgres_models import PushToken
+            total_users = User.query.filter_by(is_active=True, is_virtual=False).count()
+            users_with_tokens = PushToken.query.filter_by(is_active=True)\
+                .with_entities(PushToken.user_id).distinct().count()
+            total_tokens = PushToken.query.filter_by(is_active=True).count()
+            
+            return jsonify({
+                'total_users': total_users,
+                'users_with_notifications': users_with_tokens,
+                'users_without_notifications': total_users - users_with_tokens,
+                'total_active_devices': total_tokens,
+                'coverage_percentage': round((users_with_tokens / total_users * 100), 2) if total_users > 0 else 0
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/admin/users', methods=['GET'])
+    @require_auth
+    def list_all_users():
+        """List all users with their notification status (admin only)"""
+        from postgres_models import User
+        
+        try:
+            current_user = auth_manager.get_current_user()['user']
+            user = User.query.get(current_user['id'])
+            
+            if not user or not hasattr(user, 'is_admin') or not user.is_admin:
+                return jsonify({'error': 'Admin privileges required'}), 403
+            
+            # Get pagination params
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 50, type=int)
+            
+            # Get all users
+            users_query = User.query.filter_by(is_active=True, is_virtual=False)\
+                .order_by(User.created_at.desc())
+            
+            users_paginated = users_query.paginate(page=page, per_page=per_page, error_out=False)
+            
+            users_data = []
+            for user in users_paginated.items:
+                # Count user's active tokens
+                from postgres_models import PushToken
+                token_count = PushToken.query.filter_by(
+                    user_id=user.id,
+                    is_active=True
+                ).count()
+                
+                users_data.append({
+                    'id': user.id,
+                    'email': user.email,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'created_at': user.created_at.isoformat() if user.created_at else None,
+                    'has_notifications': token_count > 0,
+                    'active_devices': token_count,
+                    'is_admin': user.is_admin if hasattr(user, 'is_admin') else False
+                })
+            
+            return jsonify({
+                'users': users_data,
+                'total': users_paginated.total,
+                'page': page,
+                'per_page': per_page,
+                'pages': users_paginated.pages
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error listing users: {e}")
+            return jsonify({'error': str(e)}), 500
 
     return app
 

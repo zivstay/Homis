@@ -1361,6 +1361,123 @@ class ApiService {
 
     return this.handleResponse<BudgetStatus>(response);
   }
+
+  // ==========================================
+  // ADMIN FUNCTIONS - Push Notifications
+  // ==========================================
+
+  /**
+   * Send broadcast notification to all users (Admin only)
+   */
+  async sendBroadcastNotification(
+    title: string,
+    body: string,
+    data?: any
+  ): Promise<ApiResponse<{
+    message: string;
+    devices_sent: number;
+    unique_users: number;
+    result: any;
+  }>> {
+    console.log('📢 ADMIN: Sending broadcast notification');
+    const response = await fetch(`${API_BASE_URL}/admin/broadcast-notification`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ title, body, data }),
+    });
+
+    return this.handleResponse(response);
+  }
+
+  /**
+   * Get notification statistics (Admin only)
+   */
+  async getNotificationStats(): Promise<ApiResponse<{
+    total_users: number;
+    users_with_notifications: number;
+    users_without_notifications: number;
+    total_active_devices: number;
+    coverage_percentage: number;
+  }>> {
+    console.log('📊 ADMIN: Getting notification stats');
+    const response = await fetch(`${API_BASE_URL}/admin/stats/notifications`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse(response);
+  }
+
+  /**
+   * List all users with notification status (Admin only)
+   */
+  async listAllUsers(page: number = 1, perPage: number = 50): Promise<ApiResponse<{
+    users: Array<{
+      id: string;
+      email: string;
+      username: string;
+      first_name: string;
+      last_name: string;
+      created_at: string;
+      has_notifications: boolean;
+      active_devices: number;
+      is_admin: boolean;
+    }>;
+    total: number;
+    page: number;
+    per_page: number;
+    pages: number;
+  }>> {
+    console.log('👥 ADMIN: Listing all users');
+    const response = await fetch(`${API_BASE_URL}/admin/users?page=${page}&per_page=${perPage}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    return this.handleResponse(response);
+  }
+
+  /**
+   * Register push token with backend
+   */
+  async registerPushToken(
+    token: string,
+    deviceId: string,
+    deviceName?: string,
+    deviceOs?: string
+  ): Promise<ApiResponse<{ message: string; token_id: string }>> {
+    console.log('📱 API: Registering push token');
+    const response = await fetch(`${API_BASE_URL}/push-tokens`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        expo_push_token: token,
+        device_id: deviceId,
+        device_name: deviceName,
+        device_os: deviceOs,
+      }),
+    });
+
+    return this.handleResponse(response);
+  }
+
+  /**
+   * Send test push notification
+   */
+  async sendTestNotification(
+    title: string,
+    body: string,
+    data?: any
+  ): Promise<ApiResponse<{ message: string; result: any }>> {
+    console.log('🧪 API: Sending test notification');
+    const response = await fetch(`${API_BASE_URL}/push-notifications/test`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ title, body, data }),
+    });
+
+    return this.handleResponse(response);
+  }
 }
 
 export const apiService = new ApiService(); 

@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -5,7 +6,6 @@ import React, { useEffect, useState } from 'react';
 import {
     Alert,
     FlatList,
-    Image,
     InteractionManager,
     Modal,
     RefreshControl,
@@ -17,9 +17,10 @@ import {
 import { showAdConsentModal } from '../components/AdConsentModal';
 // DISABLED: BudgetEditModal temporarily removed
 // import { BudgetEditModal } from '../components/BudgetEditModal';
-import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { CategoryImage } from '../components/CategoryImage';
+import { ExpenseDetailsModal } from '../components/ExpenseDetailsModal';
 import { ExpenseImage } from '../components/ExpenseImage';
+import ShoppingListModal from '../components/ShoppingListModal';
 import { getBoardTypeById } from '../constants/boardTypes';
 import { useAuth } from '../contexts/AuthContext';
 import { useBoard } from '../contexts/BoardContext';
@@ -65,6 +66,7 @@ const HomeScreen: React.FC = () => {
   const [exportData, setExportData] = useState<{blob: Blob, filename: string} | null>(null);
   const [forceUpdate, setForceUpdate] = useState(0);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showShoppingList, setShowShoppingList] = useState(false);
   // DISABLED: Budget-related states temporarily removed
   // TODO: לוגיקת התקציב מושבתת זמנית - צריך עבודה נוספת
   
@@ -428,8 +430,16 @@ const HomeScreen: React.FC = () => {
 
   const renderSummary = () => (
     <View style={styles.summaryContainer}>
-      {/* Time Filter */}
+      {/* Time Filter & Shopping List */}
       <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={styles.shoppingListButtonTop}
+          onPress={() => setShowShoppingList(true)}
+        >
+          <Ionicons name="cart" size={18} color="white" />
+          <Text style={styles.shoppingListLabel}>רשימת קניות</Text>
+        </TouchableOpacity>
+        
         <View style={styles.filterButtons}>
           <TouchableOpacity
             style={[
@@ -800,8 +810,8 @@ const HomeScreen: React.FC = () => {
           <Text style={styles.sectionTitle}>
             {isWorkManagement ? 'עבודות אחרונות' : 'הוצאות אחרונות'}
           </Text>
-          <View style={styles.headerButtons}>
-            {boardExpenses.length > 0 && isBoardOwner && (
+          {boardExpenses.length > 0 && isBoardOwner && (
+            <View style={styles.headerButtons}>
               <TouchableOpacity
                 style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
                 onPress={handleExportExpenses}
@@ -811,9 +821,8 @@ const HomeScreen: React.FC = () => {
                   {isExporting ? 'מייצא...' : '📊 אקסל'}
                 </Text>
               </TouchableOpacity>
-            )}
-
-          </View>
+            </View>
+          )}
         </View>
       </View>
 
@@ -848,6 +857,16 @@ const HomeScreen: React.FC = () => {
           getCategoryColor={getCategoryColor}
           onDelete={handleDeleteExpense}
           canDelete={isGuestMode || !!(user && selectedExpense.created_by === user.id)}
+        />
+      )}
+
+      {/* Shopping List Modal */}
+      {selectedBoard && (
+        <ShoppingListModal
+          visible={showShoppingList}
+          onClose={() => setShowShoppingList(false)}
+          boardId={selectedBoard.id}
+          isAdmin={isBoardOwner}
         />
       )}
 
@@ -1226,6 +1245,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  shoppingListButton: {
+    backgroundColor: '#9b59b6',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  shoppingListButtonText: {
+    fontSize: 20,
+  },
   downloadButton: {
     backgroundColor: '#3498db',
     paddingHorizontal: 16,
@@ -1500,7 +1539,7 @@ const styles = StyleSheet.create({
   filterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
   filterButtons: {
@@ -1525,6 +1564,21 @@ const styles = StyleSheet.create({
     color: '#7f8c8d',
   },
   filterButtonTextActive: {
+    color: 'white',
+  },
+  // Shopping List Button (Top)
+  shoppingListButtonTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  shoppingListLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
     color: 'white',
   },
 

@@ -67,8 +67,9 @@ const AddExpenseScreen: React.FC = () => {
   const isWorkManagement = selectedBoard?.board_type === 'work_management';
 
   // Get preselected category from navigation params
-  const params = route.params as { preselectedCategory?: string } | undefined;
+  const params = route.params as { preselectedCategory?: string; prefilledDescription?: string } | undefined;
   const preselectedCategory = params?.preselectedCategory;
+  const prefilledDescription = params?.prefilledDescription;
 
   // Update tutorial context when this screen is focused
   useFocusEffect(
@@ -131,6 +132,13 @@ const AddExpenseScreen: React.FC = () => {
       loadCategories();
     }
   }, [isGuestMode, expenseQuickCategories.length]); // Only depend on length to avoid infinite loops
+
+  // Handle prefilled description from shopping list
+  useEffect(() => {
+    if (prefilledDescription) {
+      setDescription(prefilledDescription);
+    }
+  }, [prefilledDescription]);
 
   const loadCategories = async () => {
     if (!selectedBoard) return;
