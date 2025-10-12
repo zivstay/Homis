@@ -457,42 +457,6 @@ function AppContent() {
             // 📅 PRODUCTION MODE: Refresh notifications (clear old + schedule new for 8 weeks)
             await notificationService.refreshNotifications();
             console.log('📅 Notifications refreshed - scheduled for next 8 weeks');
-            
-            // 🔍 DEBUG: Show all scheduled notifications
-            await notificationService.debugScheduledNotifications();
-            
-            // 🔍 DEBUG: Check all weekly notifications status
-            const allNotificationsStatus = notificationService.checkAllWeeklyNotificationsStatus();
-            console.log(`📅 All Weekly Notifications Status:`, allNotificationsStatus);
-            
-            // Show detailed status for each day
-            if (allNotificationsStatus.sunday.isToday) {
-              if (allNotificationsStatus.sunday.timePassed) {
-                console.log('⚠️ Today is Sunday but 12:00 has already passed');
-              } else {
-                console.log(`✅ Today is Sunday, notification will appear in ${allNotificationsStatus.sunday.minutesUntil} minutes`);
-              }
-            }
-            
-            if (allNotificationsStatus.wednesday.isToday) {
-              if (allNotificationsStatus.wednesday.timePassed) {
-                console.log('⚠️ Today is Wednesday but 19:00 has already passed');
-              } else {
-                console.log(`✅ Today is Wednesday, notification will appear in ${allNotificationsStatus.wednesday.minutesUntil} minutes`);
-              }
-            }
-            
-            if (allNotificationsStatus.saturday.isToday) {
-              if (allNotificationsStatus.saturday.timePassed) {
-                console.log('⚠️ Today is Saturday but 18:00 has already passed');
-              } else {
-                console.log(`✅ Today is Saturday, notification will appear in ${allNotificationsStatus.saturday.minutesUntil} minutes`);
-              }
-            }
-            
-            // 🧪 DEBUG: Send immediate test notification to verify it works
-            await notificationService.sendInstantTestNotification();
-            console.log('🧪 Sent immediate test notification for verification');
           }
         } else {
           console.log('❌ Notification permissions denied');

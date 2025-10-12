@@ -15,6 +15,7 @@ import {
 import { API_CONFIG } from '../config/api';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/api';
+import { widgetService } from '../services/widgetService';
 
 interface ShoppingList {
   id: string;
@@ -461,6 +462,13 @@ const ShoppingListModal: React.FC<ShoppingListModalProps> = ({
         setItems(prevItems => prevItems.map(i => i.id === item.id ? data.item : i));
         // Refresh lists to update completion status (in background)
         loadShoppingLists(false);
+        
+        // Update widget with new data
+        if (selectedList) {
+          const updatedItems = items.map(i => i.id === item.id ? data.item : i);
+          const widgetData = widgetService.convertToWidgetData(selectedList, updatedItems);
+          await widgetService.updateShoppingListWidget(widgetData);
+        }
       } else {
         // Revert optimistic update on failure
         setItems(prevItems => prevItems.map(i => i.id === item.id ? item : i));
